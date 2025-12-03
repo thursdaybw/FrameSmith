@@ -1,7 +1,28 @@
-// =============================
-// script.js
-// App orchestrator
-// =============================
+/**
+ * APPLICATION DRIVER — ARCHITECTURE NOTES
+ * ---------------------------------------
+ * This file wires the pieces together:
+ *
+ *   - Loads the video
+ *   - Captures frames using MediaStreamTrackProcessor
+ *   - Calls captionRenderer with current time
+ *   - Runs the preview loop
+ *
+ * It MUST NOT:
+ *   - contain styling rules
+ *   - contain layout logic
+ *   - mutate caption data
+ *   - perform drawing beyond orchestrating modules
+ *
+ * FUTURE DIRECTION:
+ *   When export arrives:
+ *      - script.js will also run an offline render loop
+ *        using the same renderer + layout pipeline.
+ *
+ *   When audio extraction + transcription arrives:
+ *      - script.js will send audio to backend and then
+ *        build captions via captionModel.
+ */
 
 import { whisperToCaptionSegments } from "./captionModel.js";
 import { drawCaptions } from "./captionRenderer.js";
