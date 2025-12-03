@@ -1,7 +1,33 @@
-// =============================
-// captionRenderer.js
-// Rendering pipeline
-// =============================
+/**
+ * CAPTION RENDERER — ARCHITECTURE NOTES
+ * -------------------------------------
+ * This module draws caption data onto a canvas.
+ *
+ * CURRENT STAGE (Phase A):
+ *   - Receives raw caption timing + word timing
+ *   - Computes which words are active
+ *   - Draws text directly using canvas instructions
+ *   - Performs line wrapping and highlight drawing
+ *
+ * WHAT IT MUST NOT DO:
+ *   - Choose global font families
+ *   - Choose colors beyond the minimal demo defaults
+ *   - Own long-term style definitions
+ *   - Hardcode visual rules that should belong to styles
+ *
+ * WHY:
+ *   In future phases, drawing will be performed via a
+ *   RenderPlan (a display list) → and later via a scene graph.
+ *
+ *   This renderer must remain a "dumb projector":
+ *       Given drawable instructions → draw them.
+ *
+ * WHEN WE EVOLVE THIS FILE:
+ *   - When StylePreset exists, renderer stops picking any
+ *     visual parameters and instead obeys computed style rules.
+ *   - When RenderPlan exists, renderer draws elements instead
+ *     of computing layout here.
+ */
 
 import { CaptionStyles, findActiveSegment, findActiveWord } from "./captionModel.js";
 import { wrapLine } from "./layout.js";
