@@ -77,8 +77,15 @@ export function drawCaptionForTime(t, ctx, canvas, captions, presetName = "defau
   const layoutStyle = chooseLayoutStyle(seg, presetName);
   ctx.font = `${layoutStyle.fontSize}px ${layoutStyle.fontFamily}`;
 
-  // Layout using static font sizes ONLY
-  const lines = wrapWordsIntoLines(ctx, seg.words, canvas.width);
+  /**
+   * Layout uses ONLY the static layoutStyle.
+   *
+   * WHY:
+   *   - Layout must remain stable, unaffected by animations.
+   *   - Geometry must originate from style presets, not renderer guesses.
+   *   - Allows future LayoutEngine and RenderPlan to cleanly replace this step.
+   */
+  const lines = wrapWordsIntoLines(ctx, seg.words, canvas.width, layoutStyle);
 
   // Now draw, word by word, with animated transforms
   for (const line of lines) {
@@ -92,11 +99,11 @@ export function drawCaptionForTime(t, ctx, canvas, captions, presetName = "defau
       ctx.textAlign = "left";
 
       // Highlight color logic — kept separate
-      const isHighlighted = seg.words[highlightIdx] === word;
+      const isActive = (word === seg.words[highlightIdx]);
+      const finalStyle = resolveActiveStyle(drawStyle, isActive);
 
-      ctx.fillStyle = isHighlighted
-        ? drawStyle.highlightFill
-        : drawStyle.fill;
+      ctx.fillStyle = finalStyle.fill;
+
 
       ctx.fillText(word.text, x, y);
     }

@@ -37,3 +37,20 @@ This log prevents architectural drift and explains the reasoning behind changes.
 - highlightFill logic is no longer owned by the renderer.
 - Renderer remains responsible only for detecting active word (Phase A).
 - Prepares system for StyleResolver and future karaoke effects.
+
+---
+
+## 2025-03-XX — Step B: Centralize layout values under StylePreset
+
+- Removed hardcoded layout constants from wordLayout.js.
+- Introduced clean, named functions for spacing and positioning.
+- Layout engine now reads:
+    - fontSize
+    - lineHeightMultiplier
+    - verticalOffset
+    - maxWidthMultiplier
+  from layoutStyle (resolved from StylePreset).
+- Renderer now passes layoutStyle to wrapWordsIntoLines.
+- No visual changes, but architectural consistency restored.
+- Layout rules are now declarative, testable, and ready for future LayoutEngine.
+

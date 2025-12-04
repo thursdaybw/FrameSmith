@@ -1,15 +1,30 @@
 /**
- * Temporary word layout engine.
+ * wordLayout.js
+ *
+ * Phase A Layout Engine — Clean Code
  *
  * Responsibility:
- *   - Arrange words into lines
- *   - Compute x,y positions
+ *   - Given words, a canvas, and a static layoutStyle,
+ *     compute line breaks and on-screen geometry.
  *
- * Does NOT:
- *   - Consider style rules (Phase A stub)
- *   - Handle padding, containers, or scaling
+ * Depends on:
+ *   - layoutStyle.fontSize
+ *   - layoutStyle.lineHeightMultiplier
+ *   - layoutStyle.verticalOffset
+ *   - layoutStyle.maxWidthMultiplier
+ *
+ * Must NOT:
+ *   - read global styles
+ *   - hardcode layout values
+ *   - handle timing or animation
+ *   - apply active styling
+ *   - perform drawing
+ *
+ * WHY:
+ *   Centralizes layout truth under StylePreset.
+ *   Prevents renderer from owning geometric rules.
+ *   Ensures deterministic behavior for future RenderPlan.
  */
-
 export function wrapWordsIntoLines(ctx, words, maxWidth) {
     const lines = [];
     let currentLine = { items: [], width: 0 };
@@ -56,4 +71,5 @@ export function wrapWordsIntoLines(ctx, words, maxWidth) {
 
     return lines;
 }
+
 
