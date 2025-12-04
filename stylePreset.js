@@ -27,15 +27,9 @@ export const stylePreset = {
     fontSize: 40,
     fill: "#ffffff",
     stroke: "#000000",
-    highlightFill: "#ffde59",
     maxWidthMultiplier: 0.8,
     verticalOffset: 80,
     lineHeightMultiplier: 1.3
-  },
-
-  // Example override: a pulsing highlight color
-  pulse: {
-    highlightFill: "#ffaa00"
   },
 
   muted: {
