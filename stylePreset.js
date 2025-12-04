@@ -9,6 +9,15 @@
  *   - Handle animations
  *   - Compute layout
  *   - Draw to canvas
+ *
+ * Layout-related fields:
+ *   - lineHeightMultiplier → vertical spacing between lines
+ *   - verticalOffset → padding from bottom of canvas
+ *   - maxWidthMultiplier → maximum line width relative to canvas
+ *
+ * WHY:
+ *   These values define geometry but do NOT compute geometry.
+ *   The layout engine reads these values and performs the math.
  */
 
 // PHASE A: Minimal preset table
