@@ -15,13 +15,13 @@
  *   Moves highlight-style decision OUT of renderer.
  *   Renderer becomes a mechanical drawer with no appearance logic.
  */
+
+import { activeWordEffect } from "./effects/activeWordEffect.js";
+
 export function resolveActiveStyle(style, isActive) {
   if (!isActive) return style;
 
-  // Phase A behavior: replace fill using highlightFill
-  return {
-    ...style,
-    fill: style.highlightFill || style.fill  // fallback safety
-  };
+  // Phase A: appearance decided by the effect system
+  return activeWordEffect(style);
 }
 

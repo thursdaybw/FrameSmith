@@ -54,6 +54,34 @@ Model → LayoutEngine → RenderPlan → Renderer → Export
 
 RenderPlan becomes the canonical description of the frame.
 
+## 1.7 Effects Layer (State-Driven Style Transform)
+
+Effects are declarative, state-based transformations applied to elements in the RenderPlan.
+
+Unlike animations (which are time-driven and continuous), effects activate based on:
+
+- Caption timing (word becomes active)
+- Semantic emphasis (AI marks a word important)
+- User styling rules (bold this phrase)
+- Caption mode (typewriter, storyteller)
+- Segment transitions (slide-in/out)
+- Element interactions (emoji following a word)
+
+Effects may:
+
+- modify draw-style
+- spawn sub-elements (boxes, emojis, cursors)
+- request layout adjustments (handled by LayoutEngine)
+
+Effects do not:
+
+- compute geometry
+- select fonts/colors arbitrarily
+- draw to canvas
+- store state
+
+The Effects Layer is essential for supporting modern short-form caption styles (TikTok, Reels, Shorts) and advanced presentation features.
+
 ---
 
 # 2. System Overview

@@ -98,7 +98,6 @@ export function drawCaptionForTime(t, ctx, canvas, captions, presetName = "defau
       ctx.font = `${drawStyle.fontSize}px ${drawStyle.fontFamily}`;
       ctx.textAlign = "left";
 
-      // Highlight color logic — kept separate
       const isActive = (word === seg.words[highlightIdx]);
       const finalStyle = resolveActiveStyle(drawStyle, isActive);
 
