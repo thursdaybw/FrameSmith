@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<body>
+<canvas id="test" width="600" height="200" style="border:1px solid #ccc"></canvas>
+
+<script type="module">
+  import { applyAnimations } from "./applyAnimations.js";
+
+  const baseStyle = {
+    fontSize: 40,
+    highlightFill: "#ffde59"
+  };
+
+  const animations = ["pulse"];
+
+  const canvas = document.getElementById("test");
+  const ctx = canvas.getContext("2d");
+
+  function loop(timestamp) {
+    const seconds = timestamp / 1000;
+
+    const animated = applyAnimations(baseStyle, seconds, animations);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = animated.highlightFill;
+
+    ctx.beginPath();
+    ctx.arc(300, 100, animated.fontSize * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+

@@ -1,3 +1,7 @@
+import { resolveStyle } from "./stylePreset.js";
+import { applyAnimations } from "./applyAnimations.js";
+import { wrapWordsIntoLines } from "./wordLayout.js";
+
 /**
  * CAPTION RENDERER — ARCHITECTURE NOTES
  * -------------------------------------
@@ -8,6 +12,12 @@
  *   - Computes which words are active
  *   - Draws text directly using canvas instructions
  *   - Performs line wrapping and highlight drawing
+ *
+ * Now uses StylePreset for visual appearance.
+ * Still performs:
+ *   - layout
+ *   - highlight logic
+ *   - drawing*
  *
  * WHAT IT MUST NOT DO:
  *   - Choose global font families
@@ -22,6 +32,10 @@
  *   This renderer must remain a "dumb projector":
  *       Given drawable instructions → draw them.
  *
+ * Future (Phase B):
+ *   - Break into: CaptionLayout → RenderPlan → Renderer
+ *   - Renderer will consume abstract primitives, not captions*
+ *
  * WHEN WE EVOLVE THIS FILE:
  *   - When StylePreset exists, renderer stops picking any
  *     visual parameters and instead obeys computed style rules.
@@ -29,88 +43,51 @@
  *     of computing layout here.
  */
 
-import { CaptionStyles, findActiveSegment, findActiveWord } from "./captionModel.js";
-import { wrapLine } from "./layout.js";
+// NEW helper: compute style for a word
+function computeWordStyle(segment, word, t, presetName) {
+  const allOverrides = [
+    ...(segment.override || []),
+    ...(word.override || [])
+  ];
 
-export function drawCaptions(ctx, canvas, segments, t) {
+  const allAnimations = [
+    ...(segment.animate || []),
+    ...(word.animate || [])
+  ];
 
-  // (1) Find active segment
-  const seg = findActiveSegment(segments, t);
+  const base = resolveStyle(presetName, allOverrides);
+  return applyAnimations(base, t, allAnimations);
+}
+
+export function drawCaptionForTime(t, ctx, canvas, captions, presetName = "default") {
+  const seg = captions.find(c => t >= c.start && t < c.end);
   if (!seg) return;
 
-  // (2) Determine active word
-  const activeWordIdx = findActiveWord(seg.words, t);
+  // highlight logic is now independent
+  const highlightIdx = seg.words.findIndex(w => t >= w.start && t < w.end);
 
-  // (3) Prepare drawing
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
+  const lines = wrapWordsIntoLines(ctx, seg.words, canvas.width);
 
-  const style = CaptionStyles[seg.style] || CaptionStyles.default;
-  ctx.font = style.font;
+  for (const line of lines) {
+    for (const item of line.items) {
+      const { word, x, y } = item;
 
-  const maxWidth = canvas.width * 0.9;
-  const lines = wrapLine(ctx, seg.text, maxWidth);
+      const style = computeWordStyle(seg, word, t, presetName);
 
-  const lineHeight = parseInt(style.font) * 1.3;
-  const baseY = canvas.height - 150;
+      ctx.font = `${style.fontSize}px ${style.fontFamily}`;
+      ctx.textAlign = "left";
 
-  // (4) Draw each line (bottom up)
-  lines.forEach((line, i) => {
-    const y = baseY - (lines.length - 1 - i) * lineHeight;
+      // highlight coloring is separate from style overrides
+      const isHighlighted = seg.words[highlightIdx] === word;
 
-    if (activeWordIdx >= 0) {
-      drawHighlightedLine(ctx, line, seg.words, activeWordIdx, style, canvas.width/2, y);
-    } else {
-      drawNormalLine(ctx, line, style, canvas.width/2, y);
+      if (isHighlighted) {
+        ctx.fillStyle = style.highlightFill;
+      } else {
+        ctx.fillStyle = style.fill;
+      }
+
+      ctx.fillText(word.text, x, y);
     }
-  });
-}
-
-
-// ---- Supporting draw functions ----
-
-function drawNormalLine(ctx, line, style, x, y) {
-  if (style.stroke) {
-    ctx.lineWidth = style.strokeWidth;
-    ctx.strokeStyle = style.stroke;
-    ctx.strokeText(line, x, y);
-  }
-
-  ctx.fillStyle = style.fill;
-  ctx.fillText(line, x, y);
-}
-
-
-function drawHighlightedLine(ctx, line, wordList, highlightIdx, baseStyle, x, y) {
-  const words = line.split(" ");
-
-  let currentX = x - ctx.measureText(line).width / 2;
-
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i];
-    const width = ctx.measureText(w + " ").width;
-
-    const isActive = (i === highlightIdx);
-    const style = isActive ? CaptionStyles.highlightPrimary : baseStyle;
-
-    // Draw background
-    if (style.background) {
-      ctx.fillStyle = style.background;
-      ctx.fillRect(currentX - 4, y - 40, width + 8, 50);
-    }
-
-    // Draw stroke
-    if (style.stroke) {
-      ctx.lineWidth = style.strokeWidth;
-      ctx.strokeStyle = style.stroke;
-      ctx.strokeText(w, currentX + width / 2, y);
-    }
-
-    // Draw fill
-    ctx.fillStyle = style.fill;
-    ctx.fillText(w, currentX + width / 2, y);
-
-    currentX += width;
   }
 }
 
