@@ -1,29 +1,19 @@
 /**
- * LAYOUT ENGINE — ARCHITECTURE NOTES
- * ----------------------------------
- * Responsible for:
- *   - line wrapping
- *   - positioning
- *   - computing text widths
- *   - producing drawable geometry
+ * Layout utilities (Phase A).
  *
- * IMPORTANT SEPARATION OF CONCERNS:
- *   layout != style
- *   layout != drawing
- *   layout != caption parsing
+ * Responsibility:
+ *   - Basic text wrapping only.
  *
- * The layout engine says:
- *   "Given these words and this max width, how should lines break?"
+ * Knows:
+ *   - Canvas measurement API.
  *
- * Renderer says:
- *   "Given these positioned lines, draw them."
+ * Does NOT know:
+ *   - Styles
+ *   - Rendering
+ *   - Animation
  *
- * Caption model says:
- *   "Here are the words and timings."
- *
- * This separation ensures we can replace layout algorithms
- * (for example: ASS-like positioning, speaker regions,
- * per-line transforms) without rewriting renderer or model.
+ * Used by:
+ *   - LayoutEngine (temporary)
  */
 
 export function wrapLine(ctx, text, maxWidth) {

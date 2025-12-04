@@ -1,12 +1,17 @@
 /**
- * APPLY ANIMATIONS — PHASE A
- * ---------------------------
- * Purpose:
- *   Take a resolved style object and a list of animation names,
- *   and return a NEW style with time-based transforms applied.
+ * Animation application layer.
  *
- * Contract:
- *   (style, time, overrides[]) → animatedStyle
+ * Responsibility:
+ *   - Apply animation behaviors to resolved styles.
+ *
+ * Inputs:
+ *   - Base style
+ *   - Time (seconds)
+ *   - Animation names
+ *
+ * Does NOT:
+ *   - Modify layout geometry
+ *   - Know rendering or canvas rules
  */
 
 import { animations } from "./animationRegistry.js";

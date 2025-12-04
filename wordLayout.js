@@ -1,3 +1,15 @@
+/**
+ * Temporary word layout engine.
+ *
+ * Responsibility:
+ *   - Arrange words into lines
+ *   - Compute x,y positions
+ *
+ * Does NOT:
+ *   - Consider style rules (Phase A stub)
+ *   - Handle padding, containers, or scaling
+ */
+
 export function wrapWordsIntoLines(ctx, words, maxWidth) {
     const lines = [];
     let currentLine = { items: [], width: 0 };
