@@ -1,29 +1,16 @@
 /**
- * APPLICATION DRIVER — ARCHITECTURE NOTES
- * ---------------------------------------
- * This file wires the pieces together:
+ * Application driver.
  *
- *   - Loads the video
- *   - Captures frames using MediaStreamTrackProcessor
- *   - Calls captionRenderer with current time
- *   - Runs the preview loop
+ * Responsibility:
+ *   - Orchestrate video playback
+ *   - Run preview loop
+ *   - Forward time and context to renderer
  *
- * It MUST NOT:
- *   - contain styling rules
- *   - contain layout logic
- *   - mutate caption data
- *   - perform drawing beyond orchestrating modules
- *
- * FUTURE DIRECTION:
- *   When export arrives:
- *      - script.js will also run an offline render loop
- *        using the same renderer + layout pipeline.
- *
- *   When audio extraction + transcription arrives:
- *      - script.js will send audio to backend and then
- *        build captions via captionModel.
+ * Does NOT:
+ *   - Perform layout
+ *   - Handle style resolution
+ *   - Contain visual rules
  */
-
 import { drawCaptionForTime } from "./captionRenderer.js";
 
 document.addEventListener("DOMContentLoaded", () => {

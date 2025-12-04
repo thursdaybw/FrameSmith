@@ -1,15 +1,13 @@
 /**
- * ANIMATION REGISTRY — PHASE A
- * ----------------------------
- * Purpose:
- *   - Define animation "behaviors" as pure functions.
- *   - Each behavior receives the resolved static style and
- *     returns a NEW style with animated values applied.
+ * Animation behaviors registry.
  *
- * Architecture:
- *   - No knowledge of captions, layout, or rendering.
- *   - Pure functional transforms.
- *   - Time-based, deterministic.
+ * Responsibility:
+ *   - Provide pure functions: (style, t) → style
+ *
+ * Does NOT:
+ *   - Know layout
+ *   - Interact with presets
+ *   - Mutate state
  */
 
 import {

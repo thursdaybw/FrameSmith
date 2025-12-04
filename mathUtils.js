@@ -1,4 +1,11 @@
-// mathUtils.js
+/**
+ * Basic interpolation utilities.
+ *
+ * Responsibility:
+ *   - Numeric and color interpolation.
+ *
+ * Pure functions. No side effects.
+ */
 
 /**
  * Convert percent (0–100) to normalized t (0–1)
@@ -9,6 +16,7 @@ function normalizePercent(percent) {
 
 /**
  * Numeric interpolation: find the value at this percent from A to B.
+ * Lerp
  */
 export function getThePointAtPercentFromAtoB(percent, a, b) {
   const t = normalizePercent(percent);
@@ -17,6 +25,7 @@ export function getThePointAtPercentFromAtoB(percent, a, b) {
 
 /**
  * Color interpolation: find the hex color at this percent from A to B.
+ * Lerp colour
  */
 export function getTheColorAtPercentFromAtoB(percent, hexA, hexB) {
   const t = normalizePercent(percent);

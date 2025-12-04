@@ -1,30 +1,15 @@
 /**
- * STYLE PRESET SYSTEM — PHASE A
- * ------------------------------
- * Purpose:
- *   Provide a stable place where all visual appearance lives:
- *     - fonts
- *     - colors
- *     - outlines
- *     - padding
- *     - highlight colors
+ * Static style presets and resolution.
  *
- * Why now?
- *   The renderer must NOT own appearance.
- *   StylePreset allows the caption system to evolve without
- *   breaking export or layout.
+ * Responsibility:
+ *   - Define appearance defaults
+ *   - Apply preset + override hierarchy
  *
- * Future (Phase B):
- *   - Inline overrides per caption or per word
- *   - Animated styles (pulsing logo, fades)
- *   - Style inheritance trees
- *   - Resolution-aware scaling
- *
- * One-way door rule:
- *   Once export exists, style must be stable.
- *   So we establish this contract now—before export.
+ * Does NOT:
+ *   - Handle animations
+ *   - Compute layout
+ *   - Draw to canvas
  */
-
 
 // PHASE A: Minimal preset table
 export const stylePreset = {
