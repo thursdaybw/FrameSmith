@@ -53,13 +53,24 @@ export const stylePreset = {
  * Resolve a base style + an array of override names
  */
 export function resolveStyle(presetName, overrides = []) {
-  const base = stylePreset[presetName] || stylePreset.default;
+    const base = stylePreset[presetName] || stylePreset.default;
 
-  const applied = overrides
-    .map(name => stylePreset[name])
-    .filter(Boolean);
+    const applied = overrides
+        .map(name => stylePreset[name])
+        .filter(Boolean);
 
-  return Object.assign({}, base, ...applied);
+    const out = { ...base };
+
+    for (const override of applied) {
+        for (const key in override) {
+            // Only copy defined values
+            if (override[key] !== undefined) {
+                out[key] = override[key];
+            }
+        }
+    }
+
+    return out;
 }
 
 /**

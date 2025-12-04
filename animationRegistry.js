@@ -22,28 +22,29 @@ import {
  */
 export const animations = {
 
-  pulse: (style, t) => {
-    // t is seconds → convert to a looping percent 0–100
-    const oscillation = ((Math.sin(t * 6) + 1) / 2) * 100;
+    pulse: (style, t) => {
+        // Oscillates 0–100 percent
+        const oscillation = ((Math.sin(t * 6) + 1) / 2) * 100;
 
-    return {
-      ...style,
+        return {
+            ...style,
 
-      // Scale by percent (5% range)
-      fontSize: getThePointAtPercentFromAtoB(
-        oscillation,
-        style.fontSize,
-        style.fontSize * 1.05
-      ),
+            // Slight scale animation
+            fontSize: getThePointAtPercentFromAtoB(
+                oscillation,
+                style.fontSize,
+                style.fontSize * 1.05
+            ),
 
-      // Color shift toward #ffaa00
-      highlightFill: getTheColorAtPercentFromAtoB(
-        oscillation,
-        style.highlightFill,
-        "#ffaa00"
-      )
-    };
-  }
+            // Color pulse applied to FILL, not highlightFill
+            fill: getTheColorAtPercentFromAtoB(
+                oscillation,
+                style.fill,
+                "#ffaa00"
+            )
+        };
+    }
+
 
 };
 
