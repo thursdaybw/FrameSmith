@@ -29,3 +29,11 @@ This log prevents architectural drift and explains the reasoning behind changes.
 - Added RenderPlan as core evolution target.
 - Documented architecture evolution path in Architecture.md.
 
+---
+
+2025-03-XX — Moved active-word styling out of renderer
+- Renderer no longer chooses highlight behavior.
+- Added resolveActiveStyle() to isolate styling decisions.
+- highlightFill logic is no longer owned by the renderer.
+- Renderer remains responsible only for detecting active word (Phase A).
+- Prepares system for StyleResolver and future karaoke effects.

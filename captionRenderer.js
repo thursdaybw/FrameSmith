@@ -16,6 +16,7 @@ import { resolveStyle } from "./stylePreset.js";
 import { applyAnimations } from "./applyAnimations.js";
 import { wrapWordsIntoLines } from "./wordLayout.js";
 import { validateCaption } from "./captionValidator.js"; // optional but recommended
+import { resolveActiveStyle } from "./activeStyle.js";
 
 // NEW helper: compute *layout* style (static)
 function computeLayoutStyle(segment, word, presetName) {
