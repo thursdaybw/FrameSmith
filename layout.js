@@ -27,21 +27,21 @@
  */
 
 export function wrapLine(ctx, text, maxWidth) {
-  const parts = text.split(" ");
+  const words = text.split(/\s+/);
   const lines = [];
   let current = "";
 
-  for (let p of parts) {
-    const test = current ? current + " " + p : p;
+  for (let w of words) {
+    const test = current.length === 0 ? w : current + " " + w;
     if (ctx.measureText(test).width > maxWidth) {
       lines.push(current);
-      current = p;
+      current = w;
     } else {
       current = test;
     }
   }
 
-  if (current) lines.push(current);
+  if (current.length > 0) lines.push(current);
   return lines;
 }
 
