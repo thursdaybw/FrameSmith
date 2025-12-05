@@ -514,7 +514,7 @@ Documenting them preserves architectural integrity and protects the system from 
 All Phase A smells are temporary and will be eliminated as the RenderPlan becomes the single source of truth for all visual elements.
 
 
-## **1.X Export Architecture (Full MP4 With Audio)**
+## **1.12 Export Architecture (Full MP4 With Audio)**
 
 Framesmith’s MVP requires exporting final composited video with synchronized audio.
 The browser’s WebCodecs API provides **audio and video encoders**, but **does not provide a muxer**, and MP4 is a container format requiring one.
@@ -539,7 +539,7 @@ Without this layer, only raw elementary video streams would be possible.
 
 ---
 
-## **1.Y ExportEngine (Phase A Consolidation)**
+## **1.13 ExportEngine (Phase A Consolidation)**
 
 To produce final MP4 output, Framesmith introduces:
 
@@ -579,6 +579,38 @@ This split will occur once:
 * multi-track editing, transitions, and auto-editor features are added.
 
 The architecture requires this separation to maintain long-term flexibility and SRP compliance.
+
+---
+
+### MP4Box.js Dependency Strategy
+
+Framesmith requires MPEG-4 muxing capabilities for full MP4 export.
+Due to instability and structural changes in published CDN builds,
+the project cannot rely on external hosted artifacts.
+
+**Phase A Decision**
+For development and early MVP exports, Framesmith uses a pinned CDN version
+of MP4Box.js:
+
+  https://cdn.jsdelivr.net/npm/mp4box@2.3.0/dist/mp4box.all.js
+
+This use is temporary and explicitly non-production.
+
+**Phase B Decision**
+MP4Box.js will be vendored as source code under /vendor/mp4box.js.
+The library will be built using Docker to prevent contamination of the host with Node tooling:
+
+  git submodule add https://github.com/gpac/mp4box.js vendor/mp4box.js
+  git checkout v2.3.0 # or newer tag, this was latest at time of writing.
+
+  docker run --rm -v "$PWD/vendor/mp4box.js:/src" node:22 npm run build
+
+This ensures:
+  - deterministic builds
+  - total elimination of CDN fragility
+  - no reliance on npm at runtime
+  - no Node installation on the host
+  - sovereignty over the long-term export engine
 
 ---
 

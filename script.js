@@ -14,13 +14,21 @@
 import { drawCaptionForTime } from "./captionRenderer.js";
 import { createRenderPlan, createImageNode } from "./renderPlan/RenderPlan.js";
 import { renderFrame } from "./renderPlan/RenderPlanRenderer.js";
+import { ExportEngine } from "./export/ExportEngine.js";
 
 document.addEventListener("DOMContentLoaded", () => {
 
+  let exportEngine = null;
+
   const renderPlan = createRenderPlan();
+  const exportBtn = document.getElementById("export");
 
   const logoImg = new Image();
   logoImg.src = "./logo.png"; // replace with your file
+
+  const video = document.getElementById("v");
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
 
   // captions hard-coded temporary
   // TEMPORARY: synthetic caption list (until Whisper import)
@@ -98,9 +106,6 @@ document.addEventListener("DOMContentLoaded", () => {
     ];
 
 
-  const video = document.getElementById("v");
-  const canvas = document.getElementById("c");
-  const ctx = canvas.getContext("2d");
 
   document.getElementById("run").onclick = async () => {
     await video.play().catch(console.error);
@@ -113,46 +118,77 @@ document.addEventListener("DOMContentLoaded", () => {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-      // Now that video metadata is loaded, scale the logo correctly
-      const targetWidth = canvas.width * 0.30;  // 30% of video width
-      const aspect = logoImg.naturalHeight / logoImg.naturalWidth;
-      const targetHeight = targetWidth * aspect;
+    // Now that video metadata is loaded, scale the logo correctly
+    const targetWidth = canvas.width * 0.30;  // 30% of video width
+    const aspect = logoImg.naturalHeight / logoImg.naturalWidth;
+    const targetHeight = targetWidth * aspect;
 
-      renderPlan.elements.push(
-          createImageNode(logoImg, 20, 20, targetWidth, targetHeight)
-      );
+    renderPlan.elements.push(
+      createImageNode(logoImg, 20, 20, targetWidth, targetHeight)
+    );
 
 
     const track = video.captureStream().getVideoTracks()[0];
     const processor = new MediaStreamTrackProcessor({ track });
     const reader = processor.readable.getReader();
 
-    async function loop() {
-      const { value: frame, done } = await reader.read();
-      if (done || !frame) return;
-
-        renderFrame({
-            videoFrame: frame,
-            renderPlan,
-            captions,
-            ctx,
-            canvas,
-            t: video.currentTime
-        });
-
-        frame.close();
-
-      requestAnimationFrame(loop);
+    // Audio track setup for export
+    const audioTrack = video.captureStream().getAudioTracks()[0];
+    if (audioTrack) {
+        console.log("audioTrack:", audioTrack);
+        console.log("audio settings:", audioTrack.getSettings());
+        console.log("audio constraints:", audioTrack.getConstraints());
     }
+
+      async function loop() {
+          const { value: frame, done } = await reader.read();
+          if (done || !frame) return;
+
+          // Compose full frame (video + overlays + captions)
+          renderFrame({
+              videoFrame: frame,
+              renderPlan,
+              captions,
+              ctx,
+              canvas,
+              t: video.currentTime
+          });
+
+          // Encode the composed frame
+          const timestamp = Math.floor(video.currentTime * 1_000_000); // microseconds
+
+          frame.close();
+
+          requestAnimationFrame(loop);
+      }
 
     loop();
   };
 
-window.debugSetTime = (t) => {
-  video.currentTime = t;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawCaptionForTime(t, ctx, canvas, captions, "default");
-};
+    exportBtn.onclick = async () => {
+        if (!exportEngine) {
+            console.warn("ExportEngine not initialized. Click Run first.");
+            return;
+        }
+
+        console.log("Finalizing export...");
+        const mp4 = await exportEngine.finalize();
+        downloadBlob(mp4, "framesmith_output.mp4");
+    };
+
+    window.debugSetTime = (t) => {
+        video.currentTime = t;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawCaptionForTime(t, ctx, canvas, captions, "default");
+    };
 
 });
 
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
