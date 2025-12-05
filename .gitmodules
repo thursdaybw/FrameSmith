@@ -1,0 +1,3 @@
+[submodule "vendor/mp4box.js"]
+	path = vendor/mp4box.js
+	url = https://github.com/gpac/mp4box.js

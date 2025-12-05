@@ -132,4 +132,13 @@ This log prevents architectural drift and explains the reasoning behind changes.
 - Animation in `RenderPlanRenderer` will be relocated to a unified animation 
   dispatcher in Phase B.
 - This completes the core rendering seam required for WP4Box-based MP4 export.
+---
 
+## 2025-03-05 — MP4Box.js Vendor Strategy Formalized
+
+- CDN instability confirmed (unexpected export syntax, 404s, mismatched bundles).
+- MVP will temporarily consume a pinned CDN build for velocity.
+- Production plan adopted:
+    - vendor MP4Box.js source via git submodule or fork
+    - build artifact locally using Docker to avoid host Node installation
+- Ensures long-term stability, version-locking, and sovereign control over media export pipeline.
