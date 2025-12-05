@@ -12,8 +12,14 @@
  *   - Contain visual rules
  */
 import { drawCaptionForTime } from "./captionRenderer.js";
+import { createRenderPlan, createImageNode } from "./renderPlan/RenderPlan.js";
 
 document.addEventListener("DOMContentLoaded", () => {
+
+  const renderPlan = createRenderPlan();
+
+  const logoImg = new Image();
+  logoImg.src = "./logo.png"; // replace with your file
 
   // captions hard-coded temporary
   // TEMPORARY: synthetic caption list (until Whisper import)
@@ -106,6 +112,16 @@ document.addEventListener("DOMContentLoaded", () => {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
+      // Now that video metadata is loaded, scale the logo correctly
+      const targetWidth = canvas.width * 0.30;  // 30% of video width
+      const aspect = logoImg.naturalHeight / logoImg.naturalWidth;
+      const targetHeight = targetWidth * aspect;
+
+      renderPlan.elements.push(
+          createImageNode(logoImg, 20, 20, targetWidth, targetHeight)
+      );
+
+
     const track = video.captureStream().getVideoTracks()[0];
     const processor = new MediaStreamTrackProcessor({ track });
     const reader = processor.readable.getReader();
@@ -116,6 +132,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
       ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
       frame.close();
+
+        if (renderPlan && renderPlan.elements) {
+            for (const node of renderPlan.elements) {
+                if (node.type === "image") {
+
+                    // Begin logo animation (simple pulse)
+                    const pulse = 0.05 * Math.sin(video.currentTime * 4); 
+                    const scale = 1 + pulse;
+
+                    const w = node.props.width;
+                    const h = node.props.height;
+                    const x = node.props.x;
+                    const y = node.props.y;
+
+                    const drawW = w * scale;
+                    const drawH = h * scale;
+
+                    // Anchor is top-left, so adjust to keep position stable
+                    const offsetX = x - (drawW - w) / 2;
+                    const offsetY = y - (drawH - h) / 2;
+
+                    ctx.drawImage(node.props.image, offsetX, offsetY, drawW, drawH);
+
+                }
+            }
+        }
 
       drawCaptionForTime(video.currentTime, ctx, canvas, captions, "default");
 

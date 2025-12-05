@@ -34,3 +34,21 @@ export function createRenderPlan() {
     elements: []  // array of top-level nodes
   };
 }
+
+/**
+ * Convenience: create an image node for overlays/logos.
+ * props:
+ *   - image: HTMLImageElement
+ *   - x, y: coordinates
+ *   - width, height: optional scaling
+ */
+export function createImageNode(image, x, y, width = null, height = null) {
+  return createRenderPlanNode("image", {
+    image,
+    x,
+    y,
+    width,
+    height
+  });
+}
+
