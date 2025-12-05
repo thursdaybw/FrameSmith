@@ -24,6 +24,17 @@
  *   Centralizes layout truth under StylePreset.
  *   Prevents renderer from owning geometric rules.
  *   Ensures deterministic behavior for future RenderPlan.
+ *
+ * LAYOUT ENGINE — RenderPlan Seam
+ *
+ * Current Output:
+ *   - Returns a temporary structure: { lines[], items[] }
+ *
+ * Future Output:
+ *   - This module will build RenderPlan nodes directly.
+ *
+ * This comment exists to prevent the layout engine from encoding
+ * renderer-specific assumptions or mixing style/animation logic.
  */
 export function wrapWordsIntoLines(ctx, words, maxWidth) {
     const lines = [];

@@ -87,6 +87,22 @@ export function drawCaptionForTime(t, ctx, canvas, captions, presetName = "defau
    */
   const lines = wrapWordsIntoLines(ctx, seg.words, canvas.width, layoutStyle);
 
+    /**
+     * RENDERPLAN SEAM (Phase Zero)
+     *
+     * The renderer currently receives { lines, items } from the layout engine.
+     * In future phases, this will be replaced by a RenderPlan structure
+     * produced by the LayoutEngine and Effects/Animation layers.
+     *
+     * DO NOT allow renderer to depend on layout-specific shapes.
+     * DO NOT allow renderer to compute geometry.
+     *
+     * This seam ensures we can introduce:
+     *   - multi-element captions
+     *   - emoji overlays
+     *   - bounding boxes
+     *   - timeline-based compositing
+     */
   // Now draw, word by word, with animated transforms
   for (const line of lines) {
     for (const item of line.items) {

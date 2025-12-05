@@ -48,11 +48,24 @@ Animations are pure functions:
 Layout always uses static styles.
 
 ## 1.6 Everything Evolves Toward RenderPlan
+
 The long-term architecture converges on:
 
 Model → LayoutEngine → RenderPlan → Renderer → Export
 
 RenderPlan becomes the canonical description of the frame.
+
+In the MVP, RenderPlan is used in a limited capacity to merge caption
+layout nodes with a logo overlay node, enabling multi-element rendering
+without replacing the existing caption layout structure.
+
+Because the MVP now includes multiple drawable element types
+(captions + logo overlay), the RenderPlan abstraction becomes an active
+part of the system earlier than originally anticipated. For the MVP,
+RenderPlan is used only to unify caption nodes with a single logo node,
+while caption layout continues to use the temporary structure. This
+provides multi-element compositing immediately, without committing to
+the full RenderPlan system yet.
 
 ## 1.7 Effects Layer (State-Driven Style Transform)
 
@@ -80,6 +93,11 @@ Effects do not:
 - draw to canvas
 - store state
 
+### MVP Note: Logo as Effect Target
+The pulsing logo uses the same style mutation mechanism as captions.
+This validates the effect pipeline without expanding the effects system
+beyond MVP requirements.
+
 The Effects Layer is essential for supporting modern short-form caption styles (TikTok, Reels, Shorts) and advanced presentation features.
 
 ---
@@ -90,7 +108,7 @@ The Effects Layer is essential for supporting modern short-form caption styles (
 → LayoutEngine
 → StyleResolver
 → AnimationEngine
-→ RenderPlan
+→ RenderPlan (partial: caption nodes + logo node)
 → Renderer
 → Export
 
@@ -127,6 +145,7 @@ Each stage transforms data without side effects.
 
 ## Renderer
 - Reads RenderPlan or temporary structures.
+- Must support drawing multiple element types (e.g., word, logo).
 - Draws primitives onto canvas.
 - Stateless and deterministic.
 

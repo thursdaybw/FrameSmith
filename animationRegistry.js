@@ -34,7 +34,7 @@ export const animations = {
                 style.fontSize * 1.05
             ),
 
-            // Color pulse applied to FILL, not highlightFill
+            // Color pulse applied to FILL
             fill: getTheColorAtPercentFromAtoB(
                 oscillation,
                 style.fill,

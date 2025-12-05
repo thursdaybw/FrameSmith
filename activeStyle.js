@@ -16,12 +16,20 @@
  *   Renderer becomes a mechanical drawer with no appearance logic.
  */
 
-import { activeWordEffect } from "./effects/activeWordEffect.js";
+import { activeEffects } from "./effects/effectRegistry.js";
 
+/**
+ * resolveActiveStyle(style, isActive)
+ *
+ * Determines which style to apply to an active word.
+ * Delegates to the effect registry, ensuring extensibility.
+ */
 export function resolveActiveStyle(style, isActive) {
   if (!isActive) return style;
 
   // Phase A: appearance decided by the effect system
-  return activeWordEffect(style);
+  // MVP: always use "default" effect
+  const effectFn = activeEffects.default;
+  return effectFn(style);
 }
 
