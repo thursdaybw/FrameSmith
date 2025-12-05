@@ -78,3 +78,58 @@ This log prevents architectural drift and explains the reasoning behind changes.
 - Implementation deliberately lives in script.js as a safe, temporary integration layer.
 - Prepares system for future structured layout engines for images, titles, and overlays.
 
+---
+
+## 2025-03-05 — Unified Animation Model and Elimination of Parallel Registries
+
+- Identified a conceptual smell: animationRegistry was implicitly caption-specific,
+  conflicting with upcoming overlay and video-track animations.
+- Clarified that Framesmith uses a *single conceptual animation namespace*
+  (e.g., "pulse" means the same animation concept everywhere).
+- Established that animations apply polymorphically to RenderPlan node types,
+  with different execution paths for words, image overlays, and video clips.
+- Prevented the creation of parallel animation registries (caption vs overlay)
+  which would cause architectural drift.
+- Confirmed the long-term model: animations operate at the RenderPlan node level,
+  with node-type dispatch determining practical behavior.
+- Phase A note: caption animations remain in the caption pipeline temporarily,
+  while overlay animations are handled inside RenderPlanRenderer until the unified
+  animation dispatcher is introduced.
+
+---
+
+## **2025-03-05 — ExportEngine Consolidation + MP4 Muxer Decision**
+
+* Chose **full MP4 export with audio** as a non-negotiable MVP requirement.
+* Documented that WebCodecs cannot mux audio and video into MP4 on its own.
+* Adopted **MP4Box.js** as the official muxing layer for Framesmith.
+* Introduced a Phase A `ExportEngine` that temporarily handles:
+
+  * video encoding,
+  * audio encoding,
+  * muxing.
+* This consolidation is explicitly temporary and will be split into:
+
+  * `VideoEncoderEngine`,
+  * `AudioEncoderEngine`,
+  * `MuxerEngine`,
+  * `ExportOrchestrator`,
+    in Phase B as multi-track rendering is introduced.
+* Ensures clean evolution toward a professional-grade compositor without locking the MVP into a premature or brittle export architecture.
+
+---
+
+## 2025-03-05 — Added RenderPlanRenderer and Temporary Overlay Animation
+
+- Introduced `RenderPlanRenderer` as the top-level compositor responsible for:
+  - drawing the video frame,
+  - drawing overlay nodes,
+  - delegating caption rendering.
+- Removed all overlay drawing from `captionRenderer` and `script.js` to respect
+  caption vs overlay boundaries.
+- Moved temporary overlay pulse animation into `RenderPlanRenderer` as a
+  deliberate Phase A concession.
+- Animation in `RenderPlanRenderer` will be relocated to a unified animation 
+  dispatcher in Phase B.
+- This completes the core rendering seam required for WP4Box-based MP4 export.
+

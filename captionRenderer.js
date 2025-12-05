@@ -59,16 +59,6 @@ export function drawCaptionForTime(t, ctx, canvas, captions, presetName = "defau
   const seg = captions.find(c => t >= c.start && t < c.end);
   if (!seg) return;
 
-  if (window.renderPlan && window.renderPlan.elements) {
-    for (const node of window.renderPlan.elements) {
-      if (node.type === "image") {
-        const { image, x, y, width, height } = node.props;
-        if (width && height) ctx.drawImage(image, x, y, width, height);
-        else ctx.drawImage(image, x, y);
-      }
-    }
-  }
-
   // Optional dev safety check
   if (typeof validateCaption === "function") {
     validateCaption(seg);

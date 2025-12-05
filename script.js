@@ -13,6 +13,7 @@
  */
 import { drawCaptionForTime } from "./captionRenderer.js";
 import { createRenderPlan, createImageNode } from "./renderPlan/RenderPlan.js";
+import { renderFrame } from "./renderPlan/RenderPlanRenderer.js";
 
 document.addEventListener("DOMContentLoaded", () => {
 
@@ -130,36 +131,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const { value: frame, done } = await reader.read();
       if (done || !frame) return;
 
-      ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-      frame.close();
+        renderFrame({
+            videoFrame: frame,
+            renderPlan,
+            captions,
+            ctx,
+            canvas,
+            t: video.currentTime
+        });
 
-        if (renderPlan && renderPlan.elements) {
-            for (const node of renderPlan.elements) {
-                if (node.type === "image") {
-
-                    // Begin logo animation (simple pulse)
-                    const pulse = 0.05 * Math.sin(video.currentTime * 4); 
-                    const scale = 1 + pulse;
-
-                    const w = node.props.width;
-                    const h = node.props.height;
-                    const x = node.props.x;
-                    const y = node.props.y;
-
-                    const drawW = w * scale;
-                    const drawH = h * scale;
-
-                    // Anchor is top-left, so adjust to keep position stable
-                    const offsetX = x - (drawW - w) / 2;
-                    const offsetY = y - (drawH - h) / 2;
-
-                    ctx.drawImage(node.props.image, offsetX, offsetY, drawW, drawH);
-
-                }
-            }
-        }
-
-      drawCaptionForTime(video.currentTime, ctx, canvas, captions, "default");
+        frame.close();
 
       requestAnimationFrame(loop);
     }
