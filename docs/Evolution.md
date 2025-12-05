@@ -54,3 +54,16 @@ This log prevents architectural drift and explains the reasoning behind changes.
 - No visual changes, but architectural consistency restored.
 - Layout rules are now declarative, testable, and ready for future LayoutEngine.
 
+---
+
+## **2025-03-XX — Introduced RenderPlan Seam and Effect Registry**
+
+* Added initial RenderPlan directory with placeholder node factories.
+* Renderer annotated with a RenderPlan seam to prevent layout–renderer coupling.
+* Added functional Effect Registry with `default` active-word effect.
+* `resolveActiveStyle` now delegates to the effect registry, establishing a clean extension point.
+* No runtime behavior changed except routing active-word styling through the registry.
+* Lays foundation for future effects (typewriter, slide-up, emoji bursts) without impacting MVP.
+
+---
+
