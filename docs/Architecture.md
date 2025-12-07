@@ -67,6 +67,29 @@ while caption layout continues to use the temporary structure. This
 provides multi-element compositing immediately, without committing to
 the full RenderPlan system yet.
 
+## **1.6.1 RenderPlan Arrived Earlier Than Expected (Empirical Update)**
+
+During Phase A integration with WebCodecs, it became clear that multi-element compositing (video frame plus captions plus overlay image) cannot be implemented cleanly without an intermediate declarative layer.
+
+As a result:
+
+* RenderPlan entered the MVP earlier than planned
+* but in a **limited** and **scaffolded** form
+* not yet replacing caption layout
+* only representing global overlay nodes and minor state
+
+This early adoption:
+
+1. prevents renderer lock-in
+2. cleanly separates caption-semantic content from global overlays
+3. establishes the architectural seam required for compositing, encoding, and future multi-track editing
+
+Even though the MVP RenderPlan is minimal, the seam is now **mandatory**, not optional.
+
+RenderPlan will grow to become the canonical frame description, but early exposure happened **organically**, not by premature design.
+
+---
+
 ## 1.7 Effects Layer (State-Driven Style Transform)
 
 Effects are declarative, state-based transformations applied to elements in the RenderPlan.
@@ -539,6 +562,59 @@ Without this layer, only raw elementary video streams would be possible.
 
 ---
 
+# **1.12.1 Corrected: WebCodecs Export Reality (Phase A Revision)** ## **2. MP4 Muxing Is a Required Part of Phase A** Raw H.264 output was initially considered a temporary validation tool, but Phase A implementation revealed critical limitations: * overlay nodes do not appear in raw streams captions cannot be verified timing cannot be validated playback jitter masks pipeline bugs players disagree on timestamp interpretation users cannot open raw H.264 files on most platforms Therefore: ### ✔ **MP4 muxing is now a mandatory Phase A requirement.**
+It is not deferred to Phase B.
+
+The MVP must produce:
+
+* a playable MP4 file
+* correct MP4 timestamps
+* encoded overlays
+* encoded captions
+* correct frame pacing
+* audio pass-through
+
+This is necessary to validate:
+
+* the compositor works
+* timestamps are monotonic and correct
+* overlays are truly encoded
+* captions appear correctly in the export
+* WebCodecs is producing correct bitstreams
+
+Without an MP4 container, none of these requirements can be reliably tested.
+
+---
+
+# **Corrected Architecture Rule**
+
+### ✔ "The MVP must mux video (and optionally audio) into a valid MP4 file in Phase A."
+
+This replaces the earlier assumption that MP4 muxing could be postponed.
+
+---
+
+# **1.12.2 Raw H.264 Is Not Sufficient**
+
+Raw Annex B streams can be used to inspect the encoder, but they **cannot** validate the MVP’s core features:
+
+| MVP Requirement                       | Raw H.264 | MP4   |
+| ------------------------------------- | --------- | ----- |
+| Confirm overlay node rendering        | ❌ No      | ✔ Yes |
+| Confirm caption rendering             | ❌ No      | ✔ Yes |
+| Confirm timestamp pacing              | ❌ No      | ✔ Yes |
+| Confirm smooth playback               | ❌ No      | ✔ Yes |
+| Confirm interop with social platforms | ❌ No      | ✔ Yes |
+| Confirm export engine correctness     | ❌ No      | ✔ Yes |
+
+Therefore:
+
+### ✔ Raw H.264 is now considered *debug output only*.
+
+### ✔ The *real MVP output* must be MP4.
+
+---
+
 ## **1.13 ExportEngine (Phase A Consolidation)**
 
 To produce final MP4 output, Framesmith introduces:
@@ -603,7 +679,8 @@ The library will be built using Docker to prevent contamination of the host with
   git submodule add https://github.com/gpac/mp4box.js vendor/mp4box.js
   git checkout v2.3.0 # or newer tag, this was latest at time of writing.
 
-  docker run --rm -v "$PWD/vendor/mp4box.js:/src" node:22 npm run build
+  docker run --rm   -v "$PWD/vendor/mp4box.js:/src"   -w /src   node:22 bash -c "npm install && npm run build:all"
+
 
 This ensures:
   - deterministic builds
@@ -614,7 +691,151 @@ This ensures:
 
 ---
 
-# 3. Module Responsibilities
+### **3. The Compositor Must Feed Encoded Frames**
+
+RenderPlanRenderer (or temporary composite function) must produce a full rasterized frame for every decoded input frame.
+This ensures:
+
+* predictable encode loop
+* stable frame pacing
+* single composition path in MVP
+
+### **4. Demuxer Must Provide avcC**
+
+WebCodecs requires the AVCDecoderConfigurationRecord.
+MP4Box.js parses it correctly.
+Therefore:
+
+**Demuxers must implement getAvcCBuffer().**
+
+This is now a required interface method for all future demuxers.
+
+
+## **1.13.1 Decode → Composite → Encode Pipeline (Empirical Update)**
+
+Phase A revealed that a clean export pipeline requires these strict boundaries:
+
+### **1. Demuxer produces compressed samples**
+
+No decoding or interpretation.
+Just sample objects:
+
+```
+{ type, timestamp, duration, data }
+```
+
+### **2. VideoDecoder outputs frames synchronously into compositor**
+
+ExportEngine’s decode callback must:
+
+* composite the video frame
+* composite overlay nodes
+* composite captions
+* produce a raster canvas
+* send the frame to VideoEncoder
+
+The compositor is now formally part of the export pipeline.
+
+### **3. VideoEncoder receives strictly monotonic timestamps**
+
+Encoding correctness and deterministic output depend on this.
+
+### **4. ExportEngine owns the mechanical pipeline**
+
+ExportEngine does not:
+
+* pick fonts
+* compute layout
+* define RenderPlan
+* interpret caption timing
+
+It is a **mechanical orchestration layer**, not a semantic one.
+
+This is Clean Architecture.
+
+---
+
+
+## **1.14 MVP Architecture Guarantees (Derived from Real Constraints)**
+
+During MP4 export integration, several architecture requirements emerged naturally:
+
+### **1. RenderPlan seam is required in MVP**
+
+Even minimal, RenderPlan must exist so:
+
+* overlays do not pollute caption renderer
+* compositor has a place to read overlay nodes
+* export pipeline has a declarative source of truth
+
+### **2. Caption pipeline remains separate**
+
+CaptionRenderer continues drawing captions independently, because:
+
+* caption-semantic elements behave differently
+* early RenderPlan does not include caption subtree
+
+### **3. ExportEngine acts as a temporary orchestrator**
+
+Because:
+
+* decode callback must composite
+* composite output must encode
+* encoder queues must be drained deterministically
+
+In Phase B, this is split.
+But for MVP, this is architectural reality.
+
+### **4. No part of MVP code blocks future RenderPlan adoption**
+
+All seams and boundaries preserve the ability to:
+
+* move captions into RenderPlan later
+* add layers
+* add effects
+* add animation tracks
+* add multi-track compositing
+
+The MVP remains fully upgradable.
+
+---
+
+# ✔ REQUIRED SECTION: 1.15 What the MVP Does NOT Require
+
+This prevents overbuilding.
+
+---
+
+## **1.15 What the MVP Does NOT Require**
+
+The MVP does *not* require:
+
+* caption subtree in RenderPlan
+* full animation polymorphism
+* multi-track compositor
+* effect nodes
+* structured RenderPlan schemas
+* ExportOrchestrator
+* Audio re-encoding
+* video clip timeline
+* color grading
+* parameterized animation tracks
+
+These belong to Phase B and Phase C.
+
+The MVP needs only:
+
+* captionRenderer
+* RenderPlanRenderer
+* a minimal RenderPlan containing just overlay nodes
+* ExportEngine with compositing
+* a demuxer with avcC support
+
+This small subset is enough to ship.
+
+---
+
+# Module Responsibilities
 
 ## CaptionModel
 - Converts Whisper JSON into internal segments.

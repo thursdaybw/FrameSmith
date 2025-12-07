@@ -3,7 +3,7 @@
  *
  * Responsibility:
  *   - Orchestrate video playback
- *   - Run preview loop
+ *   - Run preview playbackRenderLoop
  *   - Forward time and context to renderer
  *
  * Does NOT:
@@ -15,10 +15,9 @@ import { drawCaptionForTime } from "./captionRenderer.js";
 import { createRenderPlan, createImageNode } from "./renderPlan/RenderPlan.js";
 import { renderFrame } from "./renderPlan/RenderPlanRenderer.js";
 import { ExportEngine } from "./export/ExportEngine.js";
+import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js"
 
 document.addEventListener("DOMContentLoaded", () => {
-
-  let exportEngine = null;
 
   const renderPlan = createRenderPlan();
   const exportBtn = document.getElementById("export");
@@ -28,7 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const video = document.getElementById("v");
   const canvas = document.getElementById("c");
-  const ctx = canvas.getContext("2d");
+  const context = canvas.getContext("2d");
 
   // captions hard-coded temporary
   // TEMPORARY: synthetic caption list (until Whisper import)
@@ -106,7 +105,6 @@ document.addEventListener("DOMContentLoaded", () => {
     ];
 
 
-
   document.getElementById("run").onclick = async () => {
     await video.play().catch(console.error);
 
@@ -140,7 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("audio constraints:", audioTrack.getConstraints());
     }
 
-      async function loop() {
+      async function playbackRenderLoop() {
           const { value: frame, done } = await reader.read();
           if (done || !frame) return;
 
@@ -149,7 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
               videoFrame: frame,
               renderPlan,
               captions,
-              ctx,
+              context,
               canvas,
               t: video.currentTime
           });
@@ -159,36 +157,91 @@ document.addEventListener("DOMContentLoaded", () => {
 
           frame.close();
 
-          requestAnimationFrame(loop);
+          requestAnimationFrame(playbackRenderLoop);
       }
 
-    loop();
+    playbackRenderLoop();
   };
 
+    // -------------------------------------------------------------
+    // EXPORT BUTTON — lazy initialization of ExportEngine
+    // -------------------------------------------------------------
     exportBtn.onclick = async () => {
-        if (!exportEngine) {
-            console.warn("ExportEngine not initialized. Click Run first.");
-            return;
-        }
+        console.log("Starting export...");
 
-        console.log("Finalizing export...");
-        const mp4 = await exportEngine.finalize();
-        downloadBlob(mp4, "framesmith_output.mp4");
-    };
+        // Load file bytes
+        const response = await fetch(video.src);
+        console.log("onclick A");
+        const arrayBuffer = await response.arrayBuffer();
+        console.log("arrayBuffer.byteLength =", arrayBuffer.byteLength);
+        console.log("onclick B");
 
-    window.debugSetTime = (t) => {
-        video.currentTime = t;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawCaptionForTime(t, ctx, canvas, captions, "default");
+        // Create demuxer
+        const demuxer = new Mp4BoxDemuxer(arrayBuffer);
+        console.log("onclick C");
+
+        // Create export engine
+        const exportEngine = new ExportEngine({
+            demuxer,
+            fps: 30,
+            renderPlan,
+            captions
+        });
+        console.log("onclick D");
+        // Load samples from demuxer
+        await exportEngine.load();
+
+        // Run export
+        console.log("onclick E");
+        await exportEngine.export();   // run decode → composite → encode
+        console.log("onclick F");
+        const blob = exportEngine.getFinalBlob();
+        console.log("onclick G");
+        console.log("blob size =", blob.size);
+        //downloadBlob(blob, "framesmith.mp4");
+        downloadBlob(blob, "framesmith.h264");
+
     };
 
 });
 
 function downloadBlob(blob, filename) {
+    console.log("STEP0: downloadBlob CALLED, blob.size =", blob.size);
+
+    // NEW: dump the blob to the window for manual inspection
+    window.__lastBlob = blob;
+    console.log("STEP0b: saved blob to window.__lastBlob");
+
     const url = URL.createObjectURL(blob);
+    console.log("STEP1: object URL =", url);
+
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
+
+    document.body.appendChild(a);
+    console.log("STEP2: anchor appended to DOM:", a);
+
+    a.addEventListener("click", () => {
+        console.log("STEP3: anchor CLICK event fired");
+    });
+
+    console.log("STEP4: calling a.click()");
     a.click();
-    URL.revokeObjectURL(url);
+
+    console.log("STEP5: after a.click() (if this prints, JS did not crash)");
+
+    // clean up later
+    setTimeout(() => {
+        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        console.log("STEP6: object URL revoked and anchor removed");
+    }, 5000);
 }
+
+window.downloadBlob = downloadBlob;
+
+window.testDownload = () => {
+    const blob = new Blob(["hello"], { type: "text/plain" });
+    downloadBlob(blob, "test.txt");
+};

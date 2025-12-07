@@ -24,13 +24,13 @@ export function renderFrame({
   videoFrame,
   renderPlan,
   captions,
-  ctx,
+  context,
   canvas,
   t
 }) {
   // 1. Draw video frame
   if (videoFrame) {
-    ctx.drawImage(videoFrame, 0, 0, canvas.width, canvas.height);
+    context.drawImage(videoFrame, 0, 0, canvas.width, canvas.height);
   }
 
   // 2. Draw overlay nodes
@@ -49,12 +49,12 @@ export function renderFrame({
         const offsetX = x - (drawW - width) / 2;
         const offsetY = y - (drawH - height) / 2;
 
-        ctx.drawImage(image, offsetX, offsetY, drawW, drawH);
+        context.drawImage(image, offsetX, offsetY, drawW, drawH);
       }
     }
   }
 
   // 3. Draw captions (delegated)
-  drawCaptionForTime(t, ctx, canvas, captions, "default");
+  drawCaptionForTime(t, context, canvas, captions, "default");
 }
 
