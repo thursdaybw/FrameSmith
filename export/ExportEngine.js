@@ -1,204 +1,321 @@
 /**
- * ExportEngine (Phase A — Consolidated)
+ * ExportEngine (Phase A — Decode → Composite → Encode)
  *
- * Responsibility:
- *   - Encode video frames (WebCodecs VideoEncoder)
- *   - Encode audio track (WebCodecs AudioEncoder)
- *   - Mux audio + video into MP4 (via MP4Box.js)
+ * Responsibilities:
+ *   - Receive compressed video samples from an injected Demuxer
+ *   - Decode samples into VideoFrames using WebCodecs
+ *   - Composite each decoded frame via RenderPlanRenderer
+ *       (video frame + captions + overlays)
+ *   - Encode the composited frames into H.264 chunks using WebCodecs
+ *   - Accumulate encoded chunks for Phase B muxing
  *
- * Temporary Phase A Note:
- *   This module combines responsibilities that will later be split into:
- *     - VideoEncoderEngine
- *     - AudioEncoderEngine
- *     - MuxerEngine
- *     - ExportOrchestrator
+ * This class does NOT:
+ *   - Mux the encoded chunks into an MP4 container (Phase B)
+ *   - Handle audio (Phase B)
+ *   - Perform layout or style resolution
+ *   - Generate or interpret RenderPlan structures
  *
- *   This temp combination is deliberate and documented.
+ * Architectural Principles:
+ *   - Demuxer is injected (Dependency Inversion)
+ *   - Rendering intent (renderPlan, captions) is injected
+ *   - ExportEngine owns only the mechanical pipeline:
+ *         decode → composite → encode → collect
+ *   - No method performs more than one conceptual task
  */
 
+import { renderFrame } from "../renderPlan/RenderPlanRenderer.js";
+import { muxToMp4 } from "../src/mux/muxToMp4.js";
+import { validateEncodedSample } from "../src/types/EncodedSampleLike.js";
+
 export class ExportEngine {
-  constructor({ canvas, fps = 30, MP4Box }) {
 
-    console.log("Audio encoder created. No config yet.");
-
-    this.MP4Box = MP4Box;
-
-    this.canvas = canvas;
-    this.fps = fps;
-
-    this.videoChunks = [];
-    this.audioChunks = [];
-
-    this.ready = false;
-
-    this._initVideoEncoder();
-    this._initAudioEncoder();
-  }
-
-  /* -------------------------------------------------------------
-   * VIDEO ENCODER
-   * ------------------------------------------------------------- */
-  _initVideoEncoder() {
-    this.videoEncoder = new VideoEncoder({
-      output: (chunk) => {
-        this.videoChunks.push(chunk);
-      },
-      error: (e) => console.error("VideoEncoder error:", e)
-    });
-
-    this.videoEncoder.configure({
-      codec: "avc1.640033",
-      width: this.canvas.width,
-      height: this.canvas.height,
-      bitrate: 5_000_000,
-      framerate: this.fps
-    });
-  }
-
-  /* -------------------------------------------------------------
-   * AUDIO ENCODER
-   * ------------------------------------------------------------- */
-  _initAudioEncoder() {
-    this.audioEncoder = new AudioEncoder({
-      output: (chunk) => {
-        this.audioChunks.push(chunk);
-      },
-      error: (e) => console.error("AudioEncoder error:", e)
-    });
-
-    console.log(">>> AUDIO ENCODER CREATED (not configured)");
-    this.deferAudioConfig = true;
-
-    // Most browsers deliver 48kHz audio — we detect dynamically later
-    this.audioEncoderConfigured = false;
-  }
-
-  configureAudioFromTrack(audioTrack) {
-    const processor = new MediaStreamTrackProcessor({ track: audioTrack });
-    this.audioReader = processor.readable.getReader();
-
-    // We can't configure until we see first chunk (need sample rate)
-    this.deferAudioConfig = true;
-  }
-
-  /* -------------------------------------------------------------
-   * ENCODE LOOP — VIDEO
-   * ------------------------------------------------------------- */
-  async encodeVideoFrame(canvas, timestamp) {
-    const frame = new VideoFrame(canvas, { timestamp });
-
-    this.videoEncoder.encode(frame);
-    frame.close();
-  }
-
-  /* -------------------------------------------------------------
-   * ENCODE LOOP — AUDIO
-   * ------------------------------------------------------------- */
-    async pumpAudio() {
-
-        console.log("pumpAudio");
-
-        if (!this.audioReader) return;
-
-        console.log("pumpAudio after checking audioReader");
-
-        const { value, done } = await this.audioReader.read();
-
-        console.log("RAW AUDIO FRAME:", {
-            valueType: value?.constructor?.name,
-            numberOfChannels: value?.numberOfChannels,
-            sampleRate: value?.sampleRate,
-            format: value?.format,
-            timestamp: value?.timestamp
-        });
-
-
-        if (done) return;
-
-        // Skip invalid first frames (WebCodecs often sends a zero-channel placeholder)
-        if (
-            value.numberOfChannels === 0 ||
-            value.numberOfChannels == null ||
-            value.sampleRate == null ||
-            value.sampleRate === 0
-        ) {
-            console.warn("Skipping invalid audio frame:", {
-                numberOfChannels: value.numberOfChannels,
-                sampleRate: value.sampleRate
-            });
-            value.close();
-            return;
+    constructor({ demuxer, fps = 30, renderPlan = null, captions = [] }) {
+        if (!demuxer || typeof demuxer.parse !== "function") {
+            throw new Error("ExportEngine requires a demuxer with a parse() method.");
         }
 
-        // First audio chunk — configure encoder
-        if (this.deferAudioConfig) {
-            console.log("CONFIGURING AUDIO ENCODER WITH:", {
-                sampleRate: value.sampleRate,
-                numberOfChannels: value.numberOfChannels
-            });
+        this.demuxer = demuxer;
+        this.fps = fps;
 
-            this.audioEncoder.configure({
-                codec: "aac",
-                sampleRate: value.sampleRate,
-                numberOfChannels: value.numberOfChannels
-            });
-            this.deferAudioConfig = false;
-        }
+        // Injected rendering intent
+        this.renderPlan = renderPlan;
+        this.captions = captions;
 
-        this.audioEncoder.encode(value);
-        value.close();
+        this.videoSamples = [];
+        this.audioSamples = [];
+
+        this.videoDecoder = null;
+        this.videoEncoder = null;
+
+        this.canvas = null;
+        this.context = null;
+
+        this.width = null;
+        this.height = null;
+
+        this.encodedChunks = []; // Phase B will mux these into MP4
     }
 
-  /* -------------------------------------------------------------
-   * FINALIZATION + MP4 MUXING
-   * ------------------------------------------------------------- */
-  async finalize() {
-    await this.videoEncoder.flush();
-    await this.audioEncoder.flush();
+    /**
+     * Load all compressed samples from the demuxer.
+     */
+    async load() {
+        const { videoSamples, audioSamples } = await this.demuxer.parse();
 
-    this.videoEncoder.close();
-    this.audioEncoder.close();
+        this.videoSamples = videoSamples;
+        this.audioSamples = audioSamples;
 
-    return await this._muxMP4();
-  }
+        console.log("ExportEngine: Loaded samples", {
+            video: videoSamples.length,
+            audio: audioSamples.length,
+        });
+    }
 
-  async _muxMP4() {
-    return new Promise((resolve) => {
-      const mp4box = this.MP4Box.createFile();
-      mp4box.onReady = (info) => {};
+    /**
+     * Main export pipeline:
+     *   - Setup decoder & encoder
+     *   - For each compressed sample: decode → draw → encode
+     */
 
-      mp4box.onError = (e) => console.error("MP4Box error:", e);
-      mp4box.onMoovStart = () => {};
-      mp4box.onSegment = () => {};
+    async export() {
+        console.log("ExportEngine: Starting export…");
 
-      // Feed video chunks
-      for (const chunk of this.videoChunks) {
-        const buffer = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(buffer);
-        buffer.fileStart = chunk.timestamp;
-        mp4box.appendBuffer(buffer);
-      }
+        // ---------- CHECKPOINT A ----------
+        console.log("A: creating VideoDecoder…");
 
-      // Feed audio chunks
-      for (const chunk of this.audioChunks) {
-        const buffer = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(buffer);
-        buffer.fileStart = chunk.timestamp;
-        mp4box.appendBuffer(buffer);
-      }
+        this.videoDecoder = new VideoDecoder({
+            output: (videoFrame) => {
+                if (videoFrame.timestamp % (30 * 1000 * 1000) < 1_000) {
+                    //console.log("DECODE OUTPUT FRAME:", videoFrame.timestamp);
+                }
 
-      mp4box.flush();
+                try {
+                    this.renderAndEncode(videoFrame);
+                } catch (err) {
+                    console.error("output callback error:", err);
+                }
+            },
+            error: (e) => console.error("Decoder error:", e),
+        });
 
-      // Extract MP4
-      const mp4Buffers = [];
-      mp4box.onSegment = (id, user, buffer, sampleNum, isLast) => {
-        mp4Buffers.push(buffer);
-        if (isLast) {
-          const mp4 = new Blob(mp4Buffers, { type: "video/mp4" });
-          resolve(mp4);
+        const trackInfo = this.demuxer.getVideoTrackInfo();
+        console.log("B: trackInfo =", trackInfo);
+        console.log("B: trackInfo.codec =", trackInfo?.codec);
+        console.log("B: trackInfo.track_width =", trackInfo?.track_width);
+        console.log("B: trackInfo.track_height =", trackInfo?.track_height);
+        console.log("B: trackInfo.avcDecoderConfigRecord =", trackInfo?.avcDecoderConfigRecord);
+        console.log("B: trackInfo.avcDecoderConfigRecord.buffer =", trackInfo?.avcDecoderConfigRecord?.buffer);
+
+        this.videoEncoder = new VideoEncoder({
+            output: (chunk) => this.handleEncodedChunk(chunk),
+            error: (e) => console.error("Encoder error:", e),
+        });
+
+        console.log("C: configuring encoder…");
+        this.videoEncoder.configure({
+            codec: trackInfo.codec,
+            width: 720,
+            height: 1280,
+            bitrate: 2_000_000,     // plenty for 720×1280
+            framerate: this.fps,
+            avc: { format: "annexb" }
+        });
+
+        console.log("D: configuring decoder…");
+
+        // ----- REQUIRED FOR H.264/AVC -----
+        // MP4Box exposes avcC as:
+        // trackInfo.avcDecoderConfigRecord.buffer
+        // which must go into the WebCodecs "description" field.
+
+        // --- Retrieve AVCDecoderConfigurationRecord ---
+        const description = this.demuxer.getAvcCBuffer();
+
+        console.log("ExportEngine: AVC description =", description);
+
+        if (!(description instanceof ArrayBuffer)) {
+            throw new Error("ExportEngine: demuxer.getAvcCBuffer() did not return ArrayBuffer");
         }
-      };
-    });
-  }
-}
 
+        // --- Configure the decoder with avcC ---
+        this.videoDecoder.configure({
+            codec: trackInfo.codec,
+            description
+        });
+
+        console.log("D: decoder.configure DONE");
+
+        console.log("E: feeding samples…", this.videoSamples.length);
+
+        let index = 0;
+
+        for (const sample of this.videoSamples) {
+            if (index === 0) {
+                console.log("FIRST SAMPLE TYPE:", sample.type);
+                console.log("FIRST SAMPLE TIMESTAMP:", sample.timestamp);
+            }
+
+            // Only log ONE sample every 1000
+            if (index % 1000 === 0) {
+                console.log("FEEDING SAMPLE", index, "type:", sample.type);
+            }
+
+            validateEncodedSample(sample);
+
+            try {
+                this.videoDecoder.decode(new EncodedVideoChunk(sample));
+            } catch (err) {
+                console.error("decode() threw at sample", index, err);
+                throw err;
+            }
+
+            index++;
+        }
+
+        console.log("F: awaiting decoder.flush…");
+
+        await this.videoDecoder.flush();
+        console.log("G: decoder.flush resolved");
+
+        if (this.videoEncoder) {
+            console.log("H: awaiting encoder.flush…");
+            await this.videoEncoder.flush();
+            console.log("I: encoder.flush resolved");
+        }
+
+        console.log("J: Finished export()");
+    }
+    /**
+     * renderAndEncode(videoFrame)
+     *
+     * Draws the decoded frame + overlays + captions, then encodes the result.
+     */
+    async renderAndEncode(videoFrame) {
+        const TARGET_WIDTH = 720;
+        const TARGET_HEIGHT = 1280;
+
+        if (!this.offscreenCanvas) {
+            this.offscreenCanvas = new OffscreenCanvas(TARGET_WIDTH, TARGET_HEIGHT);
+            this.ctx = this.offscreenCanvas.getContext("2d");
+        }
+
+        /**
+         * Do not use MP4-domain timestamps but rather our own encoder-domain timestamps.
+         *
+         * Reason:
+         *   - MP4 demuxed timestamps may not start at 0
+         *   - They may contain gaps, offsets, or non-monotonic jumps
+         *   - Raw H.264 has NO timing metadata, so playback order depends entirely
+         *     on the order and spacing of timestamps we assign here
+         *
+         * This ensures:
+         *   - Monotonic, gapless timestamps
+         *   - Correct decoder frame ordering
+         *   - Smooth playback in ffplay, mpv, VLC, etc.
+         */
+
+
+        // Fill the export canvas with the scaled video
+        this.ctx.drawImage(
+            videoFrame,
+            0, 0, videoFrame.codedWidth, videoFrame.codedHeight,  // source
+            0, 0, TARGET_WIDTH, TARGET_HEIGHT                    // destination
+        );
+
+        // Maintain our own strictly monotonic timestamp counter (microseconds)
+        if (!this._frameIndex) this._frameIndex = 0;
+
+        // Calculate timestamp from frame count, NOT from MP4 sample timestamps.
+        // Ensures monotonic, gapless, correctly spaced timing for the encoder.
+        const encodeTimestamp = this._frameIndex * (1_000_000 / this.fps);
+
+        const composedFrame = new VideoFrame(this.offscreenCanvas, {
+            timestamp: encodeTimestamp
+        });
+
+        this._frameIndex++;  // Advance counter AFTER assigning timestamp
+
+        // prevent encoder overload
+        while (this.videoEncoder.encodeQueueSize > 30) {
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        this.videoEncoder.encode(composedFrame);
+
+
+        composedFrame.close();
+        videoFrame.close();
+    }
+
+    /**
+     * collectEncodedChunks(chunk)
+     *
+     * Accumulates encoded output so the caller can build a final file.
+     */
+    collectEncodedChunks(chunk) {
+        if (!this.chunks) this.chunks = [];
+        this.chunks.push(chunk);
+    }
+
+    /**
+     * Store encoded chunks for Phase B muxing.
+     */
+    handleEncodedChunk(chunk) {
+
+        // start debug code 
+        const u8 = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(u8);
+
+        console.log("checking for KEYFRAME");
+        if (chunk.type === "key") {
+            console.log("KEYFRAME SIZE =", u8.length);
+            console.log("FIRST 16 BYTES =", [...u8.slice(0,16)]);
+        }
+        // end debug code
+
+        this.encodedChunks.push(chunk);
+    }
+
+    /**
+     * getFinalBlob()
+     *
+     * Responsibility:
+     *   - Produce a complete MP4 file from all encoded video chunks.
+     *
+     * Notes:
+     *   - ExportEngine does not perform muxing itself.
+     *   - Delegates to the Phase B muxer (muxToMp4) to assemble:
+     *         init segment (ftyp/moov)
+     *         + media fragments (moof/mdat)
+     *
+     * Returns:
+     *   Blob — a playable MP4 video file.
+     */
+    /*
+    getFinalBlob() {
+        return muxToMp4(this.encodedChunks);
+    }
+    */
+
+
+    getFinalBlob() {
+        const parts = [];
+
+        for (const chunk of this.encodedChunks) {
+            const buffer = new ArrayBuffer(chunk.byteLength);
+            chunk.copyTo(buffer);
+            parts.push(new Uint8Array(buffer));
+        }
+
+        return new Blob(parts, { type: "video/h264" });
+    }
+
+    /*
+    getFinalBlob() {
+        return new Blob(["hello world"], { type: "text/plain" });
+    }
+    */
+
+
+
+}

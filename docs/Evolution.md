@@ -142,3 +142,92 @@ This log prevents architectural drift and explains the reasoning behind changes.
     - vendor MP4Box.js source via git submodule or fork
     - build artifact locally using Docker to avoid host Node installation
 - Ensures long-term stability, version-locking, and sovereign control over media export pipeline.
+
+---
+
+## **2025-03-07 — Empirical Export Pipeline Validation**
+
+* Implemented full decode→composite→encode loop.
+* Discovered raw MP4 timestamps cannot be used for WebCodecs encoding.
+* Introduced monotonic timestamp generator (frameIndex * frameDuration).
+* Verified that compositor must sit between decoder and encoder.
+* Confirmed that RenderPlan seam is required earlier than planned.
+* Raw H.264 output validated encoding correctness. (with jitter)
+
+This discovery forces the architecture to treat compositing as part of the export pipeline.
+
+---
+
+## **2025-03-07 — First True Compositor Integration**
+
+* RenderPlanRenderer (or temporary composite function) now produces the final raster for each decoded frame.
+* CaptionRenderer remains separate; overlay nodes handled by RenderPlanRenderer.
+* This establishes the final rendering architecture's shape, even in MVP.
+
+---
+
+## **2025-03-07 — Demuxer Contract Formalized**
+
+* MP4BoxDemuxer validates the required demuxer interface:
+
+  * parse()
+  * getVideoTrackInfo()
+  * getAvcCBuffer()
+* Established that all future demuxers must return:
+
+  * compressed samples
+  * track metadata
+  * avcC description
+* This creates a stable abstraction layer beneath ExportEngine.
+
+---
+
+## **2025-03-07 — MVP Scope Realignment**
+
+* Discovered that RenderPlan must exist (minimally) for MP4 compositing to remain clean.
+* MVP now officially includes:
+
+  * minimal RenderPlan
+  * RenderPlanRenderer
+  * compositor inside ExportEngine
+* But excludes all non-essential RenderPlan features:
+
+  * caption subtree
+  * effect nodes
+  * animation polymorphism
+  * structured schemas
+
+This keeps MVP minimal while protecting long-term evolution.
+
+---
+
+# **Evolution Log Entry (paste into Evolution.md)**
+
+## **2025-03-08 — MP4 Muxing Elevated to Phase A**
+
+* Raw H.264 export proved insufficient for validating overlay rendering, caption rendering, or timestamp correctness.
+* Playback jitter disguised pipeline issues, making raw output unreliable for confirming MVP.
+* Verified that users cannot meaningfully use raw H.264 files.
+* Therefore, MP4 muxing (video only, audio optional) is now a **Phase A requirement**.
+* ExportEngine must produce a valid MP4 file before MVP is considered complete.
+* Audio passthrough (not re-encoding) becomes part of Phase A to verify synchronization and container structure.
+* This discovery shifts several Phase B responsibilities into Phase A because they are foundational to MVP correctness.
+
+---
+
+# **Updated MVP Definition (paste over old one)**
+
+## ✔ **THE TRUE MVP (Revised)**
+
+The MVP must output a **valid MP4 file** containing:
+
+1. **Video source frames**
+2. **Caption rendering**
+3. **Overlay image(s)**
+4. **Animations**
+5. **Correct timestamps and ordering**
+6. **Audio track (pass-through acceptable)**
+
+WebCodecs encoding without muxing is **not a functional MVP export**.
+
+
