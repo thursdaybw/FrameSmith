@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<body>
+<button id="run-unit">Run Unit Tests</button>
+<button id="run-boundary">Run Boundary Tests</button>
+<button id="run-integration">Run Integration Tests</button>
+<button id="run-all">Run All Tests</button>
+
+<script type="module">
+// Unit tests
+import { testAvcCExtractor } from "./test_avcCExtractor.js";
+import { testSampleCollector } from "./test_SampleCollector.js";
+import { testTimingModel } from "./test_TimingModel.js";
+import { testMdatBuilder } from "./test_mdatBuilder.js";
+import { testStsz } from "./test_stsz.js";
+import { testStsc } from "./test_stsc.js";
+import { testStts } from "./test_stts.js";
+import { testStco } from "./test_stco.js";
+import { testStsd } from "./test_stsd.js";
+import { testTkhd } from "./test_tkhd.js";
+import { testMdhd } from "./test_mdhd.js";
+import { testMvhd } from "./test_mvhd.js";
+import { testMoov } from "./test_moov.js";
+import { testFtyp } from "./test_ftyp.js";
+import { testHdlr } from "./test_hdlr.js";
+import { testVmhd } from "./test_vmhd.js";
+import { testDref } from "./test_dref.js";
+import { testAssembly } from "./test_assembly.js";
+import { test_convertAnnexBToMp4 } from "./test_convertAnnexBToMp4.js"
+import { testNalPrefixIntegrity } from "./test_nal_prefix_integrity.js"
+import { test_mp4_structure } from "./unit/test_mp4_structure.js"
+
+// Boundary tests
+import { test_access_unit_structure } from "./boundary/test_access_unit_structure.js";
+import { test_stco_offsets } from "./boundary/test_stco_offsets.js";
+import { test_roundtrip_nalu } from "./boundary/test_roundtrip_nalu.js";
+import { test_webcodecs_decode } from "./boundary/test_webcodecs_decode.js";
+
+import { test_mp4_mse } from "./boundary/test_mp4_mse.js";
+import { test_mp4_metadata } from "./boundary/test_mp4_metadata.js";
+import { test_mp4_canvas_framehash } from "./boundary/test_mp4_canvas_framehash.js";
+import { test_mp4_internal_integrity } from "./boundary/test_mp4_internal_integrity.js";
+
+// Integration tests
+import {
+  test_NativeMuxer_integration_annexb_environmental,
+  test_NativeMuxer_integration_avcc
+}
+from "./integration/test_NativeMuxer_integration.js";
+
+
+async function runUnitTests() {
+    await test_mp4_structure();
+    await testStsz();
+    await testNalPrefixIntegrity();
+    await testHdlr();
+    await testVmhd();
+    await testDref();
+    await testAvcCExtractor();
+    await testSampleCollector();
+    await testTimingModel();
+    await testMdatBuilder();
+    await test_convertAnnexBToMp4();
+    await testStsc();
+    await testStts();
+    await testStco();
+    await testStsd();
+    await testTkhd();
+    await testMdhd();
+    await testMvhd();
+    await testMoov();
+    await testFtyp();
+    await testAssembly();
+}
+
+async function runBoundaryTests() {
+    await test_mp4_internal_integrity();
+    console.log("=== boundary test 1 complete");
+    await test_access_unit_structure();
+    console.log("=== boundary test 2 complete");
+    await test_stco_offsets();
+    await test_roundtrip_nalu();
+    await test_webcodecs_decode();
+    await test_mp4_mse();
+    await test_mp4_metadata();
+    await test_mp4_canvas_framehash();
+}
+
+async function runIntegrationTests() {
+    await test_NativeMuxer_integration_annexb_environmental();
+    await test_NativeMuxer_integration_avcc();
+}
+
+document.getElementById("run-unit").onclick = async () => {
+    try {
+        await runUnitTests();
+        console.log("%cUnit tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+document.getElementById("run-boundary").onclick = async () => {
+    try {
+        await runBoundaryTests();
+        console.log("%cBoundary tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+
+document.getElementById("run-integration").onclick = async () => {
+    try {
+        await runIntegrationTests();
+        console.log("%cIntegration tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+document.getElementById("run-all").onclick = async () => {
+    try {
+        await runUnitTests();
+        await runBoundaryTests();
+        await runIntegrationTests();
+        console.log("%cAll tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+</script>
+</body>
+</html>
+
