@@ -1,3 +1,6 @@
 [submodule "vendor/mp4box.js"]
 	path = vendor/mp4box.js
 	url = https://github.com/gpac/mp4box.js
+[submodule "vendor/mediabunny"]
+	path = vendor/mediabunny
+	url = https://github.com/Vanilagy/mediabunny.git

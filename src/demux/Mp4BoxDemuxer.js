@@ -25,6 +25,10 @@ export class Mp4BoxDemuxer {
         return this.videoTrack;
     }
 
+    getAudioTrackInfo() {
+        return this.info?.audioTracks?.[0] ?? null;
+    }
+
     // Convert mp4box's parsed AVCConfigurationBox into the binary
     // AVCDecoderConfigurationRecord required by WebCodecs VideoDecoder.
     getAvcCBuffer() {
@@ -78,10 +82,6 @@ export class Mp4BoxDemuxer {
         }
 
         return out.buffer;
-    }
-
-    getAudioTrackInfo() {
-        return this.info?.audioTracks?.[0] ?? null;
     }
 
     toNano(value, scale) {

@@ -16,6 +16,7 @@ import { createRenderPlan, createImageNode } from "./renderPlan/RenderPlan.js";
 import { renderFrame } from "./renderPlan/RenderPlanRenderer.js";
 import { ExportEngine } from "./export/ExportEngine.js";
 import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js"
+import { Mp4BoxMuxer} from "./src/mux/Mp4BoxMuxer.js";
 
 document.addEventListener("DOMContentLoaded", () => {
 
@@ -180,13 +181,21 @@ document.addEventListener("DOMContentLoaded", () => {
         const demuxer = new Mp4BoxDemuxer(arrayBuffer);
         console.log("onclick C");
 
+        // Create muxer (NEW)
+        const muxer = new Mp4BoxMuxer({
+            videoTrackInfo: demuxer.getVideoTrackInfo(),
+            audioTrackInfo: demuxer.getAudioTrackInfo()
+        });
+
         // Create export engine
         const exportEngine = new ExportEngine({
             demuxer,
             fps: 30,
             renderPlan,
-            captions
+            captions,
+            muxer
         });
+
         console.log("onclick D");
         // Load samples from demuxer
         await exportEngine.load();

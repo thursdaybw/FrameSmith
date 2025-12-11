@@ -6,11 +6,11 @@
  *   - Decode samples into VideoFrames using WebCodecs
  *   - Composite each decoded frame via RenderPlanRenderer
  *       (video frame + captions + overlays)
- *   - Encode the composited frames into H.264 chunks using WebCodecs
- *   - Accumulate encoded chunks for Phase B muxing
+ *   - Encode the composited frames into H.264 encoded frames using WebCodecs
+ *   - Accumulate encodedFrames for Phase B muxing
  *
  * This class does NOT:
- *   - Mux the encoded chunks into an MP4 container (Phase B)
+ *   - Mux the encoded frames into an MP4 container (Phase B)
  *   - Handle audio (Phase B)
  *   - Perform layout or style resolution
  *   - Generate or interpret RenderPlan structures
@@ -24,12 +24,11 @@
  */
 
 import { renderFrame } from "../renderPlan/RenderPlanRenderer.js";
-import { muxToMp4 } from "../src/mux/muxToMp4.js";
 import { validateEncodedSample } from "../src/types/EncodedSampleLike.js";
 
 export class ExportEngine {
 
-    constructor({ demuxer, fps = 30, renderPlan = null, captions = [] }) {
+    constructor({ demuxer, fps = 30, renderPlan = null, captions = [], muxer }) {
         if (!demuxer || typeof demuxer.parse !== "function") {
             throw new Error("ExportEngine requires a demuxer with a parse() method.");
         }
@@ -53,7 +52,7 @@ export class ExportEngine {
         this.width = null;
         this.height = null;
 
-        this.encodedChunks = []; // Phase B will mux these into MP4
+        this.encodedFrames = []; // Phase B will mux these into MP4
     }
 
     /**
@@ -107,7 +106,7 @@ export class ExportEngine {
         console.log("B: trackInfo.avcDecoderConfigRecord.buffer =", trackInfo?.avcDecoderConfigRecord?.buffer);
 
         this.videoEncoder = new VideoEncoder({
-            output: (chunk) => this.handleEncodedChunk(chunk),
+            output: (encodedFrame) => this.forwardVideoFrameToMuxer(encodedFrame),
             error: (e) => console.error("Encoder error:", e),
         });
 
@@ -120,6 +119,21 @@ export class ExportEngine {
             framerate: this.fps,
             avc: { format: "annexb" }
         });
+
+        // TEMPORARY: obtain the encoder configuration record for NativeMuxer
+        const encoderSupport = await VideoEncoder.isConfigSupported({
+            codec: trackInfo.codec,
+            width: 720,
+            height: 1280,
+            framerate: this.fps
+        });
+
+        const codecConfigurationRecord = new Uint8Array(encoderSupport.config.description);
+
+        // Pass configuration record to muxer (temporary pre-adapter API)
+        if (this.muxer && typeof this.muxer.setCodecConfigurationRecord === "function") {
+            this.muxer.setCodecConfigurationRecord(codecConfigurationRecord);
+        }
 
         console.log("D: configuring decoder…");
 
@@ -203,7 +217,7 @@ export class ExportEngine {
          * Do not use MP4-domain timestamps but rather our own encoder-domain timestamps.
          *
          * Reason:
-         *   - MP4 demuxed timestamps may not start at 0
+         *   - MP4 demuxed timestamps may not start at but rather0
          *   - They may contain gaps, offsets, or non-monotonic jumps
          *   - Raw H.264 has NO timing metadata, so playback order depends entirely
          *     on the order and spacing of timestamps we assign here
@@ -248,74 +262,41 @@ export class ExportEngine {
     }
 
     /**
-     * collectEncodedChunks(chunk)
-     *
-     * Accumulates encoded output so the caller can build a final file.
+     * Store encoded frames for Phase B muxing.
      */
-    collectEncodedChunks(chunk) {
-        if (!this.chunks) this.chunks = [];
-        this.chunks.push(chunk);
-    }
-
-    /**
-     * Store encoded chunks for Phase B muxing.
-     */
-    handleEncodedChunk(chunk) {
+    forwardVideoFrameToMuxer(encodedFrame) {
 
         // start debug code 
-        const u8 = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(u8);
+        const u8 = new Uint8Array(encodedFrame.byteLength);
+        encodedFrame.copyTo(u8);
 
         console.log("checking for KEYFRAME");
-        if (chunk.type === "key") {
+        if (encodedFrame.type === "key") {
             console.log("KEYFRAME SIZE =", u8.length);
             console.log("FIRST 16 BYTES =", [...u8.slice(0,16)]);
         }
         // end debug code
 
-        this.encodedChunks.push(chunk);
+        this.muxer.addVideoFrame(encodedFrame)
     }
 
     /**
      * getFinalBlob()
      *
      * Responsibility:
-     *   - Produce a complete MP4 file from all encoded video chunks.
+     *   - Produce a complete MP4 file from all encoded video encoded frames.
      *
      * Notes:
      *   - ExportEngine does not perform muxing itself.
-     *   - Delegates to the Phase B muxer (muxToMp4) to assemble:
+     *   - Delegates to the muxer to assemble:
      *         init segment (ftyp/moov)
      *         + media fragments (moof/mdat)
      *
      * Returns:
      *   Blob — a playable MP4 video file.
      */
-    /*
-    getFinalBlob() {
-        return muxToMp4(this.encodedChunks);
+    async getFinalBlob() {
+        return await this.muxer.finalize();
     }
-    */
-
-
-    getFinalBlob() {
-        const parts = [];
-
-        for (const chunk of this.encodedChunks) {
-            const buffer = new ArrayBuffer(chunk.byteLength);
-            chunk.copyTo(buffer);
-            parts.push(new Uint8Array(buffer));
-        }
-
-        return new Blob(parts, { type: "video/h264" });
-    }
-
-    /*
-    getFinalBlob() {
-        return new Blob(["hello world"], { type: "text/plain" });
-    }
-    */
-
-
 
 }

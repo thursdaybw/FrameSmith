@@ -617,48 +617,151 @@ Therefore:
 
 ## **1.13 ExportEngine (Phase A Consolidation)**
 
-To produce final MP4 output, Framesmith introduces:
 
-```
-export/ExportEngine.js
-```
+### Update 1.13.1
 
-In **Phase A**, this module performs *three responsibilities*:
+There is a missing abstraction layer between ExportEngine and
+the encoding, and compositing functions layer. 
 
-1. **Video Encoding** (WebCodecs `VideoEncoder`)
-2. **Audio Encoding** (WebCodecs `AudioEncoder`)
-3. **Muxing** (MP4Box.js)
 
-Combining these into a single engine is a **temporary architectural compromise** chosen to:
+We need to introduce a new VideoDecoderAdaptor, VideoEncoderAdaptor
+and CompositorAdaptor as per this diagram:
 
-* prevent premature abstraction,
-* simplify MVP integration with the rendering pipeline,
-* reduce API surface area while RenderPlan evolves.
 
-This consolidation is intentional and documented.
+#### ✔ What Needs to Change?
 
-### **Boundary Guarantee (Phase B Split)**
+Here’s the exact mapping of responsibilities:
 
-ExportEngine **must be split** into separate components in Phase B:
+##### 1. **ExportEngine should NOT create encoders or decoders**
 
-```
-VideoEncoderEngine
-AudioEncoderEngine
-MuxerEngine
-ExportOrchestrator
+Instead, ExportEngine should receive:
+
+```js
+new ExportEngine({
+    decoder: new WebCodecsVideoDecoderAdapter(),
+    encoder: new WebCodecsVideoEncoderAdapter(),
+    compositor: new CanvasCompositorAdapter(),
+    muxer: new NativeMuxer(),
+})
 ```
 
-This split will occur once:
+ExportEngine simply calls:
 
-* RenderPlanRenderer stabilizes,
-* audio/video track models are introduced,
-* multi-track editing, transitions, and auto-editor features are added.
+```js
+decoder.decode(sample)
+compositor.drawFrame(frame)
+encoder.encode(frame)
+muxer.addFrame(encodedFrame)
+```
 
-The architecture requires this separation to maintain long-term flexibility and SRP compliance.
+No platform-specific code inside ExportEngine.
 
 ---
 
-### MP4Box.js Dependency Strategy
+##### 2. **ExportEngine must NOT acquire SPS/PPS**
+
+Decoder + Encoder adapters are responsible for extracting configuration records.
+
+ExportEngine must remain blind to:
+
+* SPS
+* PPS
+* H.264
+* Annex-B
+* AVCC
+* Hardware acceleration
+
+Anything else violates OCP and DIP.
+
+---
+
+##### 3. **ExportEngine must NOT manage canvas or context**
+
+Replace:
+
+```js
+this.offscreenCanvas = new OffscreenCanvas(...)
+this.ctx = this.offscreenCanvas.getContext("2d")
+this.ctx.drawImage(...)
+```
+
+with:
+
+```js
+const composedFrame = await this.compositor.compose(videoFrame, renderPlan, captions)
+```
+
+Compositor adapter chooses:
+
+* OffscreenCanvas (browser)
+* CoreGraphics (iOS)
+* Skia (desktop)
+* GPU (WebGPU)
+* Whatever platform exists later
+
+ExportEngine knows nothing.
+
+---
+
+##### 4. **Muxer should receive generic encoded frames, not WebCodecs chunks**
+
+Right now:
+
+```js
+this.muxer.addVideoFrame(encodedFrame)
+```
+
+`encodedFrame` is a raw WebCodecs object.
+
+That is an infrastructure leak.
+
+Instead:
+
+### Adapter transforms:
+
+WebCodecs → { bytes, timestamp, duration, keyframe }
+
+So MuxerEngine receives a generic structure independent of platform.
+
+This keeps NativeMuxer pure.
+
+---
+
+# ✔ Revised Clean Architecture (Correct Form)
+
+```
+                          +------------------------------------------+
+                          |             ExportEngine                 |
+                          |  Orchestrates decode → composite → encode|
+                          +----------------------+-------------------+
+                                               |
+                                               V
+                         +----------------------+-------------------+
+                         |     Interfaces / Adapters Layer          |
+                         |                                          |
+         +-----------------------+    +---------------------------+   +---------------------+
+         | VideoDecoderAdapter   |    | VideoEncoderAdapter       |   | CompositorAdapter  |
+         | (WebCodecs impl)      |    | (WebCodecs impl)          |   | (OffscreenCanvas)  |
+         +-----------------------+    +---------------------------+   +---------------------+
+                                               |
+                                               V
+                         +----------------------+-------------------+
+                         |           MuxerEngine (interface)        |
+                         +------------------------------------------+
+                                               |
+                     +---------------+----------+------------+
+                     |               |                       |
+        +--------------------+  +--------------------+  +---------------------+
+        | NativeMuxer        |  | MP4BoxMuxer        |  | MediaBunnyMuxer     |
+        +--------------------+  +--------------------+  +---------------------+
+```
+
+This satisfies every SOLID principle.
+
+---
+
+
+### MP4Box.js Dependency Strategy - Deprecated in favour of self built muxer.
 
 Framesmith requires MPEG-4 muxing capabilities for full MP4 export.
 Due to instability and structural changes in published CDN builds,
