@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<body>
+<pre id="log"></pre>
+
+<script type="module">
+import { createFrames } from "./support/createFrames.js";
+import { encodeFrames } from "./support/encodeFrames.js";
+
+const log = (...args) => {
+    document.getElementById("log").textContent += args.join(" ") + "\n";
+};
+
+async function run() {
+    log("=== WebCodecs SPS/PPS Environment Diagnostic ===");
+
+    const width = 64, height = 64;
+
+    log("\n--- 1. Checking isConfigSupported (annexb) ---");
+    const sup1 = await VideoEncoder.isConfigSupported({
+        codec: "avc1.42E01E",
+        width,
+        height,
+        framerate: 30,
+        bitrate: 200_000,
+        avc: { format: "annexb" }
+    }).catch(e => ({ error: e }));
+    log("supported:", !sup1.error);
+    log("sup.config.description length:", sup1?.config?.description?.byteLength ?? "null");
+
+    log("\n--- 2. Checking isConfigSupported (non-annexb) ---");
+    const sup2 = await VideoEncoder.isConfigSupported({
+        codec: "avc1.42E01E",
+        width,
+        height,
+        framerate: 30,
+        bitrate: 200_000
+    }).catch(e => ({ error: e }));
+    log("supported:", !sup2.error);
+    log("sup.config.description length:", sup2?.config?.description?.byteLength ?? "null");
+
+    log("\n--- 3. Encoding 2 frames (annexb) ---");
+
+    const frames = await createFrames(width, height);
+    const chunks = await encodeFrames(frames, {
+        codec: "avc1.42E01E",
+        width,
+        height,
+        framerate: 30,
+        bitrate: 200_000,
+        avc: { format: "annexb" }
+    });
+
+    for (let index = 0; index < chunks.length; index++) {
+        const chunk = chunks[index];
+
+        log(`ANNEXB chunk #${index}`);
+        log("  type:", chunk.type);
+        log("  byteLength:", chunk.byteLength);
+        log("  timestamp:", chunk.timestamp);
+
+        const raw = new Uint8Array(chunk.byteLength);
+        await chunk.copyTo(raw);
+
+        log("  RAW bytes:", JSON.stringify(Array.from(raw)));
+
+        // Extract SPS/PPS
+        const { sps, pps } = extractSpsPps(raw);
+
+        log("  SPS:", sps ? JSON.stringify(Array.from(sps)) : "null");
+        log("  PPS:", pps ? JSON.stringify(Array.from(pps)) : "null");
+    }
+
+    log("\n=== END DIAGNOSTIC ===");
+}
+
+function findStartCode(buf, from) {
+    for (let i = from; i < buf.length - 3; i++) {
+        if (buf[i] === 0 && buf[i+1] === 0) {
+            if (buf[i+2] === 1) return { index: i, size: 3 };
+            if (buf[i+2] === 0 && buf[i+3] === 1) return { index: i, size: 4 };
+        }
+    }
+    return null;
+}
+
+function extractSpsPps(buf) {
+    let pos = 0;
+    let sps = null;
+    let pps = null;
+
+    while (true) {
+        const start = findStartCode(buf, pos);
+        if (!start) break;
+
+        const next = findStartCode(buf, start.index + start.size);
+        const end = next ? next.index : buf.length;
+
+        const nalu = buf.subarray(start.index + start.size, end);
+        const type = nalu[0] & 0x1F;
+
+        if (type === 7) sps = nalu;
+        if (type === 8) pps = nalu;
+
+        pos = next ? next.index : buf.length;
+    }
+
+    return { sps, pps };
+}
+
+run();
+</script>
+
+</body>
+</html>
+
