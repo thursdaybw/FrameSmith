@@ -1,0 +1,178 @@
+ffprobe version 7.1.1-1ubuntu4.1 Copyright (c) 2007-2025 the FFmpeg developers
+  built with gcc 15 (Ubuntu 15.2.0-4ubuntu4)
+  configuration: --prefix=/usr --extra-version=1ubuntu4.1 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-libmfx --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.101 / 61. 19.101
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+[AVFormatContext @ 0x64d567fdb080] Opening 'reference_visual.mp4' for reading
+[file @ 0x64d567fdb680] Setting default whitelist 'file,crypto,data'
+Probing mov,mp4,m4a,3gp,3g2,mj2 score:100 size:2048
+Probing mp3 score:1 size:2048
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] Format mov,mp4,m4a,3gp,3g2,mj2 probed with size=2048 and score=100
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'ftyp' parent:'root' sz: 32 8 5111
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] ISO: File Type Major Brand: isom
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'free' parent:'root' sz: 8 40 5111
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'mdat' parent:'root' sz: 3946 48 5111
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'moov' parent:'root' sz: 1125 3994 5111
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'mvhd' parent:'moov' sz: 108 8 1117
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] time scale = 1000
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'trak' parent:'moov' sz: 912 116 1117
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'tkhd' parent:'trak' sz: 92 8 904
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'edts' parent:'trak' sz: 36 100 904
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'elst' parent:'edts' sz: 28 8 28
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] track[0].edit_count = 1
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] duration=1000 time=1024 rate=1.000000
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'mdia' parent:'trak' sz: 776 136 904
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'mdhd' parent:'mdia' sz: 32 8 768
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'hdlr' parent:'mdia' sz: 45 40 768
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] ctype=[0][0][0][0]
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stype=vide
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'minf' parent:'mdia' sz: 691 85 768
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'vmhd' parent:'minf' sz: 20 8 683
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'dinf' parent:'minf' sz: 36 28 683
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'dref' parent:'dinf' sz: 28 8 28
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] Unknown dref type 0x206c7275 size 12
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stbl' parent:'minf' sz: 627 64 683
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stsd' parent:'stbl' sz: 191 8 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] size=175 4CC=avc1 codec_type=0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'avcC' parent:'stsd' sz: 53 8 89
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'pasp' parent:'stsd' sz: 16 61 89
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] pasp: hSpacing 1, vSpacing 1
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'btrt' parent:'stsd' sz: 20 77 89
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stts' parent:'stbl' sz: 24 199 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] track[0].stts.entries = 1
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] sample_count=25, sample_duration=512
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stss' parent:'stbl' sz: 20 223 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] keyframe_count = 1
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'ctts' parent:'stbl' sz: 216 243 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] track[0].ctts.entries = 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=1024
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=2560
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=1024
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=512
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=2560
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=1024
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=512
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=2560
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=1024
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=512
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=2560
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=1024
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=512
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=2560
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=1024
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=512
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=2560
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=1024
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] count=1, duration=512
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] dts shift 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stsc' parent:'stbl' sz: 28 459 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] track[0].stsc.entries = 1
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stsz' parent:'stbl' sz: 120 487 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] sample_size = 0 sample_count = 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stco' parent:'stbl' sz: 20 607 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 0, offset 30, dts 0, size 2736, distance 0, keyframe 1
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 1, offset ae0, dts 512, size 143, distance 1, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 2, offset b6f, dts 1024, size 27, distance 2, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 3, offset b8a, dts 1536, size 15, distance 3, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 4, offset b99, dts 2048, size 12, distance 4, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 5, offset ba5, dts 2560, size 194, distance 5, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 6, offset c67, dts 3072, size 20, distance 6, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 7, offset c7b, dts 3584, size 12, distance 7, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 8, offset c87, dts 4096, size 12, distance 8, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 9, offset c93, dts 4608, size 163, distance 9, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 10, offset d36, dts 5120, size 22, distance 10, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 11, offset d4c, dts 5632, size 15, distance 11, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 12, offset d5b, dts 6144, size 15, distance 12, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 13, offset d6a, dts 6656, size 146, distance 13, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 14, offset dfc, dts 7168, size 30, distance 14, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 15, offset e1a, dts 7680, size 18, distance 15, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 16, offset e2c, dts 8192, size 15, distance 16, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 17, offset e3b, dts 8704, size 147, distance 17, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 18, offset ece, dts 9216, size 29, distance 18, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 19, offset eeb, dts 9728, size 12, distance 19, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 20, offset ef7, dts 10240, size 15, distance 20, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 21, offset f06, dts 10752, size 78, distance 21, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 22, offset f54, dts 11264, size 28, distance 22, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 23, offset f70, dts 11776, size 16, distance 23, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] AVIndex stream 0, sample 24, offset f80, dts 12288, size 18, distance 24, keyframe 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] Processing st: 0, edit list 0 - media time: 1024, duration: 12800
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 0 ctts: 1024, ctts_index: 0, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 512 ctts: 2560, ctts_index: 1, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 1024 ctts: 1024, ctts_index: 2, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 1536 ctts: 0, ctts_index: 3, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 2048 ctts: 512, ctts_index: 4, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 2560 ctts: 2560, ctts_index: 5, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 3072 ctts: 1024, ctts_index: 6, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 3584 ctts: 0, ctts_index: 7, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 4096 ctts: 512, ctts_index: 8, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 4608 ctts: 2560, ctts_index: 9, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 5120 ctts: 1024, ctts_index: 10, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 5632 ctts: 0, ctts_index: 11, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 6144 ctts: 512, ctts_index: 12, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 6656 ctts: 2560, ctts_index: 13, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 7168 ctts: 1024, ctts_index: 14, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 7680 ctts: 0, ctts_index: 15, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 8192 ctts: 512, ctts_index: 16, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 8704 ctts: 2560, ctts_index: 17, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 9216 ctts: 1024, ctts_index: 18, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 9728 ctts: 0, ctts_index: 19, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 10240 ctts: 512, ctts_index: 20, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 10752 ctts: 2560, ctts_index: 21, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 11264 ctts: 1024, ctts_index: 22, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 11776 ctts: 0, ctts_index: 23, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stts: 12288 ctts: 512, ctts_index: 24, ctts_count: 25
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] Offset DTS by 1024 to make first pts zero.
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] Setting codecpar->delay to 2 for stream st: 0
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'udta' parent:'moov' sz: 97 1028 1117
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'meta' parent:'udta' sz: 89 8 89
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'hdlr' parent:'meta' sz: 33 8 77
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] ctype=[0][0][0][0]
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stype=mdir
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'ilst' parent:'meta' sz: 44 41 77
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'[169]too' parent:'ilst' sz: 36 8 36
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] on_parse_exit_offset=5111
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] Before avformat_find_stream_info() pos: 5111 bytes read:5111 seeks:0 nb_streams:1
+[h264 @ 0x64d567fdbec0] nal_unit_type: 7(SPS), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] Decoding VUI
+[h264 @ 0x64d567fdbec0] nal_unit_type: 8(PPS), nal_ref_idc: 3
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stream 0, sample 0, dts -80000
+[h264 @ 0x64d567fdbec0] nal_unit_type: 7(SPS), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] Decoding VUI
+[h264 @ 0x64d567fdbec0] nal_unit_type: 8(PPS), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] nal_unit_type: 6(SEI), nal_ref_idc: 0
+[h264 @ 0x64d567fdbec0] nal_unit_type: 5(IDR), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] Format yuv420p chosen by get_format().
+[h264 @ 0x64d567fdbec0] Reinit context to 128x128, pix_fmt: yuv420p
+[h264 @ 0x64d567fdbec0] no picture 
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] All info found
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] stream 0: start_time: 0 duration: 1
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] format: start_time: 0 duration: 1 (estimate from stream) bitrate=40 kb/s
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] After avformat_find_stream_info() pos: 2784 bytes read:5111 seeks:0 frames:1
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'reference_visual.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf61.7.100
+  Duration: 00:00:01.00, start: 0.000000, bitrate: 40 kb/s
+  Stream #0:0[0x1](und), 1, 1/12800: Video: h264 (High), 1 reference frame (avc1 / 0x31637661), yuv420p(progressive, left), 128x128 [SAR 1:1 DAR 1:1], 0/1, 31 kb/s, 25 fps, 25 tbr, 12800 tbn (default)
+      Metadata:
+        handler_name    : VideoHandler
+        vendor_id       : [0][0][0][0]
+        encoder         : Lavc61.19.101 libx264
+[h264 @ 0x64d567fdbec0] nal_unit_type: 7(SPS), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] Decoding VUI
+[h264 @ 0x64d567fdbec0] nal_unit_type: 8(PPS), nal_ref_idc: 3
+[AVIOContext @ 0x64d567fe3800] Statistics: 5111 bytes read, 0 seeks

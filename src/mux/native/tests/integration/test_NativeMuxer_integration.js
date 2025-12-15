@@ -12,7 +12,7 @@
  */
 
 import { NativeMuxer } from "../../NativeMuxer.js";
-import { readType, readUint32, writeDebugAvcC } from "../../tests/testUtils.js";
+import { readBoxTypeFromMp4BoxBytes, readUint32FromMp4BoxBytes, writeDebugAvcC } from "../../tests/testUtils.js";
 
 import { createFrames } from "../support/createFrames.js";
 import { encodeFrames } from "../support/encodeFrames.js";
@@ -26,11 +26,11 @@ function downloadDebugMp4(blob, name) {
 }
 
 function assertBasicMp4Structure(buffer) {
-    if (readType(buffer, 4) !== "ftyp") {
+    if (readBoxTypeFromMp4BoxBytes(buffer, 4) !== "ftyp") {
         throw new Error("FAIL: missing ftyp");
     }
     const ftypLen = readUint32(buffer, 0);
-    if (readType(buffer, ftypLen + 4) !== "moov") {
+    if (readBoxTypeFromMp4BoxBytes(buffer, ftypLen + 4) !== "moov") {
         throw new Error("FAIL: missing moov");
     }
 }

@@ -1,5 +1,5 @@
-import { readUint32 } from "./testUtils.js";
-import { readType } from "./testUtils.js";
+import { readUint32FromMp4BoxBytes } from "./testUtils.js";
+import { readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
 import { buildFtypBox } from "../boxes/ftypBox.js";
 import { buildMoovBox } from "../boxes/moovBox.js";
 import { buildStcoBox } from "../boxes/stcoBox.js";
@@ -136,13 +136,13 @@ export async function testAssembly() {
     // TEST 1: box order
     // -----------------------------
     let pos = 0;
-    if (readType(full, pos + 4) !== "ftyp") throw new Error("FAIL: missing ftyp");
+    if (readBoxTypeFromMp4BoxBytes(full, pos + 4) !== "ftyp") throw new Error("FAIL: missing ftyp");
     pos += readUint32(full, pos);
 
-    if (readType(full, pos + 4) !== "moov") throw new Error("FAIL: missing moov");
+    if (readBoxTypeFromMp4BoxBytes(full, pos + 4) !== "moov") throw new Error("FAIL: missing moov");
     pos += readUint32(full, pos);
 
-    if (readType(full, pos + 4) !== "mdat") throw new Error("FAIL: missing mdat");
+    if (readBoxTypeFromMp4BoxBytes(full, pos + 4) !== "mdat") throw new Error("FAIL: missing mdat");
 
     // -----------------------------
     // TEST 2: stco offsets
