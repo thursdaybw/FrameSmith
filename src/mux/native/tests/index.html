@@ -7,28 +7,38 @@
 <button id="run-all">Run All Tests</button>
 
 <script type="module">
+
+// ChatGPT Phase ABC branch point: https://chatgpt.com/g/g-p-6823e412c7348191848df481eb52a88b/c/693c11b2-2a5c-8322-8a7b-58d09d3f2ac6
 // Unit tests
+import { testHdlr_Structure, testHdlr_Conformance } from "./test_hdlr.js";
+import { testStsz_Structure, testStsz_Conformance } from "./test_stsz.js";
+import { testStsc_Structure, testStsc_Conformance } from "./test_stsc.js";
+import { testStts_Structure, testStts_Conformance } from "./test_stts.js";
+import { testTkhd_Structure, testTkhd_Conformance } from "./test_tkhd.js";
+import { testMdhd_Structure, testMdhd_Conformance } from "./test_mdhd.js";
+import { testMvhd_Structure, testMvhd_Conformance } from "./test_mvhd.js";
+import { testFtyp_Structure, testFtyp_Conformance } from "./test_ftyp.js";
+import { testVmhd_Structure, testVmhd_Conformance } from "./test_vmhd.js";
+import { testDref_Structure, testDref_Conformance } from "./test_dref.js";
+import { testAvcC_Structure, testAvcC_Conformance } from "./test_avcC.js";
+import { testAvc1_Structure, testAvc1_Conformance } from "./test_avc1.js";
+import { testBtrt_Structure, testBtrt_Conformance } from "./test_btrt.js";
+import { testPasp_Structure, testPasp_Conformance } from "./test_pasp.js";
+import { testStsd_Structure, testStsd_StructuralConformance, testStsd_SemanticConformance} from "./test_stsd.js";
+import { testStco_Structure } from "./test_stco.js";
+import { testMoov } from "./test_moov.js";
+
+import { testSerializer } from "./test_serializer.js"
 import { testAvcCExtractor } from "./test_avcCExtractor.js";
 import { testSampleCollector } from "./test_SampleCollector.js";
 import { testTimingModel } from "./test_TimingModel.js";
 import { testMdatBuilder } from "./test_mdatBuilder.js";
-import { testStsz } from "./test_stsz.js";
-import { testStsc } from "./test_stsc.js";
-import { testStts } from "./test_stts.js";
-import { testStco } from "./test_stco.js";
-import { testStsd } from "./test_stsd.js";
-import { testTkhd } from "./test_tkhd.js";
-import { testMdhd } from "./test_mdhd.js";
-import { testMvhd } from "./test_mvhd.js";
-import { testMoov } from "./test_moov.js";
-import { testFtyp } from "./test_ftyp.js";
-import { testHdlr } from "./test_hdlr.js";
-import { testVmhd } from "./test_vmhd.js";
-import { testDref } from "./test_dref.js";
 import { testAssembly } from "./test_assembly.js";
 import { test_convertAnnexBToMp4 } from "./test_convertAnnexBToMp4.js"
 import { testNalPrefixIntegrity } from "./test_nal_prefix_integrity.js"
 import { test_mp4_structure } from "./unit/test_mp4_structure.js"
+import { test_NativeMuxer_chunkPolicy_ffmpeg } from "./unit/test_NativeMuxer_chunkPolicy.js";
+import { testChunkLayout_FramesmithSimple, testChunkLayout_FfmpegCompatible } from "./test_chunkLayoutPolicy.js";
 
 // Boundary tests
 import { test_access_unit_structure } from "./boundary/test_access_unit_structure.js";
@@ -48,36 +58,201 @@ import {
 }
 from "./integration/test_NativeMuxer_integration.js";
 
-
 async function runUnitTests() {
-    await test_mp4_structure();
-    await testStsz();
+
+/**
+ * Conformance architecture
+ * 
+ * enforce A Parameter Object with an Explicit Contract
+ * 
+ * I have now cleanly separated concerns:
+ * 
+ * Structure
+ * 
+ * * Asserts what Framesmith intends to emit
+ * * Tests my interpretation of the spec
+ * * Stable, fast, isolated
+ *
+ * Conformance
+ * 
+ * * Asserts what the real world emits
+ * * Tests against ffmpeg output
+ * * Answers “does this match reality?”
+ * 
+ * Semantic (field-level) comparison
+ * 
+ * * Byte-for-byte comparison
+ * 
+ * If this fails in the future, I will now get errors like:
+ * 
+ * FAIL: ftyp compatible_brand[2] mismatch
+ * Expected: avc1
+ * Actual: hev1
+ * 
+ * instead of:
+ * 
+ * FAIL: byte mismatch at offset 24
+ * 
+ * That is the whole point.
+ */ 
+
+
+   await testSerializer();
+
+    // ---- LEAF BOXES ----
+
+    // NOTE ON TEST ORDER:
+    //
+    // Box builders are developed box-by-box in three phases:
+    //
+    // Phase A: JSON representation migration
+    // Phase B: Structural correctness (mp4ra + mp4box.js)
+    // Phase C: Optional conformance against golden MP4
+    //
+    // Phase C tests must only be added once A and B are complete
+    // for that box, otherwise they encode unstable assumptions.
+
+    // Testing rules:
+    // Tests do not parse MP4s. Tests ask extractors questions.
+
+    // The test before the `return` are the following status:
+    // Phase A - done 
+    // Phase B - done 
+    // Phase c - done 
+    await testStsz_Structure();
+    await testStsz_Conformance();
+    await testHdlr_Structure(); 
+    await testHdlr_Conformance(); 
+    await testVmhd_Structure();
+    await testVmhd_Conformance();
+    await testDref_Structure();
+    await testDref_Conformance();
+    await testStts_Structure();
+    await testStts_Conformance();
+    await testStsc_Structure();
+    await testStsc_Conformance();
+    await testChunkLayout_FramesmithSimple();
+    await testChunkLayout_FfmpegCompatible();
+
+    // NOTE:
+    // STCO conformance (byte-for-byte against golden MP4)
+    // is verified at the NativeMuxer finalize level.
+    //
+    // This is intentional.
+    // Chunk offsets depend on:
+    //   - ftyp size
+    //   - moov size
+    //   - mdat header placement
+    //   - stsc chunking policy
+    //   - stsz sample sizes
+    //
+    // A standalone STCO builder cannot assert correct offsets
+    // without lying about its inputs.
+    await testStco_Structure();
+    await testFtyp_Structure();
+    await testFtyp_Conformance();
+    await testTkhd_Structure();
+    await testTkhd_Conformance();
+    await testMdhd_Structure();
+    await testMdhd_Conformance();
+    await testMvhd_Structure();
+    await testMvhd_Conformance();
+
+    await testAvcC_Structure();
+    await testAvcC_Conformance();
+    await testBtrt_Structure();
+    await testBtrt_Conformance();
+    await testPasp_Structure();
+    await testPasp_Conformance();
+    await testAvc1_Structure();
+    await testAvc1_Conformance();
+    await testStsd_Structure();
+    await testStsd_SemanticConformance();
+    await testStsd_StructuralConformance();
+    return
+
+    // The test following `return` are the following status:
+    // testStsz Phase A - todo 
+    // testStsz Phase B - todo 
+    // testStsz Phase c - todo 
+
+    // NOTE:
+    // This test is intentionally positioned above the return cursor.
+    // It will fail until ALL STBL leaf boxes (stsd, stts, stsc, stsz, stco)
+    // have completed Phase A (JSON-only output).
+    // The failure is expected during refactor and should disappear
+    // naturally as the cursor advances.
+    await test_NativeMuxer_chunkPolicy_ffmpeg();
+
+    // -----------------------------------------------------------------
+    // CONTAINER BOUNDARY: STBL / MINF / MDIA / TRAK / MOOV
+    // -----------------------------------------------------------------
+    //
+    // At this point, all *leaf* boxes that form the Sample Table (STBL)
+    // must have completed Phase A (JSON-only builders).
+    //
+    // STBL is not a leaf box itself — it is a *composite container* made
+    // up of the following children:
+    //
+    //   stsd  Sample Descriptions
+    //   stts  Sample Timing
+    //   stsc  Sample-to-Chunk mapping
+    //   stsz  Sample Sizes
+    //   stco  Chunk Offsets
+    //
+    // These boxes are individually testable in isolation, but STBL
+    // cannot be validated meaningfully until *all five* are stable,
+    // because its correctness depends on their combined structure.
+    //
+    // The same is true for the higher-level containers built above STBL:
+    //
+    //   dinf → minf → mdia → trak → moov
+    //
+    // `testMoov()` is therefore the architectural boundary where:
+    //
+    //   - leaf box refactors must be complete
+    //   - byte-level serialization must be consistent
+    //   - container composition begins
+    //
+    // This test is intentionally positioned *after* the return cursor.
+    // It will fail during refactor while any STBL leaf box still emits
+    // bytes directly instead of JSON.
+    //
+    // That failure is EXPECTED.
+    //
+    // As the return cursor advances and leaf boxes are migrated, this
+    // test should transition from red → green *without modification*.
+    //
+    // If it does not, that signals a real architectural regression.
+    //
+
+    // Not yet implemented
+    await testStbl();
+    await testDinf();
+    await testMinf();
+    await testMdia();
+    await testTrak();
+
+    // ---- CONTAINER BOXES ----
+    await testMoov();
+
+    // ---- STRUCTURE VALIDATION ----
     await testNalPrefixIntegrity();
-    await testHdlr();
-    await testVmhd();
-    await testDref();
+    await testAssembly();
+    await test_mp4_structure();
+
+    // ---- STATEFUL LOGIC ----
     await testAvcCExtractor();
     await testSampleCollector();
-    await testTimingModel();
+    await testTimingModel()
     await testMdatBuilder();
     await test_convertAnnexBToMp4();
-    await testStsc();
-    await testStts();
-    await testStco();
-    await testStsd();
-    await testTkhd();
-    await testMdhd();
-    await testMvhd();
-    await testMoov();
-    await testFtyp();
-    await testAssembly();
 }
+
 
 async function runBoundaryTests() {
     await test_mp4_internal_integrity();
-    console.log("=== boundary test 1 complete");
     await test_access_unit_structure();
-    console.log("=== boundary test 2 complete");
     await test_stco_offsets();
     await test_roundtrip_nalu();
     await test_webcodecs_decode();

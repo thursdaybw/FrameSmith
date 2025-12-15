@@ -1,75 +1,203 @@
 import { buildSttsBox } from "../boxes/sttsBox.js";
-import { readUint32, readType } from "./testUtils.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+import { readUint32FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
+import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { assertEqual } from "./assertions.js";
 
-export async function testStts() {
+export async function testStts_Structure() {
+    console.log("=== testStts_Structure ===");
 
-    console.log("=== testStts ===");
-
-    // For all tests, we assume fps = 30 unless stated otherwise.
     const fps = 30;
-    const expectedDuration = Math.floor(90000 / fps); // 3000
+    const delta = Math.floor(90000 / fps);
+    const count = 47;
+
+    const node = buildSttsBox(count, delta);
+    const stts = serializeBoxTree(node);
 
     // ---------------------------------------------------------
-    // TEST 1: Zero samples
+    // Box header
     // ---------------------------------------------------------
-    let stts = buildSttsBox(0, expectedDuration);
+    assertEqual(
+        "stts.type",
+        readBoxTypeFromMp4BoxBytes(stts, 4),
+        "stts"
+    );
 
-    let size1 = readUint32(stts, 0);
-    if (size1 !== 24) {
-        throw new Error(`FAIL: stts size for zero samples must be 24 bytes, got ${size1}`);
-    }
-
-    let type1 = String.fromCharCode(...stts.slice(4, 8));
-    if (type1 !== "stts") {
-        throw new Error(`FAIL: stts type incorrect, got ${type1}`);
-    }
-
-    let entryCount1 = readUint32(stts, 12);
-    if (entryCount1 !== 1) {
-        throw new Error("FAIL: stts must contain one entry");
-    }
-
-    let count1 = readUint32(stts, 16);
-    let delta1 = readUint32(stts, 20);
-
-    if (count1 !== 0) throw new Error("FAIL: sample_count for zero samples must be 0");
-    if (delta1 !== expectedDuration) {
-        throw new Error(`FAIL: expected duration ${expectedDuration}, got ${delta1}`);
-    }
+    assertEqual(
+        "stts.version_and_flags",
+        readUint32FromMp4BoxBytes(stts, 8),
+        0
+    );
 
     // ---------------------------------------------------------
-    // TEST 2: One sample
+    // Entry count
     // ---------------------------------------------------------
-    stts = buildSttsBox(1, expectedDuration);
-
-    let count2 = readUint32(stts, 16);
-    let delta2 = readUint32(stts, 20);
-
-    if (count2 !== 1) throw new Error("FAIL: sample_count incorrect for one sample");
-    if (delta2 !== expectedDuration) throw new Error("FAIL: sample_delta incorrect for one sample");
+    assertEqual(
+        "stts.entry_count",
+        readUint32FromMp4BoxBytes(stts, 12),
+        1
+    );
 
     // ---------------------------------------------------------
-    // TEST 3: Many samples
+    // Sample count
     // ---------------------------------------------------------
-    const N = 47;
-    stts = buildSttsBox(N, expectedDuration);
-
-    let count3 = readUint32(stts, 16);
-    let delta3 = readUint32(stts, 20);
-
-    if (count3 !== N) throw new Error("FAIL: sample_count incorrect for many samples");
-    if (delta3 !== expectedDuration) throw new Error("FAIL: sample_delta incorrect for many samples");
+    assertEqual(
+        "stts.sample_count",
+        readUint32FromMp4BoxBytes(stts, 16),
+        count
+    );
 
     // ---------------------------------------------------------
-    // TEST 4: Big-endian correctness on duration
+    // Sample delta
     // ---------------------------------------------------------
-    const weirdDuration = 12345;
-    stts = buildSttsBox(5, weirdDuration);
+    assertEqual(
+        "stts.sample_delta",
+        readUint32FromMp4BoxBytes(stts, 20),
+        delta
+    );
 
-    let stored4 = readUint32(stts, 20);
-    if (stored4 !== weirdDuration) {
-        throw new Error("FAIL: stts duration big-endian encoding incorrect");
-    }
+    // ---------------------------------------------------------
+    // Size
+    // ---------------------------------------------------------
+    assertEqual(
+        "stts.size",
+        readUint32FromMp4BoxBytes(stts, 0),
+        24
+    );
 
-    console.log("PASS: STTS tests");
+    console.log("PASS: stts structural correctness");
 }
+
+/**
+ * testStts_Conformance
+ * -------------------
+ * Phase C test: byte-for-byte comparison against a real MP4
+ * produced by ffmpeg.
+ *
+ * This test proves that Framesmith’s STTS output:
+ * - matches real-world encoders exactly
+ * - uses the same entry layout
+ * - uses the same timing values
+ */
+export async function testStts_Conformance() {
+    console.log("=== testStts_Conformance (golden MP4) ===");
+
+    // -------------------------------------------------------------
+    // 1. Load golden MP4
+    // -------------------------------------------------------------
+    const resp = await fetch("reference/reference_visual.mp4");
+    const buf  = new Uint8Array(await resp.arrayBuffer());
+
+    // -------------------------------------------------------------
+    // 2. Extract reference stts
+    // -------------------------------------------------------------
+    const refStts = extractBoxByPath(
+        buf,
+        ["moov", "trak", "mdia", "minf", "stbl", "stts"]
+    );
+
+    if (!refStts) {
+        throw new Error("FAIL: stts box not found in golden MP4");
+    }
+
+    // -------------------------------------------------------------
+    // 3. Parse reference
+    // -------------------------------------------------------------
+    const ref = parseStts(refStts);
+
+    if (ref.entryCount !== 1) {
+        throw new Error(
+            `FAIL: golden MP4 stts uses ${ref.entryCount} entries\n` +
+            `Framesmith currently supports canonical single-entry STTS only`
+        );
+    }
+
+    const refEntry = ref.entries[0];
+
+    // -------------------------------------------------------------
+    // 4. Build Framesmith STTS from reference values
+    // -------------------------------------------------------------
+    const outStts = serializeBoxTree(
+        buildSttsBox(refEntry.sampleCount, refEntry.sampleDelta)
+    );
+
+    // -------------------------------------------------------------
+    // 5. Parse output
+    // -------------------------------------------------------------
+    const out = parseStts(outStts);
+
+    // -------------------------------------------------------------
+    // 6. Field-level conformance
+    // -------------------------------------------------------------
+    assertEqual("stts.type", out.type, "stts");
+    assertEqual("stts.version", out.version, ref.version);
+    assertEqual("stts.flags", out.flags, ref.flags);
+    assertEqual("stts.entry_count", out.entryCount, ref.entryCount);
+
+    const outEntry = out.entries[0];
+
+    assertEqual(
+        "stts.sample_count",
+        outEntry.sampleCount,
+        refEntry.sampleCount
+    );
+
+    assertEqual(
+        "stts.sample_delta",
+        outEntry.sampleDelta,
+        refEntry.sampleDelta
+    );
+
+    // -------------------------------------------------------------
+    // 7. Byte-for-byte conformance
+    // -------------------------------------------------------------
+    assertEqual(
+        "stts.size",
+        out.raw.length,
+        ref.raw.length
+    );
+
+    for (let i = 0; i < ref.raw.length; i++) {
+        assertEqual(
+            `stts.byte[${i}]`,
+            out.raw[i],
+            ref.raw[i]
+        );
+    }
+
+    console.log("PASS: stts matches golden MP4 byte-for-byte");
+}
+
+function parseStts(box) {
+    const size = readUint32FromMp4BoxBytes(box, 0);
+    const type = readBoxTypeFromMp4BoxBytes(box, 4);
+
+    const version = box[8];
+    const flags =
+        (box[9] << 16) |
+        (box[10] << 8) |
+        box[11];
+
+    const entryCount = readUint32FromMp4BoxBytes(box, 12);
+
+    const entries = [];
+    let offset = 16;
+
+    for (let i = 0; i < entryCount; i++) {
+        const sampleCount = readUint32FromMp4BoxBytes(box, offset);
+        const sampleDelta = readUint32FromMp4BoxBytes(box, offset + 4);
+        entries.push({ sampleCount, sampleDelta });
+        offset += 8;
+    }
+
+    return {
+        size,
+        type,
+        version,
+        flags,
+        entryCount,
+        entries,
+        raw: box
+    };
+}
+

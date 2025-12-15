@@ -1,89 +1,250 @@
-import { readUint32 } from "./testUtils.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { buildMvhdBox } from "../boxes/mvhdBox.js";
+import { readUint32FromMp4BoxBytes, readUint16FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
+import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { assertEqual } from "./assertions.js";
 
-export async function testMvhd() {
-    console.log("=== testMvhd ===");
+export async function testMvhd_Structure() {
+    console.log("=== mvhd Granular structural tests ===");
 
-    const timescale = 90000;
-    const duration  = 90000 * 12; // 12 seconds
+    const timescale   = 90000;
+    const duration    = 90000 * 12;
+    const nextTrackId = 2;
 
-    const mvhd = buildMvhdBox({
-        timescale,
-        duration,
-        nextTrackId: 2
-    });
-
-    // ---- TEST 1: header ------------------------------------------------
-    const size = readUint32(mvhd, 0);
-    if (size !== mvhd.length) {
-        throw new Error("FAIL: mvhd size field does not match length");
-    }
-
-    const type = String.fromCharCode(
-        mvhd[4], mvhd[5], mvhd[6], mvhd[7]
+    const mvhd = serializeBoxTree(
+        buildMvhdBox({ timescale, duration, nextTrackId })
     );
-    if (type !== "mvhd") {
-        throw new Error("FAIL: mvhd type incorrect");
-    }
 
-    // ---- TEST 2: version + flags ---------------------------------------
-    if (mvhd[8] !== 0) {
-        throw new Error("FAIL: mvhd version must be 0");
-    }
-    if (mvhd[9] !== 0 || mvhd[10] !== 0 || mvhd[11] !== 0) {
-        throw new Error("FAIL: mvhd flags must be zero");
-    }
+    // ---------------------------------------------------------
+    // FIELD 1: size
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.size",
+        readUint32FromMp4BoxBytes(mvhd, 0),
+        mvhd.length
+    );
 
-    // ---- TEST 3: creation_time / modification_time ---------------------
-    if (readUint32(mvhd, 12) !== 0 || readUint32(mvhd, 16) !== 0) {
-        throw new Error("FAIL: mvhd creation/modification times must be zero");
-    }
+    // ---------------------------------------------------------
+    // FIELD 2: type
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.type",
+        readBoxTypeFromMp4BoxBytes(mvhd, 4),
+        "mvhd"
+    );
 
-    // ---- TEST 4: timescale ---------------------------------------------
-    if (readUint32(mvhd, 20) !== timescale) {
-        throw new Error("FAIL: mvhd timescale incorrect");
-    }
+    // ---------------------------------------------------------
+    // FIELD 3: version
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.version",
+        mvhd[8],
+        0
+    );
 
-    // ---- TEST 5: duration -----------------------------------------------
-    if (readUint32(mvhd, 24) !== duration) {
-        throw new Error("FAIL: mvhd duration incorrect");
-    }
+    // ---------------------------------------------------------
+    // FIELD 4: flags
+    // ---------------------------------------------------------
+    const flags =
+        (mvhd[9] << 16) |
+        (mvhd[10] << 8) |
+        mvhd[11];
 
-    // ---- TEST 6: preferred rate (16.16 fixed) ---------------------------
-    if (readUint32(mvhd, 28) !== 0x00010000) {
-        throw new Error("FAIL: mvhd preferred rate must be 1.0 in 16.16");
-    }
+    assertEqual(
+        "mvhd.flags",
+        flags,
+        0
+    );
 
-    // ---- TEST 7: preferred volume (8.8 fixed → 0 for video-only) -------
-    const volume = (mvhd[32] << 8) | mvhd[33];
-    if (volume !== 0) {
-        throw new Error("FAIL: mvhd preferred volume must be 0 for video");
-    }
+    // ---------------------------------------------------------
+    // FIELD 5: creation_time
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.creation_time",
+        readUint32FromMp4BoxBytes(mvhd, 12),
+        0
+    );
 
-    // ---- TEST 8: matrix (identity) -------------------------------------
-    const one = 0x00010000;
-    const matrixOffsets = [36, 40, 44, 48, 52, 56, 60, 64, 68];
+    // ---------------------------------------------------------
+    // FIELD 6: modification_time
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.modification_time",
+        readUint32FromMp4BoxBytes(mvhd, 16),
+        0
+    );
 
-    // Only 0 or identity constants may appear
+    // ---------------------------------------------------------
+    // FIELD 7: timescale
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.timescale",
+        readUint32FromMp4BoxBytes(mvhd, 20),
+        timescale
+    );
+
+    // ---------------------------------------------------------
+    // FIELD 8: duration
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.duration",
+        readUint32FromMp4BoxBytes(mvhd, 24),
+        duration
+    );
+
+    // ---------------------------------------------------------
+    // FIELD 9: rate (16.16)
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.rate",
+        readUint32FromMp4BoxBytes(mvhd, 28),
+        0x00010000
+    );
+
+    // ---------------------------------------------------------
+    // FIELD 10: volume (8.8)
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.volume",
+        readUint16FromMp4BoxBytes(mvhd, 32),
+        0x0100
+    );
+
+    // ---------------------------------------------------------
+    // FIELD 11: reserved (uint16)
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.reserved.short",
+        readUint16FromMp4BoxBytes(mvhd, 34),
+        0
+    );
+
+    // ---------------------------------------------------------
+    // FIELD 12: reserved (uint32 × 2)
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.reserved[0]",
+        readUint32FromMp4BoxBytes(mvhd, 36),
+        0
+    );
+
+    assertEqual(
+        "mvhd.reserved[1]",
+        readUint32FromMp4BoxBytes(mvhd, 40),
+        0
+    );
+
+    // ---------------------------------------------------------
+    // FIELD 13: matrix
+    // ---------------------------------------------------------
     const expectedMatrix = [
-        one, 0,   0,
-        0,   one, 0,
-        0,   0,   one
+        0x00010000, 0, 0,
+        0, 0x00010000, 0,
+        0, 0, 0x40000000
     ];
 
-    for (let i = 0; i < expectedMatrix.length; i++) {
-        const actual = readUint32(mvhd, matrixOffsets[i]);
-        const exp = expectedMatrix[i];
-        if (actual !== exp) {
-            throw new Error(`FAIL: mvhd matrix element ${i} incorrect`);
-        }
+    for (let i = 0; i < 9; i++) {
+        assertEqual(
+            `mvhd.matrix[${i}]`,
+            readUint32FromMp4BoxBytes(mvhd, 44 + i * 4),
+            expectedMatrix[i]
+        );
     }
 
-    // ---- TEST 9: next_track_ID -----------------------------------------
-    if (readUint32(mvhd, 108) !== 2) {
-        throw new Error("FAIL: mvhd next_track_ID incorrect");
+    // ---------------------------------------------------------
+    // FIELD 14: pre_defined (uint32 × 6)
+    // ---------------------------------------------------------
+    for (let i = 0; i < 6; i++) {
+        assertEqual(
+            `mvhd.pre_defined[${i}]`,
+            readUint32FromMp4BoxBytes(mvhd, 80 + i * 4),
+            0
+        );
     }
 
-    console.log("PASS: MVHD tests");
+    // ---------------------------------------------------------
+    // FIELD 15: next_track_ID
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.next_track_ID",
+        readUint32FromMp4BoxBytes(mvhd, 104),
+        nextTrackId
+    );
+
+    console.log("PASS: mvhd granular structural tests");
 }
 
+export async function testMvhd_Conformance() {
+    console.log("=== testMvhd_Conformance (golden MP4) ===");
+
+    const resp = await fetch("reference/reference_visual.mp4");
+    const buf  = new Uint8Array(await resp.arrayBuffer());
+
+    const refRaw = extractBoxByPath(buf, ["moov", "mvhd"]);
+    if (!refRaw) {
+        throw new Error("FAIL: mvhd box not found in golden MP4");
+    }
+
+    const ref = parseMvhd(refRaw);
+
+    const outRaw = serializeBoxTree(
+        buildMvhdBox({
+            timescale:   ref.timescale,
+            duration:    ref.duration,
+            nextTrackId: ref.nextTrackId
+        })
+    );
+
+    const out = parseMvhd(outRaw);
+
+    // ---------------------------------------------------------
+    // Field-level conformance
+    // ---------------------------------------------------------
+    assertEqual("mvhd.version",     out.version,     ref.version);
+    assertEqual("mvhd.flags",       out.flags,       ref.flags);
+    assertEqual("mvhd.timescale",   out.timescale,   ref.timescale);
+    assertEqual("mvhd.duration",    out.duration,    ref.duration);
+    assertEqual("mvhd.nextTrackId", out.nextTrackId, ref.nextTrackId);
+    assertEqual("mvhd.volume",      out.volume,      ref.volume);
+
+    // ---------------------------------------------------------
+    // Byte-for-byte conformance
+    // ---------------------------------------------------------
+    assertEqual(
+        "mvhd.size",
+        out.raw.length,
+        ref.raw.length
+    );
+
+    for (let i = 0; i < ref.raw.length; i++) {
+        assertEqual(
+            `mvhd.byte[${i}]`,
+            out.raw[i],
+            ref.raw[i]
+        );
+    }
+
+    console.log("PASS: mvhd matches golden MP4 byte-for-byte");
+}
+
+function parseMvhd(box) {
+    const version = box[8];
+    const flags =
+        (box[9] << 16) |
+        (box[10] << 8) |
+        box[11];
+
+    const volumeRaw = readUint16FromMp4BoxBytes(box, 32);
+
+    return {
+        type: readBoxTypeFromMp4BoxBytes(box, 4),
+        version,
+        flags,
+        timescale: readUint32FromMp4BoxBytes(box, 20),
+        duration: readUint32FromMp4BoxBytes(box, 24),
+        rate: readUint32FromMp4BoxBytes(box, 28),
+        volume: volumeRaw, // ← 8.8 fixed
+        nextTrackId: readUint32FromMp4BoxBytes(box, 104),
+        raw: box
+    };
+}

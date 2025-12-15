@@ -28,7 +28,7 @@ export class NativeMuxer {
      * objects or encoder-specific data. For now, accepting the optional
      * configuration record keeps the system functional.
      */
-    constructor({ codec, width, height, fps }) {
+    constructor({ codec, width, height, fps, chunkPolicy }) {
         if (!codec || !width || !height || !fps) {
             throw new Error("NativeMuxer: Missing required constructor params");
         }
@@ -43,6 +43,8 @@ export class NativeMuxer {
         this.timing = new TimingModel(fps);
 
         this.boxes = BoxFactory;
+
+        this.chunkPolicy = chunkPolicy;
 
         this._finalized = false;
     }
@@ -112,6 +114,119 @@ export class NativeMuxer {
         });
     }
 
+/**
+ * finalize()
+ * ==========
+ *
+ * Finalizes the MP4 file and returns a playable Blob.
+ *
+ * This method is intentionally large.
+ * It represents the *assembly boundary* of the entire muxing pipeline.
+ *
+ * Responsibilities (in strict order):
+ * ----------------------------------
+ *
+ * 1. Validate required codec configuration
+ *    -------------------------------------
+ *    Ensures SPS/PPS (avcC) has been discovered or injected.
+ *    MP4 files without codec configuration are invalid and rejected.
+ *
+ * 2. Freeze sample and timing state
+ *    -------------------------------
+ *    - Samples are read from SampleCollector
+ *    - Timing data is finalized from TimingModel
+ *    After this point, no new samples may be added.
+ *
+ * 3. Build all STBL *leaf* boxes (JSON → bytes)
+ *    ------------------------------------------
+ *    These boxes describe *what* the samples are:
+ *
+ *      stsd  Sample descriptions (avc1 → avcC)
+ *      stts  Sample timing
+ *      stsc  Sample-to-chunk mapping
+ *      stsz  Sample sizes
+ *      stco  Chunk offsets (TEMPORARY, see below)
+ *
+ *    IMPORTANT:
+ *    These builders do not compute layout.
+ *    They only serialize the data they are given.
+ *
+ * 4. First-pass MOOV assembly (layout discovery)
+ *    --------------------------------------------
+ *    A temporary `moov` box is built using a dummy stco.
+ *
+ *    Purpose:
+ *      - Freeze the byte size of every box
+ *      - Determine the final file layout
+ *
+ *    This pass answers:
+ *      “How large will the metadata be?”
+ *
+ * 5. Compute real STCO offsets (layout resolution)
+ *    ---------------------------------------------
+ *    Chunk offsets depend on:
+ *
+ *      ftyp size
+ *      final moov size
+ *      mdat header size
+ *      cumulative sample sizes
+ *
+ *    This creates a fundamental dependency:
+ *
+ *      stco offsets depend on moov size
+ *
+ *    Because stco *lives inside moov*, this cannot
+ *    be resolved in a single pass.
+ *
+ *    The solution is a second pass.
+ *
+ * 6. Second-pass MOOV assembly (final metadata)
+ *    ------------------------------------------
+ *    A new stco is built with correct offsets.
+ *    A new moov is built containing that stco.
+ *    After this step
+ *      - All offsets are correct
+ *      - All box sizes are stable
+ *
+ * 7. Build MDAT
+ *    -----------
+ *    Media samples are concatenated exactly as described
+ *    by the STBL tables.
+ *
+ * 8. Final file assembly
+ *    -------------------
+ *    The final MP4 byte layout is:
+ *
+ *      ftyp
+ *      moov
+ *      mdat
+ *
+ * Architectural Notes:
+ * --------------------
+ *
+ * - This method owns *layout*.
+ * - Leaf box builders must remain pure and stateless.
+ * - The two-pass strategy is not an optimization;
+ *   it is required by the MP4 format.
+ *
+ * Why this method is large:
+ * -------------------------
+ *
+ * This is not accidental complexity.
+ *
+ * `finalize()` is the point where:
+ *   - temporal data becomes structural
+ *   - abstract samples become bytes on disk
+ *   - circular dependencies are resolved by staging
+ *
+ * Refactoring will extract helpers,
+ * but the *sequence* and *ownership* must remain intact.
+ *
+ * Any future refactor MUST preserve:
+ *   - two-pass moov construction
+ *   - stco computed only after moov sizing
+ *   - clear separation between layout and serialization
+ */
     async finalize() {
         if (this._finalized) {
             throw new Error("NativeMuxer: finalize() called twice");
@@ -155,7 +270,12 @@ export class NativeMuxer {
         const entry = sttsEntries[0];
         const stts = this.boxes.stts(entry.sampleCount, entry.sampleDuration);
 
-        const stsc = this.boxes.stsc();                      // constant 1:1 table
+        const chunkLayout = planChunkLayout({
+            policy: this.chunkPolicy || "framesmith-simple",
+            samples
+        });
+        const stsc = this.boxes.stsc(chunkLayout);
+
         const stsz = this.boxes.stsz(samples.map(s => s.size));
         console.log("TRACE STSZ INITIAL:");
         console.log("  len =", stsz.length);

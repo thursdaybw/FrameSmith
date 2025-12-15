@@ -1,71 +1,204 @@
-import { writeUint32, writeString } from "../binary/Writer.js";
-
 /**
- * Build a minimal STSC box for constant 1-sample-per-chunk layout.
+ * STSC — Sample To Chunk Box
+ * -------------------------
+ * Defines how samples are grouped into chunks within a track.
  *
- * Structure:
- *   size (4)
- *   type "stsc" (4)
- *   version (1)
- *   flags (3)
- *   entry_count (4)
+ * This box answers the question:
  *
- *   entries:
- *     first_chunk (4)
- *     samples_per_chunk (4)
- *     sample_description_index (4)
+ *   “Given a chunk number, how many samples does it contain,
+ *    and which sample description applies to them?”
  *
- * Our MVP muxer always uses:
+ * It does NOT describe:
+ *   - sample sizes        (stsz)
+ *   - sample timing       (stts)
+ *   - chunk byte offsets  (stco / co64)
+ *
+ * Those concerns are handled by other boxes.
+ *
+ * ---
+ *
+ * Samples, chunks, and why this box exists:
+ * -----------------------------------------
+ * In MP4:
+ *
+ *   • A *sample* is a single unit of encoded media
+ *     (for video: one encoded frame).
+ *
+ *   • A *chunk* is a contiguous run of samples stored together
+ *     in the file’s media data (mdat).
+ *
+ * Chunks exist for efficiency:
+ *   - fewer file seeks
+ *   - better streaming and buffering behavior
+ *
+ * The STSC table maps:
+ *   chunk number → samples per chunk → sample description
+ *
+ * ---
+ *
+ * How STSC works (conceptually):
+ * ------------------------------
+ * STSC uses a run-length table.
+ *
+ * Each entry says:
+ *
+ *   “Starting at chunk N,
+ *    each chunk contains S samples,
+ *    using sample description D,
+ *    until the next rule appears.”
+ *
+ * This allows complex layouts without listing every chunk explicitly.
+ *
+ * ---
+ *
+ * Framesmith’s MVP design choice:
+ * -------------------------------
+ * Framesmith currently supports emitting the simplest valid STSC table by default.
+ * More complex layouts are provided explicitly via chunkLayout.
+ *
  *   entry_count = 1
- *   { first_chunk: 1, samples_per_chunk: 1, sample_description: 1 }
+ *   first_chunk = 1
+ *   samples_per_chunk = 1
+ *   sample_description_index = 1
  *
- * @returns {Uint8Array}
+ * Meaning:
+ *   - Every chunk contains exactly one sample
+ *   - All samples use the first (and only) sample description
+ *
+ * This layout:
+ *   - Matches ffmpeg output for simple streams
+ *   - Matches mp4box.js default behavior
+ *   - Matches browser-generated MP4s
+ *   - Is universally valid and easy to reason about
+ *
+ * ---
+ *
+ * Why this is sufficient (for now):
+ * --------------------------------
+ * Using one sample per chunk:
+ *   - Keeps chunk math trivial
+ *   - Avoids complex interleaving logic
+ *   - Makes offsets (stco) and sizes (stsz) easier to validate
+ *
+ * More advanced layouts (multiple samples per chunk, interleaving,
+ * fragmentation) belong in *assembly logic*, not in this box builder.
+ *
+ * This builder intentionally does not infer or optimize chunking.
+ *
+ * ---
+ *
+ * Defensive handling of inputs:
+ * -----------------------------
+ * The input list of samples is copied immediately.
+ *
+ * This ensures:
+ *   - Later changes to the caller’s data cannot affect this box
+ *   - The MP4 structure remains immutable once built
+ *   - Tests can rely on deterministic behavior
+ *
+ * Even though the current implementation does not yet inspect
+ * sample data, this defensive pattern is preserved for future
+ * extensions.
+ *
+ * ---
+ *
+ * External references:
+ * - ISO/IEC 14496-12 — Sample To Chunk Box (stsc)
+ * - MP4 registry: https://mp4ra.org/registered-types/boxes
+ * - mp4box.js reference implementation
  */
-export function buildStscBox() {
 
-    // For V1, we always produce exactly one entry.
-    const ENTRY_COUNT = 1;
+export function buildStscBox(chunkLayout) {
 
-    // Box size calculation:
-    // header (8) +
-    // version+flags (4) +
-    // entry_count (4) +
-    // 1 entry * 12 bytes
-    const boxSize = 8 + 4 + 4 + (ENTRY_COUNT * 12);
+    // ---------------------------------------------------------
+    // Contract validation (runtime type enforcement)
+    // ---------------------------------------------------------
+    if (chunkLayout === null || typeof chunkLayout !== "object") {
+        throw new Error(
+            "buildStscBox: chunkLayout must be an object"
+        );
+    }
 
-    const out = new Uint8Array(boxSize);
+    const {
+        firstChunk,
+        samplesPerChunk,
+        sampleDescriptionIndex
+    } = chunkLayout;
 
-    // box size
-    writeUint32(out, 0, boxSize);
+    if (!Number.isInteger(firstChunk) || firstChunk < 1) {
+        throw new Error(
+            "buildStscBox: firstChunk must be a positive integer (1-based)"
+        );
+    }
 
-    // type
-    writeString(out, 4, "stsc");
+    if (!Number.isInteger(samplesPerChunk) || samplesPerChunk < 1) {
+        throw new Error(
+            "buildStscBox: samplesPerChunk must be a positive integer"
+        );
+    }
 
-    // version
-    out[8] = 0;
+    if (!Number.isInteger(sampleDescriptionIndex) || sampleDescriptionIndex < 1) {
+        throw new Error(
+            "buildStscBox: sampleDescriptionIndex must be a positive integer (1-based)"
+        );
+    }
 
-    // flags
-    out[9] = 0;
-    out[10] = 0;
-    out[11] = 0;
+    // ---------------------------------------------------------
+    // Defensive snapshot
+    // ---------------------------------------------------------
+    const layout = {
+        firstChunk,
+        samplesPerChunk,
+        sampleDescriptionIndex
+    };
 
-    // entry_count
-    writeUint32(out, 12, ENTRY_COUNT);
+    // ---------------------------------------------------------
+    // STSC serialization
+    // ---------------------------------------------------------
+    return {
+        type: "stsc",
+        version: 0,
+        flags: 0,
 
-    // entry fields
-    let offset = 16;
+        body: [
+            /**
+             * entry_count
+             * -----------
+             * Number of mapping rules that follow.
+             *
+             * Framesmith always emits exactly one rule:
+             *   a single, uniform mapping for all chunks.
+             */
+            { int: 1 },
 
-    // first_chunk = 1
-    writeUint32(out, offset, 1);
-    offset += 4;
+            /**
+             * first_chunk
+             * -----------
+             * The first chunk index this rule applies to.
+             *
+             * Chunk numbering is 1-based in MP4.
+             *
+             * Controlled by the provided chunkLayout
+             */
+            { int: firstChunk },
 
-    // samples_per_chunk = 1 (our muxer uses one-sample-per-chunk layout)
-    writeUint32(out, offset, 1);
-    offset += 4;
+            /**
+             * samples_per_chunk
+             * -----------------
+             * How many samples are stored in each chunk.
+             *
+             * Controlled by the provided chunkLayout
+             */
+            { int: samplesPerChunk },
 
-    // sample_description_index = 1 (first entry in stsd)
-    writeUint32(out, offset, 1);
-
-    return out;
+            /**
+             * sample_description_index
+             * ------------------------
+             * Index into the sample description table (stsd).
+             *
+             * Controlled by the provided chunkLayout
+             */
+            { int: sampleDescriptionIndex }
+        ]
+    };
 }
-

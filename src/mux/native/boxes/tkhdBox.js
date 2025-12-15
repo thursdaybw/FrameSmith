@@ -1,106 +1,309 @@
-import { writeUint32, writeString } from "../binary/Writer.js";
-
 /**
  * TKHD — Track Header Box
+ * ----------------------
+ * Declares high-level, track-wide metadata.
  *
- * Responsibilities:
- *   - Identify the track (trackId = 1 for simple video)
- *   - Declare duration in movie timescale units
- *   - Declare width/height in 16.16 fixed point
+ * This box answers questions like:
+ *   - What is this track’s numeric ID?
+ *   - How long does this track last?
+ *   - How large is the visual presentation?
  *
- * This is a fixed-structure leaf box. No children.
- * Many fields are constant in this muxer:
- *   - creation_time = 0
- *   - modification_time = 0
- *   - layer = 0
- *   - alternate_group = 0
- *   - volume = 0 (video)
- *   - matrix = identity
+ * It does NOT describe:
+ *   - codec configuration        (stsd / avcC)
+ *   - sample timing rules        (stts / ctts)
+ *   - sample sizes or locations  (stsz / stco)
+ *
+ * Think of tkhd as:
+ *   “This track exists, it lasts this long, and this is how big it is.”
+ *
+ * ---
+ *
+ * Framesmith design principles:
+ * -----------------------------
+ * Framesmith emits the **canonical, modern tkhd form**:
+ *
+ *   - version = 0 (32-bit fields)
+ *   - all timestamps = 0 (unused by modern players)
+ *   - fixed identity matrix
+ *   - fixed flags marking the track as enabled and visible
+ *
+ * This matches:
+ *   - ffmpeg output
+ *   - mp4box.js output
+ *   - browser-generated MP4s
+ *
+ * ---
+ *
+ * Why so many fields are hard-coded:
+ * ---------------------------------
+ * tkhd originates from QuickTime (early 1990s).
+ * Many fields existed for editing workflows that no longer apply.
+ *
+ * Modern players:
+ *   - ignore creation/modification time
+ *   - ignore layer and alternate_group
+ *   - ignore matrix unless it is invalid
+ *
+ * But the *presence and correctness* of these fields
+ * is still required for a structurally valid MP4.
+ *
+ * Hard-coding them is not laziness.
+ * It is correctness.
+ *
+ * ---
+ *
+ * @param {Object} params
+ * @param {number} params.width     Display width in pixels
+ * @param {number} params.height    Display height in pixels
+ * @param {number} params.duration  Track duration in movie timescale units
+ * @param {number} params.trackId   Unique track identifier (1-based)
+ *
+ * @returns {object} BoxNode
  */
-export function buildTkhdBox({ width, height, duration }) {
 
-    // Offsets follow ISO BMFF tkhd full-box version 0 layout.
-    // Total size is fixed at 92 bytes for this minimal implementation.
-    const out = new Uint8Array(92);
+// ---------------------------------------------------------------------------
+// TKHD flag vocabulary
+// ---------------------------------------------------------------------------
+//
+// Track Header flags declare how this track participates in playback.
+//
+// Modern MP4 practice (ffmpeg, mp4box.js, browsers):
+//   - track_enabled   → the track is active
+//   - track_in_movie  → the track participates in the presentation
+//
+// Historical note:
+//   - track_in_preview comes from QuickTime preview modes
+//   - It is deprecated
+//   - Modern encoders do NOT emit it
+//   - Emitting it breaks byte-for-byte conformance
+//
+const TKHD_FLAG_BITS = {
+    enabled:    0x000001, // track_enabled
+    inMovie:    0x000002, // track_in_movie
+    inPreview:  0x000004, // deprecated, intentionally unused
+};
 
-    // -------------------------------------------------------------
-    // Box header
-    // -------------------------------------------------------------
-    writeUint32(out, 0, out.length);
-    writeString(out, 4, "tkhd");
+export function buildTkhdBox({ width, height, duration, trackId }) {
+    if (!Number.isInteger(trackId) || trackId <= 0) {
+        throw new Error(
+            "buildTkhdBox: trackId must be a positive integer"
+        );
+    }
 
-    // -------------------------------------------------------------
-    // version + flags
-    // version = 0
-    // flags = 0x000007   (track enabled | in movie | in preview)
-    // -------------------------------------------------------------
-    out[8] = 0;
-    out[9] = 0;
-    out[10] = 0;
-    out[11] = 7;
+    if (!Number.isInteger(duration) || duration < 0) {
+        throw new Error(
+            "buildTkhdBox: duration must be a non-negative integer"
+        );
+    }
 
-    // -------------------------------------------------------------
-    // creation_time (4 bytes)
-    // modification_time (4 bytes)
-    // track_ID (4 bytes)
-    // reserved (4 bytes)
-    // -------------------------------------------------------------
-    // creation_time = 0
-    // modification_time = 0
-    // track_ID = 1
-    // reserved = 0
-    writeUint32(out, 12, 0);
-    writeUint32(out, 16, 0);
-    writeUint32(out, 20, 1);
-    writeUint32(out, 24, 0);
+    if (!Number.isInteger(width) || width < 0) {
+        throw new Error(
+            "buildTkhdBox: width must be a non-negative integer"
+        );
+    }
 
-    // -------------------------------------------------------------
-    // duration (4 bytes)
-    // -------------------------------------------------------------
-    writeUint32(out, 28, duration >>> 0);
+    if (!Number.isInteger(height) || height < 0) {
+        throw new Error(
+            "buildTkhdBox: height must be a non-negative integer"
+        );
+    }
 
-    // -------------------------------------------------------------
-    // reserved (8 bytes)
-    // layer (2 bytes)
-    // alternate_group (2 bytes)
-    // volume (2 bytes)
-    // reserved (2 bytes)
-    // -------------------------------------------------------------
-    // All zero for video tracks.
-    // (bytes 32–47 are already zero because Uint8Array defaults to 0)
-
-    // -------------------------------------------------------------
-    // Matrix structure (36 bytes)
-    // Identity matrix:
-    // [1.0  0    0
-    //  0    1.0  0
-    //  0    0    1.0]
-    //
-    // Each element is 16.16 fixed point:
-    //   1.0 → 0x00010000
-    // -------------------------------------------------------------
-    const one = 0x00010000;
-
-    writeUint32(out, 48,  one);
-    writeUint32(out, 52,  0);
-    writeUint32(out, 56,  0);
-
-    writeUint32(out, 60,  0);
-    writeUint32(out, 64,  one);
-    writeUint32(out, 68,  0);
-
-    writeUint32(out, 72,  0);
-    writeUint32(out, 76,  one);
-    writeUint32(out, 80,  0);
-
-    // -------------------------------------------------------------
-    // width / height (each 16.16 fixed point)
-    // -------------------------------------------------------------
-    const widthFixed  = width << 16;
+    // Width and height are stored as 16.16 fixed-point values.
+    // High 16 bits = integer pixels
+    // Low 16 bits  = fractional pixels (unused here)
+    const widthFixed  = width  << 16;
     const heightFixed = height << 16;
 
-    writeUint32(out, 84, widthFixed >>> 0);
-    writeUint32(out, 88, heightFixed >>> 0);
+    return {
+        type: "tkhd",
 
-    return out;
+        // FullBox header
+        // ---------------
+        // tkhd is a FullBox, so it must declare:
+        //   - version
+        //   - flags
+        //
+        // version = 0 → 32-bit fields
+        version: 0,
+
+        /**
+         * flags
+         * -----
+         * Declarative flag intent.
+         *
+         * These booleans express *meaning*, not bit arithmetic.
+         * The serializer is responsible for turning this intent
+         * into the correct 24-bit flag value.
+         *
+         * Framesmith sets:
+         *   - enabled   → true
+         *   - inMovie   → true
+         *   - inPreview → false (deprecated)
+         *
+         * This resolves to 0x000003 and matches ffmpeg output.
+         */
+        flags: {
+            enabled: true,
+            inMovie: true,
+            // inPreview intentionally false
+        },
+
+        /**
+         * flagBits
+         * --------
+         * Explicit vocabulary of allowed flag bits for this box.
+         *
+         * This is required whenever flags are specified by name.
+         * The serializer enforces correctness using this table.
+         */
+        flagBits: TKHD_FLAG_BITS,
+
+        body: [
+            /**
+             * creation_time (uint32)
+             * ---------------------
+             * Historical metadata from QuickTime.
+             *
+             * Modern meaning:
+             *   None.
+             *
+             * Players ignore this field.
+             * Framesmith sets it to 0 to match reference encoders.
+             */
+            { int: 0 },
+
+            /**
+             * modification_time (uint32)
+             * --------------------------
+             * Historical metadata from QuickTime.
+             *
+             * Modern meaning:
+             *   None.
+             *
+             * Framesmith sets it to 0.
+             */
+            { int: 0 },
+
+            /**
+             * track_ID (uint32)
+             * -----------------
+             * Uniquely identifies this track within the movie.
+             *
+             * This value is semantically important.
+             * Other boxes reference tracks by this ID.
+             *
+             * Must be non-zero.
+             */
+            { int: trackId },
+
+            /**
+             * reserved (uint32)
+             * -----------------
+             * Required by the specification.
+             * Must be zero.
+             */
+            { int: 0 },
+
+            /**
+             * duration (uint32)
+             * -----------------
+             * Duration of this track in the *movie timescale*.
+             *
+             * This value is authoritative for track length.
+             *
+             * A duration of 0 means “unknown”.
+             */
+            { int: duration },
+
+            /**
+             * reserved[2] (uint32 × 2)
+             * -----------------------
+             * Legacy padding fields.
+             * Must be zero.
+             */
+            { int: 0 },
+            { int: 0 },
+
+            /**
+             * layer (int16)
+             * -------------
+             * Historical track layering (editing use).
+             *
+             * Modern players ignore this field.
+             * Framesmith sets it to 0.
+             */
+            { short: 0 },
+
+            /**
+             * alternate_group (int16)
+             * -----------------------
+             * Used for alternate tracks (e.g. language variants).
+             *
+             * Not used in Framesmith.
+             * Set to 0.
+             */
+            { short: 0 },
+
+            /**
+             * volume (int16, 8.8 fixed-point)
+             * -------------------------------
+             * Audio-only field.
+             *
+             * For video tracks, this must be 0.
+             */
+            { short: 0 },
+
+            /**
+             * reserved (uint16)
+             * -----------------
+             * Required by the specification.
+             * Must be zero.
+             */
+            { short: 0 },
+
+            /**
+             * matrix (int32 × 9)
+             * ------------------
+             * 3×3 transformation matrix.
+             *
+             * Canonical identity matrix required by MP4:
+             *
+             *   [ 0x00010000, 0,          0,
+             *     0,          0x00010000, 0,
+             *     0,          0,          0x40000000 ]
+             *
+             * Notes:
+             * - The final value (0x40000000) is NOT a typo.
+             * - It is required for correct fixed-point math.
+             * - ffmpeg and mp4box.js emit this exact matrix.
+             *
+             * Getting this wrong breaks conformance.
+             */
+            { int: 0x00010000 }, // a
+            { int: 0 },          // b
+            { int: 0 },          // u
+
+            { int: 0 },          // c
+            { int: 0x00010000 }, // d
+            { int: 0 },          // v
+
+            { int: 0 },          // x
+            { int: 0 },          // y
+            { int: 0x40000000 }, // w
+
+            /**
+             * width (uint32, 16.16 fixed-point)
+             * --------------------------------
+             * Display width of the track.
+             */
+            { int: widthFixed },
+
+            /**
+             * height (uint32, 16.16 fixed-point)
+             * ---------------------------------
+             * Display height of the track.
+             */
+            { int: heightFixed }
+        ]
+    };
 }

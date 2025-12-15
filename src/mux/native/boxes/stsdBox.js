@@ -1,53 +1,260 @@
-import { writeUint32, writeString } from "../binary/Writer.js";
 import { buildAvc1Box } from "./stsdBox/avc1Box.js";
 
 /**
  * STSD — Sample Description Box
+ * -----------------------------
+ * The Sample Description Box declares *how samples in a track must be interpreted*.
  *
- * Responsibilities:
- *   - Declare the number of sample entries (always 1 for simple H.264 video)
- *   - Wrap the sample entry payload (e.g., avc1)
+ * It does NOT describe:
+ *   - timing (stts)
+ *   - sample sizes (stsz)
+ *   - chunk layout (stsc)
+ *   - byte offsets (stco)
  *
- * This box does NOT decide *what* the sample entry is.
- * That responsibility belongs to the specific sample entry builder.
+ * Instead, STSD answers one question only:
+ *
+ *   “What does one sample look like?”
+ *
+ * In MP4 terminology:
+ * -------------------
+ * A *sample* is a unit of encoded media.
+ * For video, this usually means one encoded frame.
+ *
+ * A *sample description* is NOT a sample.
+ * It is a *schema* describing how samples should be decoded and displayed.
+ *
+ * This distinction is critical:
+ *   - samples live in `mdat`
+ *   - sample descriptions live in `stsd`
+ *
+ * STSD therefore acts as a *type table* for the track.
+ *
+ * ---
+ *
+ * Entry count:
+ * ------------
+ * STSD contains one or more sample entries.
+ *
+ * Each entry corresponds to a different encoding format
+ * (e.g. avc1, hev1, mp4a).
+ *
+ * Framesmith policy:
+ * ------------------
+ * Framesmith currently emits **exactly one** sample entry per track.
+ *
+ * This matches:
+ *   - ffmpeg output for simple streams
+ *   - browser-generated MP4s
+ *   - mp4box.js defaults
+ *
+ * Multiple entries are only required for:
+ *   - codec switching
+ *   - alternate encodings
+ *   - advanced editing workflows
+ *
+ * Those concerns belong in higher-level assembly logic,
+ * not in this leaf builder.
+ *
+ * ---
+ *
+ * Architectural responsibility:
+ * ------------------------------
+ * STSD does NOT know codec details.
+ *
+ * It delegates sample-specific structure to a SampleEntry builder:
+ *   - H.264 → buildAvc1Box
+ *
+ * This preserves separation of concerns:
+ *   - STSD owns *table structure*
+ *   - avc1 owns *codec semantics*
+ *
+ * ---
+ *
+ * Phase A contract:
+ * -----------------
+ * This builder returns a **pure JSON node** describing the STSD box.
+ *
+ * It does NOT:
+ *   - write bytes
+ *   - compute sizes
+ *   - assume offsets
+ *
+ * Serialization is handled later by `serializeBoxTree`.
+ *
+ * This makes STSD:
+ *   - testable in isolation
+ *   - readable without byte math
+ *   - stable under refactor
+ *
+ * Parameter enforcement:
+ * 
+ * - Named parameters only
+ * - No silent defaults
+ * - Closed contract
+ * - Explicit required vs optional
+ * - Fails early
  */
-export function buildStsdBox({ width, height, codec, avcC }) {
+export function buildStsdBox(params) {
+    if (!params || typeof params !== "object") {
+        throw new Error("buildStsdBox: parameter object is required");
+    }
 
-    console.log("BOX-TRACE stsd: start");
-    console.log("BOX-TRACE stsd: codec =", codec);
-    console.log("BOX-TRACE stsd: avcC length =", avcC ? avcC.length : "null");
-    console.log("BOX-TRACE stsd: avcC first 16 =", avcC ? Array.from(avcC.slice(0, 16)) : "null");
-    console.log("BOX-TRACE stsd: avcC FULL =", Array.from(avcC));
+    // ------------------------------------------------------------------
+    // Explicit, closed contract
+    // ------------------------------------------------------------------
 
-    // Leaf produces avc1 → avcC
-    const avc1 = buildAvc1Box({ width, height, codec, avcC });
+    const requiredKeys = [
+        "width",
+        "height",
+        "codec",
+        "avcC",
+        "compressorName",
+        "btrt"
+    ];
 
-    // version(1) + flags(3) + entry_count(4)
-    const header = new Uint8Array(8);
-    header[0] = 0;      // version
-    header[1] = 0;      // flags
-    header[2] = 0;
-    header[3] = 0;
-    header[7] = 1;      // entry_count = 1
+    const allowedKeys = [...requiredKeys];
 
-    const totalSize = 8      // box header
-                    + 4      // version/flags
-                    + 4      // entry_count
-                    + avc1.length;
+    // Reject unknown keys
+    for (const key of Object.keys(params)) {
+        if (!allowedKeys.includes(key)) {
+            throw new Error(
+                `buildStsdBox: unknown parameter '${key}'`
+            );
+        }
+    }
 
-    const out = new Uint8Array(8 + header.length + avc1.length);
+    // Reject missing keys (NO defaults, NO silent omission)
+    for (const key of requiredKeys) {
+        if (!(key in params)) {
+            throw new Error(
+                `buildStsdBox: missing required parameter '${key}'`
+            );
+        }
+    }
 
-    // DEBUG: verify stsd box declared size vs actual size
-    console.log("DEBUG STSD EXPECTED LENGTH =", 8 + header.length + avc1.length);
-    console.log("DEBUG STSD ACTUAL LENGTH   =", out.length);
+    // ------------------------------------------------------------------
+    // Destructure ONLY after contract enforcement
+    // ------------------------------------------------------------------
 
-    // write box header
-    writeUint32(out, 0, out.length);
-    writeString(out, 4, "stsd");
+    const {
+        width,
+        height,
+        codec,
+        avcC,
+        compressorName,
+        btrt
+    } = params;
 
-    // payload
-    out.set(header, 8);
-    out.set(avc1, 16);
+    // ------------------------------------------------------------------
+    // Field validation
+    // ------------------------------------------------------------------
 
-    return out;
+    if (!Number.isInteger(width) || width <= 0) {
+        throw new Error(
+            "buildStsdBox: width must be a positive integer"
+        );
+    }
+
+    if (!Number.isInteger(height) || height <= 0) {
+        throw new Error(
+            "buildStsdBox: height must be a positive integer"
+        );
+    }
+
+    if (codec !== "avc1") {
+        throw new Error(
+            "buildStsdBox: only 'avc1' codec is supported"
+        );
+    }
+
+    if (!(avcC instanceof Uint8Array) || avcC.length === 0) {
+        throw new Error(
+            "buildStsdBox: avcC must be a non-empty Uint8Array"
+        );
+    }
+
+    if (typeof compressorName !== "string") {
+        throw new Error(
+            "buildStsdBox: compressorName must be a string"
+        );
+    }
+
+    // btrt is REQUIRED for ffmpeg-compatible output
+    if (
+        typeof btrt !== "object" ||
+        btrt === null ||
+        !Number.isInteger(btrt.bufferSize) ||
+        !Number.isInteger(btrt.maxBitrate) ||
+        !Number.isInteger(btrt.avgBitrate)
+    ) {
+        throw new Error(
+            "buildStsdBox: btrt must contain integer bufferSize, maxBitrate, avgBitrate"
+        );
+    }
+    // ------------------------------------------------------------
+    // Sample entry delegation
+    // ------------------------------------------------------------
+
+    /**
+     * SampleEntry
+     * -----------
+     * This node describes *how* samples are encoded and displayed.
+     *
+     * For H.264, this is an `avc1` VisualSampleEntry, which itself
+     * contains:
+     *   - VisualSampleEntry fields (width, height, depth, etc.)
+     *   - avcC (decoder configuration record)
+     *   - pasp (pixel aspect ratio)
+     *   - btrt (bitrate hints)
+     *
+     * STSD does not inspect or modify this structure.
+     */
+    const sampleEntry = buildAvc1Box({
+        width,
+        height,
+        avcC,
+        compressorName,
+        btrt,
+    });
+
+    // ------------------------------------------------------------
+    // STSD node
+    // ------------------------------------------------------------
+
+    return {
+        type: "stsd",
+
+        // FullBox header
+        version: 0,
+        flags: 0,
+
+        body: [
+            /**
+             * entry_count (uint32)
+             * --------------------
+             * Number of sample descriptions that follow.
+             *
+             * Framesmith always emits exactly one entry.
+             *
+             * This value must match the number of SampleEntry
+             * structures that follow.
+             */
+            { int: 1 },
+        ],
+        /**
+         * SampleEntry[]
+         * -------------
+         * One or more sample entry boxes.
+         *
+         * Each entry fully describes how samples
+         * in this track must be decoded.
+         *
+         * Order matters:
+         *   sample_description_index in stsc
+         *   refers to this table (1-based).
+         */
+        children: [
+            sampleEntry
+        ]
+    };
 }

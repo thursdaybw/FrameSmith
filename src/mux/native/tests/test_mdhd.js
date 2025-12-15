@@ -1,59 +1,192 @@
 import { buildMdhdBox } from "../boxes/mdhdBox.js";
-import { readUint32, readUint16, readType } from "./testUtils.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+import { readUint32FromMp4BoxBytes, readUint16FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
+import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { assertEqual } from "./assertions.js";
 
-export async function testMdhd() {
-    console.log("=== testMdhd ===");
+export async function testMdhd_Structure() {
+    console.log("=== mdhd Granular structural tests ===");
 
     const timescale = 90000;
-    const duration = 90000 * 5; // 5 seconds
+    const duration  = 90000 * 5;
 
-    const mdhd = buildMdhdBox({ timescale, duration });
+    const box = serializeBoxTree(
+        buildMdhdBox({ timescale, duration })
+    );
 
-    // ---- TEST 1: header -------------------------------------------------
-    const size = readUint32(mdhd, 0);
-    if (size !== mdhd.length) {
-        throw new Error("FAIL: mdhd size field does not match array length");
-    }
+    // ---------------------------------------------------------
+    // FIELD 1: size
+    // ---------------------------------------------------------
+    assertEqual(
+        "mdhd.size",
+        readUint32FromMp4BoxBytes(box, 0),
+        box.length
+    );
 
-    if (readType(mdhd, 4) !== "mdhd") {
-        throw new Error("FAIL: mdhd type field incorrect");
-    }
+    // ---------------------------------------------------------
+    // FIELD 2: type
+    // ---------------------------------------------------------
+    assertEqual(
+        "mdhd.type",
+        readBoxTypeFromMp4BoxBytes(box, 4),
+        "mdhd"
+    );
 
-    // ---- TEST 2: version + flags (bytes 8–11) ---------------------------
-    if (mdhd[8] !== 0) throw new Error("FAIL: mdhd version must be 0");
-    if (mdhd[9] !== 0 || mdhd[10] !== 0 || mdhd[11] !== 0) {
-        throw new Error("FAIL: mdhd flags must be zero");
-    }
+    // ---------------------------------------------------------
+    // FIELD 3: version
+    // ---------------------------------------------------------
+    assertEqual(
+        "mdhd.version",
+        box[8],
+        0
+    );
 
-    // ---- TEST 3: creation + modification time ---------------------------
-    // bytes 12–15 and 16–19 should be zero
-    if (readUint32(mdhd, 12) !== 0 || readUint32(mdhd, 16) !== 0) {
-        throw new Error("FAIL: mdhd creation/modification time must be zero");
-    }
+    // ---------------------------------------------------------
+    // FIELD 4: flags
+    // ---------------------------------------------------------
+    const flags =
+        (box[9] << 16) |
+        (box[10] << 8) |
+        box[11];
 
-    // ---- TEST 4: timescale + duration -----------------------------------
-    const ts = readUint32(mdhd, 20);
-    const dur = readUint32(mdhd, 24);
+    assertEqual(
+        "mdhd.flags",
+        flags,
+        0
+    );
 
-    if (ts !== timescale) {
-        throw new Error("FAIL: mdhd timescale incorrect");
-    }
-    if (dur !== duration) {
-        throw new Error("FAIL: mdhd duration incorrect");
-    }
+    // ---------------------------------------------------------
+    // FIELD 5: creation_time
+    // ---------------------------------------------------------
+    assertEqual(
+        "mdhd.creation_time",
+        readUint32FromMp4BoxBytes(box, 12),
+        0
+    );
 
-    // ---- TEST 5: language + predefined ----------------------------------
-    // language at bytes 28–29
-    // expected default = 0x55C4 ('und' per ISO-639-2)
-    const lang = readUint16(mdhd, 28);
-    if (lang !== 0x55c4) {
-        throw new Error("FAIL: mdhd language field incorrect");
-    }
+    // ---------------------------------------------------------
+    // FIELD 6: modification_time
+    // ---------------------------------------------------------
+    assertEqual(
+        "mdhd.modification_time",
+        readUint32FromMp4BoxBytes(box, 16),
+        0
+    );
 
-    const predefined = readUint16(mdhd, 30);
-    if (predefined !== 0) {
-        throw new Error("FAIL: mdhd predefined field must be zero");
-    }
+    // ---------------------------------------------------------
+    // FIELD 7: timescale
+    // ---------------------------------------------------------
+    assertEqual(
+        "mdhd.timescale",
+        readUint32FromMp4BoxBytes(box, 20),
+        timescale
+    );
 
-    console.log("PASS: MDHD tests");
+    // ---------------------------------------------------------
+    // FIELD 8: duration
+    // ---------------------------------------------------------
+    assertEqual(
+        "mdhd.duration",
+        readUint32FromMp4BoxBytes(box, 24),
+        duration
+    );
+
+    // ---------------------------------------------------------
+    // FIELD 9: language
+    // ---------------------------------------------------------
+    const expectedLanguage = 0x55c4; // "und"
+
+    assertEqual(
+        "mdhd.language",
+        readUint16FromMp4BoxBytes(box, 28),
+        expectedLanguage
+    );
+
+    // ---------------------------------------------------------
+    // FIELD 10: predefined
+    // ---------------------------------------------------------
+    assertEqual(
+        "mdhd.predefined",
+        readUint16FromMp4BoxBytes(box, 30),
+        0
+    );
+
+    console.log("PASS: mdhd granular structural tests");
 }
+
+export async function testMdhd_Conformance() {
+    console.log("=== testMdhd_Conformance (golden MP4) ===");
+
+    const resp = await fetch("reference/reference_visual.mp4");
+    const buf  = new Uint8Array(await resp.arrayBuffer());
+
+    const refMdhd = extractBoxByPath(
+        buf,
+        ["moov", "trak", "mdia", "mdhd"]
+    );
+
+    if (!refMdhd) {
+        throw new Error("FAIL: mdhd box not found in golden MP4");
+    }
+
+    const ref = parseMdhd(refMdhd);
+
+    const outRaw = serializeBoxTree(
+        buildMdhdBox({
+            timescale: ref.timescale,
+            duration:  ref.duration
+        })
+    );
+
+    const out = parseMdhd(outRaw);
+
+    // ---------------------------------------------------------
+    // Field-level conformance
+    // ---------------------------------------------------------
+    assertEqual("mdhd.version",   out.version,   ref.version);
+    assertEqual("mdhd.flags",     out.flags,     ref.flags);
+    assertEqual("mdhd.timescale", out.timescale, ref.timescale);
+    assertEqual("mdhd.duration",  out.duration,  ref.duration);
+    assertEqual("mdhd.language",  out.language,  ref.language);
+
+    // ---------------------------------------------------------
+    // Byte-for-byte conformance
+    // ---------------------------------------------------------
+    assertEqual(
+        "mdhd.size",
+        out.raw.length,
+        ref.raw.length
+    );
+
+    for (let i = 0; i < ref.raw.length; i++) {
+        assertEqual(
+            `mdhd.byte[${i}]`,
+            out.raw[i],
+            ref.raw[i]
+        );
+    }
+
+    console.log("PASS: mdhd matches golden MP4 byte-for-byte");
+}
+
+// ---------------------------------------------------------------------------
+// Helper: parse mdhd into field-level representation
+// ---------------------------------------------------------------------------
+
+function parseMdhd(box) {
+    return {
+        type: readBoxTypeFromMp4BoxBytes(box, 4),
+        version: box[8],
+        flags:
+            (box[9] << 16) |
+            (box[10] << 8) |
+            box[11],
+
+        timescale: readUint32FromMp4BoxBytes(box, 20),
+        duration:  readUint32FromMp4BoxBytes(box, 24),
+        language:  readUint16FromMp4BoxBytes(box, 28),
+
+        raw: box
+    };
+}
+

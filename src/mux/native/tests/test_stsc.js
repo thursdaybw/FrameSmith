@@ -1,83 +1,223 @@
 import { buildStscBox } from "../boxes/stscBox.js";
-import { readUint32, readType } from "./testUtils.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+import { readUint32FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
+import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { assertEqual } from "./assertions.js";
 
-export async function testStsc() {
+export async function testStsc_Structure() {
+    console.log("=== testStsc_Structure ===");
 
-    console.log("=== testStsc ===");
+    // Canonical minimal layout
+    const layout = {
+        firstChunk: 1,
+        samplesPerChunk: 1,
+        sampleDescriptionIndex: 1
+    };
 
-    // STSC entry format:
-    // version(1) + flags(3)
-    // entry_count (4)
-    // Then each entry:
-    //   first_chunk (4)
-    //   samples_per_chunk (4)
-    //   sample_description_index (4)
-    //
-    // Our MVP uses exactly ONE entry:
-    //   first_chunk = 1
-    //   samples_per_chunk = 1
-    //   sample_description = 1
-
-    // ---------------------------------------------------------
-    // TEST 1: empty sample list → still one entry
-    // ---------------------------------------------------------
-    let stsc = buildStscBox([]);
-
-    let boxSize1 = readUint32(stsc, 0);
-    let type1 = String.fromCharCode(...stsc.slice(4, 8));
-
-    if (type1 !== "stsc") {
-        throw new Error("FAIL: STSC type incorrect for empty case");
-    }
-
-    // size = 8 header + 4 version/flags + 4 entry_count + 12 entry = 28 bytes
-    if (boxSize1 !== 28) {
-        throw new Error(`FAIL: empty stsc must be 28 bytes, got ${boxSize1}`);
-    }
-
-    let entryCount1 = readUint32(stsc, 12);
-    if (entryCount1 !== 1) {
-        throw new Error("FAIL: empty stsc still requires one structural entry");
-    }
-
-    let firstChunk1 = readUint32(stsc, 16);
-    let samplesPerChunk1 = readUint32(stsc, 20);
-    let descIdx1 = readUint32(stsc, 24);
-
-    if (firstChunk1 !== 1 || samplesPerChunk1 !== 1 || descIdx1 !== 1) {
-        throw new Error("FAIL: empty stsc must map chunk 1 → 1 sample of desc 1");
-    }
+    const node = buildStscBox(layout);
+    const stsc = serializeBoxTree(node);
 
     // ---------------------------------------------------------
-    // TEST 2: multiple samples → same table structure
+    // Box header
     // ---------------------------------------------------------
-    stsc = buildStscBox([100, 200, 300]);
+    assertEqual(
+        "stsc.type",
+        readBoxTypeFromMp4BoxBytes(stsc, 4),
+        "stsc"
+    );
 
-    let entryCount2 = readUint32(stsc, 12);
-    if (entryCount2 !== 1) {
-        throw new Error("FAIL: multi-sample stsc should still have one entry");
-    }
-
-    let firstChunk2 = readUint32(stsc, 16);
-    let samplesPerChunk2 = readUint32(stsc, 20);
-    let descIdx2 = readUint32(stsc, 24);
-
-    if (firstChunk2 !== 1 || samplesPerChunk2 !== 1 || descIdx2 !== 1) {
-        throw new Error("FAIL: multi-sample stsc entry incorrect");
-    }
+    assertEqual(
+        "stsc.size",
+        readUint32FromMp4BoxBytes(stsc, 0),
+        28
+    );
 
     // ---------------------------------------------------------
-    // TEST 3: immutability of input
+    // FullBox header
     // ---------------------------------------------------------
-    const sampleList = [10, 20, 30];
-    stsc = buildStscBox(sampleList);
+    const version = stsc[8];
+    const flags =
+        (stsc[9] << 16) |
+        (stsc[10] << 8) |
+        stsc[11];
 
-    sampleList[0] = 999;
+    assertEqual("stsc.version", version, 0);
+    assertEqual("stsc.flags", flags, 0);
 
-    let originalFirstEntry = readUint32(stsc, 16);
-    if (originalFirstEntry !== 1) {
-        throw new Error("FAIL: stsc must not depend on mutated input");
+    // ---------------------------------------------------------
+    // Entry count
+    // ---------------------------------------------------------
+    assertEqual(
+        "stsc.entry_count",
+        readUint32FromMp4BoxBytes(stsc, 12),
+        1
+    );
+
+    // ---------------------------------------------------------
+    // Entry values
+    // ---------------------------------------------------------
+    assertEqual(
+        "stsc.first_chunk",
+        readUint32FromMp4BoxBytes(stsc, 16),
+        1
+    );
+
+    assertEqual(
+        "stsc.samples_per_chunk",
+        readUint32FromMp4BoxBytes(stsc, 20),
+        1
+    );
+
+    assertEqual(
+        "stsc.sample_description_index",
+        readUint32FromMp4BoxBytes(stsc, 24),
+        1
+    );
+
+    // ---------------------------------------------------------
+    // Defensive immutability
+    // ---------------------------------------------------------
+    layout.firstChunk = 999;
+
+    assertEqual(
+        "stsc.immutability",
+        readUint32FromMp4BoxBytes(stsc, 16),
+        1
+    );
+
+    console.log("PASS: stsc structural correctness");
+}
+
+export async function testStsc_Conformance() {
+    console.log("=== testStsc_Conformance (golden MP4) ===");
+
+    // -------------------------------------------------------------
+    // 1. Load golden MP4
+    // -------------------------------------------------------------
+    const resp = await fetch("reference/reference_visual.mp4");
+    const buf  = new Uint8Array(await resp.arrayBuffer());
+
+    // -------------------------------------------------------------
+    // 2. Extract reference STSC
+    // -------------------------------------------------------------
+    const refStsc = extractBoxByPath(
+        buf,
+        ["moov", "trak", "mdia", "minf", "stbl", "stsc"]
+    );
+
+    if (!refStsc) {
+        throw new Error("FAIL: stsc box not found in golden MP4");
     }
 
-    console.log("PASS: STSC tests");
+    // -------------------------------------------------------------
+    // 3. Parse reference
+    // -------------------------------------------------------------
+    const ref = parseStsc(refStsc);
+
+    if (ref.entryCount !== 1) {
+        throw new Error(
+            `FAIL: golden MP4 stsc uses ${ref.entryCount} entries\n` +
+            `Framesmith currently supports canonical single-entry STSC only`
+        );
+    }
+
+    const refEntry = ref.entries[0];
+
+    // -------------------------------------------------------------
+    // 4. Build Framesmith STSC from reference layout
+    // -------------------------------------------------------------
+    const outStsc = serializeBoxTree(
+        buildStscBox({
+            firstChunk: refEntry.firstChunk,
+            samplesPerChunk: refEntry.samplesPerChunk,
+            sampleDescriptionIndex: refEntry.sampleDescriptionIndex
+        })
+    );
+
+    // -------------------------------------------------------------
+    // 5. Parse output
+    // -------------------------------------------------------------
+    const out = parseStsc(outStsc);
+
+    // -------------------------------------------------------------
+    // 6. Field-level conformance
+    // -------------------------------------------------------------
+    assertEqual("stsc.type", out.type, "stsc");
+    assertEqual("stsc.version", out.version, ref.version);
+    assertEqual("stsc.flags", out.flags, ref.flags);
+    assertEqual("stsc.entry_count", out.entryCount, ref.entryCount);
+
+    const outEntry = out.entries[0];
+
+    assertEqual(
+        "stsc.first_chunk",
+        outEntry.firstChunk,
+        refEntry.firstChunk
+    );
+
+    assertEqual(
+        "stsc.samples_per_chunk",
+        outEntry.samplesPerChunk,
+        refEntry.samplesPerChunk
+    );
+
+    assertEqual(
+        "stsc.sample_description_index",
+        outEntry.sampleDescriptionIndex,
+        refEntry.sampleDescriptionIndex
+    );
+
+    // -------------------------------------------------------------
+    // 7. Byte-for-byte conformance
+    // -------------------------------------------------------------
+    assertEqual(
+        "stsc.size",
+        out.raw.length,
+        ref.raw.length
+    );
+
+    for (let i = 0; i < ref.raw.length; i++) {
+        assertEqual(
+            `stsc.byte[${i}]`,
+            out.raw[i],
+            ref.raw[i]
+        );
+    }
+
+    console.log("PASS: stsc matches golden MP4 byte-for-byte");
+}
+
+function parseStsc(box) {
+    const size = readUint32FromMp4BoxBytes(box, 0);
+    const type = readBoxTypeFromMp4BoxBytes(box, 4);
+
+    const version = box[8];
+    const flags =
+        (box[9] << 16) |
+        (box[10] << 8) |
+        box[11];
+
+    const entryCount = readUint32FromMp4BoxBytes(box, 12);
+
+    const entries = [];
+    let offset = 16;
+
+    for (let i = 0; i < entryCount; i++) {
+        entries.push({
+            firstChunk: readUint32FromMp4BoxBytes(box, offset),
+            samplesPerChunk: readUint32FromMp4BoxBytes(box, offset + 4),
+            sampleDescriptionIndex: readUint32FromMp4BoxBytes(box, offset + 8),
+        });
+        offset += 12;
+    }
+
+    return {
+        size,
+        type,
+        version,
+        flags,
+        entryCount,
+        entries,
+        raw: box
+    };
 }
