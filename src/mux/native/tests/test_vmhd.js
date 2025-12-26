@@ -1,8 +1,9 @@
-import { buildVmhdBox } from "../boxes/vmhdBox.js";
+import { emitVmhdBox } from "../box-emitters/vmhdBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readBoxTypeFromMp4BoxBytes, readUint32FromMp4BoxBytes } from "./testUtils.js";
-import { extractBoxByPath } from "./reference/BoxExtractor.js";
-import { assertEqual } from "./assertions.js";
+import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { assertEqual, assertEqualHex } from "./assertions.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+
 
 /**
  * testVmhd_Structure
@@ -24,7 +25,7 @@ export function testVmhd_Structure() {
     // ------------------------------------------------------------
     // 1. Build + serialize
     // ------------------------------------------------------------
-    const node = buildVmhdBox();
+    const node = emitVmhdBox();
     const box  = serializeBoxTree(node);
 
     // ------------------------------------------------------------
@@ -32,13 +33,13 @@ export function testVmhd_Structure() {
     // ------------------------------------------------------------
     assertEqual(
         "vmhd.type",
-        readBoxTypeFromMp4BoxBytes(box, 4),
+        readFourCC(box, 4),
         "vmhd"
     );
 
     assertEqual(
         "vmhd.size",
-        readUint32FromMp4BoxBytes(box, 0),
+        readUint32(box, 0),
         box.length
     );
 
@@ -89,113 +90,73 @@ export function testVmhd_Structure() {
     console.log("PASS: vmhd structural correctness");
 }
 
-/**
- * testVmhd_Conformance
- * -------------------
- * Phase C conformance test for the Video Media Header Box (vmhd).
- *
- * This test:
- * - Extracts the real vmhd box from a golden MP4 produced by ffmpeg
- * - Rebuilds vmhd using Framesmith's box builder
- * - Asserts byte-for-byte equality
- *
- * If this test passes, Framesmith's vmhd implementation
- * exactly matches real-world encoder output.
- */
-export async function testVmhd_Conformance() {
-    console.log("=== testVmhd_Conformance (golden MP4) ===");
+export async function testVmhd_LockedLayoutEquivalence_ffmpeg() {
+    console.log("=== testVmhd_LockedLayoutEquivalence_ffmpeg (golden MP4) ===");
 
     // ------------------------------------------------------------
     // 1. Load golden MP4
     // ------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const buf  = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ------------------------------------------------------------
-    // 2. Extract reference vmhd
+    // 2. Read golden truth
     // ------------------------------------------------------------
-    const refVmhd = extractBoxByPath(
-        buf,
-        ["moov", "trak", "mdia", "minf", "vmhd"]
+    const truth = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/mdia/minf/vmhd"
     );
 
-    if (!refVmhd) {
-        throw new Error("FAIL: reference vmhd box not found");
-    }
+    const refFields = truth.readFields();
+    const params    = truth.getBuilderInput();
 
     // ------------------------------------------------------------
-    // 3. Build Framesmith vmhd
+    // 3. Rebuild vmhd
     // ------------------------------------------------------------
-    const outVmhd = serializeBoxTree(buildVmhdBox());
+    const outBytes = serializeBoxTree(
+        emitVmhdBox(params)
+    );
 
     // ------------------------------------------------------------
-    // 4. Parse both
+    // 4. Re-read rebuilt vmhd
     // ------------------------------------------------------------
-    const ref = parseVmhd(refVmhd);
-    const out = parseVmhd(outVmhd);
+    const outFields = getGoldenTruthBox
+        .fromBox(outBytes, "moov/trak/mdia/minf/vmhd")
+        .readFields();
 
     // ------------------------------------------------------------
     // 5. Field-level conformance
     // ------------------------------------------------------------
-    assertEqual("vmhd.type",        out.type,        "vmhd");
-    assertEqual("vmhd.version",     out.version,     ref.version);
-    assertEqual("vmhd.flags",       out.flags,       ref.flags);
-    assertEqual("vmhd.graphicsmode",out.graphicsmode,ref.graphicsmode);
+    assertEqual("vmhd.version",      outFields.version,      refFields.version);
+    assertEqual("vmhd.flags",        outFields.flags,        refFields.flags);
+    assertEqual("vmhd.graphicsmode", outFields.graphicsmode, refFields.graphicsmode);
 
     for (let i = 0; i < 3; i++) {
         assertEqual(
             `vmhd.opcolor[${i}]`,
-            out.opcolor[i],
-            ref.opcolor[i]
+            outFields.opcolor[i],
+            refFields.opcolor[i]
         );
     }
 
     // ------------------------------------------------------------
-    // 6. Byte-for-byte conformance
+    // 6. Byte-for-byte equivalence
     // ------------------------------------------------------------
+    const refRaw = refFields.raw;
+
     assertEqual(
         "vmhd.size",
-        out.raw.length,
-        ref.raw.length
+        outBytes.length,
+        refRaw.length
     );
 
-    for (let i = 0; i < ref.raw.length; i++) {
-        assertEqual(
+    for (let i = 0; i < refRaw.length; i++) {
+        assertEqualHex(
             `vmhd.byte[${i}]`,
-            out.raw[i],
-            ref.raw[i]
+            outBytes[i],
+            refRaw[i]
         );
     }
 
     console.log("PASS: vmhd matches golden MP4 byte-for-byte");
 }
-function parseVmhd(box) {
-    const size = readUint32FromMp4BoxBytes(box, 0);
-    const type = readBoxTypeFromMp4BoxBytes(box, 4);
-
-    const version = box[8];
-    const flags =
-        (box[9] << 16) |
-        (box[10] << 8) |
-        box[11];
-
-    const graphicsmode =
-        (box[12] << 8) | box[13];
-
-    const opcolor = [
-        (box[14] << 8) | box[15],
-        (box[16] << 8) | box[17],
-        (box[18] << 8) | box[19],
-    ];
-
-    return {
-        size,
-        type,
-        version,
-        flags,
-        graphicsmode,
-        opcolor,
-        raw: box
-    };
-}
-

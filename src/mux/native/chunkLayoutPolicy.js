@@ -1,4 +1,17 @@
 /**
+ * Chunk layout policy (NativeMuxer – Pass 1).
+ *
+ * This module defines abstract chunking decisions.
+ * It does NOT:
+ * - emit STSC boxes
+ * - compute offsets
+ * - inspect MP4 structure
+ *
+ * Its output is later compiled into sample tables.
+ */
+
+
+/**
  * Decide how samples are grouped into chunks.
  *
  * This module owns chunking *policy*.

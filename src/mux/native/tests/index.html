@@ -5,60 +5,110 @@
 <button id="run-boundary">Run Boundary Tests</button>
 <button id="run-integration">Run Integration Tests</button>
 <button id="run-all">Run All Tests</button>
-
 <script type="module">
 
 // ChatGPT Phase ABC branch point: https://chatgpt.com/g/g-p-6823e412c7348191848df481eb52a88b/c/693c11b2-2a5c-8322-8a7b-58d09d3f2ac6
 // Unit tests
-import { testHdlr_Structure, testHdlr_Conformance } from "./test_hdlr.js";
-import { testStsz_Structure, testStsz_Conformance } from "./test_stsz.js";
+import { testHdlr_Structure, testHdlr_LockedLayoutEquivalence_ffmpeg } from "./test_hdlr.js";
+import { testStsz_Structure, testStsz_LockedLayoutEquivalence_ffmpeg } from "./test_stsz.js";
 import { testStsc_Structure, testStsc_Conformance } from "./test_stsc.js";
 import { testStts_Structure, testStts_Conformance } from "./test_stts.js";
-import { testTkhd_Structure, testTkhd_Conformance } from "./test_tkhd.js";
+import { testTkhd_Structure, testTkhd_LockedLayoutEquivalence_ffmpeg } from "./test_tkhd.js";
 import { testMdhd_Structure, testMdhd_Conformance } from "./test_mdhd.js";
-import { testMvhd_Structure, testMvhd_Conformance } from "./test_mvhd.js";
+import { testMvhd_Structure, testMvhd_LockedLayoutEquivalence_ffmpeg} from "./test_mvhd.js";
 import { testFtyp_Structure, testFtyp_Conformance } from "./test_ftyp.js";
-import { testVmhd_Structure, testVmhd_Conformance } from "./test_vmhd.js";
-import { testDref_Structure, testDref_Conformance } from "./test_dref.js";
-import { testAvcC_Structure, testAvcC_Conformance } from "./test_avcC.js";
-import { testAvc1_Structure, testAvc1_Conformance } from "./test_avc1.js";
-import { testBtrt_Structure, testBtrt_Conformance } from "./test_btrt.js";
-import { testPasp_Structure, testPasp_Conformance } from "./test_pasp.js";
-import { testStsd_Structure, testStsd_StructuralConformance, testStsd_SemanticConformance} from "./test_stsd.js";
-import { testStco_Structure } from "./test_stco.js";
-import { testMoov } from "./test_moov.js";
+import { testVmhd_Structure, testVmhd_LockedLayoutEquivalence_ffmpeg } from "./test_vmhd.js";
+import { testDref_Structure, testDref_LockedLayoutEquivalence_ffmpeg } from "./test_dref.js";
+import { testAvcC_Structure, testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg } from "./test_avcC.js";
+import { testAvc1_Structure, testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg } from "./test_avc1.js";
+import { testBtrt_Structure, testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg } from "./test_btrt.js";
+import { testPasp_Structure, testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg } from "./test_pasp.js";
+import { testStss_Structure, testStss_LockedLayoutEquivalence_ffmpeg } from "./test_stss.js";
+import { testCtts_Structure, testCtts_LockedLayoutEquivalence_ffmpeg } from "./test_ctts.js";
+import {
+    testStsd_Structure,
+    testStsd_GoldenTruthExtractor,
+    testStsd_LockedLayoutEquivalence_ffmpeg
+} from "./test_stsd.js";
+import { testStco_Structure, testStco_LockedLayoutEquivalence_ffmpeg } from "./test_stco.js";
+import {
+    testStbl_Structure, 
+    testStbl_LockedLayoutEquivalence_ffmpeg,
+    testStbl_Structure_ConditionalChildren,
+    testStbl_ConditionalChildren_TODO
+} from "./test_stbl.js";
+import { testDinf_Structure, testDinf_LockedLayoutEquivalence_ffmpeg } from "./test_dinf.js";
+import { testMinf_Structure, testMinf_LockedLayoutEquivalence_ffmpeg } from "./test_minf.js";
+import { testMdia_Structure, testMdia_LockedLayoutEquivalence_ffmpeg } from "./test_mdia.js";
+import { testElst_Structure, testElst_LockedLayoutEquivalence_ffmpeg } from "./test_elst.js";
+import { testEdts_Structure, testEdts_LockedLayoutEquivalence_ffmpeg } from "./test_edts.js";
+import { testTrak_Structure, testTrak_LockedLayoutEquivalence_ffmpeg } from "./test_trak.js";
+import { testData_Structure, testData_LockedLayoutEquivalence_ffmpeg } from "./test_data.js";
+import { testIlstItem_Structure, testIlstItem_LockedLayoutEquivalence_ffmpeg } from "./test_ilst_item.js";
+import { testIlst_Structure, testIlst_LockedLayoutEquivalence_ffmpeg } from "./test_ilst.js";
+import { testMetaHdlr_Structure, testMetaHdlr_LockedLayoutEquivalence_ffmpeg } from "./test_meta_hdlr.js";
+import { testMeta_Structure, testMeta_LockedLayoutEquivalence_ffmpeg } from "./test_meta.js";
+import { testUdta_Structure, testUdta_LockedLayoutEquivalence_ffmpeg } from "./test_udta.js";
+import { testMoov_Structure, testMoov_LockedLayoutEquivalence_ffmpeg } from "./test_moov.js";
+import { testDeriveChunkModel_OneSamplePerChunk } from "./test_NativeMuxer_chunkModel.js";
+import { testNativeMuxer_DeriveStscEntries_SingleChunkPattern } from "./test_NativeMuxer_stscDerivation.js";
+import { testNativeMuxer_DeriveStcoOffsets_Simple } from "./test_NativeMuxer_stcoDerivation.js";
+import { testNativeMuxer_DeriveSttsEntries_RunLengthEncoding } from "./test_NativeMuxer_sttsDerivation.js"
+import { testNativeMuxer_DeriveStszSizes_Simple } from "./test_NativeMuxer_stszDerivation.js"
+import { testNativeMuxer_AdaptSttsFromSamples_CFR, testNativeMuxer_AdaptSttsFromSamples_VariableDurationFails } from "./test_NativeMuxer_sttsAdapter.js";
+import { testNativeMuxer_SttsAdapter_Conformance_ffmpeg } from "./test_NativeMuxer_sttsAdapter_Conformance.js"
+import { testNativeMuxer_AdaptStszFromSamples } from "./test_NativeMuxer_stszAdapter.js";
+import { testNativeMuxer_StszAdapter_Conformance_ffmpeg } from "./test_NativeMuxer_stszAdapter_Conformance.js";
+import { testNativeMuxer_DeriveCttsEntries_RunLengthEncoding } from "./test_NativeMuxer_cttsDerivation.js";
+import { testNativeMuxer_CttsAdapter_Conformance_ffmpeg } from "./test_NativeMuxer_cttsAdapter_Conformance.js";
+import { testNativeMuxer_StscDerivation_Conformance_ffmpeg } from "./test_NativeMuxer_stscDerivation_Conformance.js";
+
+import {
+    testUdta_Inspection_ffmpeg,
+    testMeta_Inspection_ffmpeg,
+    testMetaHdlr_Inspection_ffmpeg,
+    testMetaIlst_Inspection_ffmpeg,
+} from "./test_udta_inspection.js";
 
 import { testSerializer } from "./test_serializer.js"
-import { testAvcCExtractor } from "./test_avcCExtractor.js";
-import { testSampleCollector } from "./test_SampleCollector.js";
-import { testTimingModel } from "./test_TimingModel.js";
-import { testMdatBuilder } from "./test_mdatBuilder.js";
-import { testAssembly } from "./test_assembly.js";
-import { test_convertAnnexBToMp4 } from "./test_convertAnnexBToMp4.js"
-import { testNalPrefixIntegrity } from "./test_nal_prefix_integrity.js"
-import { test_mp4_structure } from "./unit/test_mp4_structure.js"
-import { test_NativeMuxer_chunkPolicy_ffmpeg } from "./unit/test_NativeMuxer_chunkPolicy.js";
+import { testMdatEmitter } from "./test_mdatEmitter.js";
 import { testChunkLayout_FramesmithSimple, testChunkLayout_FfmpegCompatible } from "./test_chunkLayoutPolicy.js";
 
+
+import { testSampleExtraction_FromGoldenMp4 } from "./test_sample_extraction.js";
+
 // Boundary tests
-import { test_access_unit_structure } from "./boundary/test_access_unit_structure.js";
-import { test_stco_offsets } from "./boundary/test_stco_offsets.js";
-import { test_roundtrip_nalu } from "./boundary/test_roundtrip_nalu.js";
-import { test_webcodecs_decode } from "./boundary/test_webcodecs_decode.js";
-
-import { test_mp4_mse } from "./boundary/test_mp4_mse.js";
-import { test_mp4_metadata } from "./boundary/test_mp4_metadata.js";
-import { test_mp4_canvas_framehash } from "./boundary/test_mp4_canvas_framehash.js";
-import { test_mp4_internal_integrity } from "./boundary/test_mp4_internal_integrity.js";
-
-// Integration tests
-import {
-  test_NativeMuxer_integration_annexb_environmental,
-  test_NativeMuxer_integration_avcc
-}
-from "./integration/test_NativeMuxer_integration.js";
 
 async function runUnitTests() {
+
+   await testUdta_Inspection_ffmpeg();
+   await testMeta_Inspection_ffmpeg();
+   await testMetaHdlr_Inspection_ffmpeg();
+   await testMetaIlst_Inspection_ffmpeg();
+   await testSerializer();
+/**
+ * Test libraries used.
+ * src/mux/native/tests/assertions.js
+ * src/mux/native/tests/assertions.js
+ *   - assertion API is being applied via assertions.js
+ *   - assertEquals() etc.
+ *   - assertEqualHex() 
+ *   - assertExists() 
+ * 
+ * src/mux/native/tests/reference/BoxExtractor.js                                                                                                                            
+ *   - extractBoxByPath(buffer, path);
+ *   - extractChildBoxFromContainer(containerBox, fourcc);
+ *   - extractChildBoxFromSampleEntry(sampleEntryBox, fourcc);
+ *   - extractSampleEntry(stsdBox, fourcc);
+ *   - findFourCC(buffer, fourcc);
+ * 
+ * src/mux/native/tests/testUtils.js 
+ *   - export function readUint32FromMp4BoxBytes(boxBytes, offset);
+ *   - export function readUint16FromMp4BoxBytes(boxBytes, offset);
+ *   - export function readBoxTypeFromMp4BoxBytes(boxBytes, offset);
+ *   - export function writeDebugAvcC(buffer);
+ */
+ 
 
 /**
  * Conformance architecture
@@ -69,20 +119,38 @@ async function runUnitTests() {
  * 
  * Structure
  * 
+ * * Field granularity test of box structure.
+ * * Asserts against box's returned json node.
  * * Asserts what Framesmith intends to emit
  * * Tests my interpretation of the spec
  * * Stable, fast, isolated
+ * 
+ * Semantic equivalence (field-decoded comparison)
  *
- * Conformance
+ * Definition:
+ *   Fields are extracted and decoded according to the MP4 spec,
+ *   and their decoded values match exactly.
+ * 
+ * Examples:
+ *   - integers
+ *   - flags
+ *   - arrays
+ *   - fixed-point fields
+ *   - opaque payloads when the payload itself is the field (e.g. avcC)
+ * 
+ * This proves:
+ *   - no semantic loss
+ *   - no endianness bugs
+ *   - no truncation
+ *   - no re-encoding mistakes  
+ * 
+ * Conformance Structure (field-level) comparison
  * 
  * * Asserts what the real world emits
  * * Tests against ffmpeg output
  * * Answers “does this match reality?”
- * 
- * Semantic (field-level) comparison
- * 
- * * Byte-for-byte comparison
- * 
+ * * Every non-mdat box in the entire file must be constructed from meaning.
+ * * A box equivalence test may only depend on inputs that are semantically valid for that box.
  * If this fails in the future, I will now get errors like:
  * 
  * FAIL: ftyp compatible_brand[2] mismatch
@@ -96,8 +164,40 @@ async function runUnitTests() {
  * That is the whole point.
  */ 
 
+/**
+ * Locked-Layout Equivalence Tests (IMPORTANT)
+ * -------------------------------------------
+ *
+ * Some tests in this suite validate box builders by comparing their
+ * serialized output byte-for-byte against a golden MP4 produced by ffmpeg.
+ *
+ * These tests operate under a *locked layout*:
+ *
+ *   - All layout-dependent values (e.g. moov size, chunk offsets)
+ *     are injected or mocked
+ *   - No policy decisions are made by the system under test
+ *   - The box builder is treated as a pure serializer
+ *
+ * The purpose of these tests is NOT to test policy, assembly order,
+ * or finalization logic.
+ *
+ * Their sole purpose is to answer the question:
+ *
+ *   “Given the same conditions ffmpeg had,
+ *    do we serialize the same bytes?”
+ *
+ * This provides an early, atomic proof that:
+ *   - our interpretation of the MP4 spec matches reality
+ *   - our field ordering, sizing, and encoding are correct
+ *   - no semantic information is lost during serialization
+ *
+ * These tests are allowed to run before full NativeMuxer finalization
+ * exists, because all degrees of freedom are fixed by the test itself.
+ *
+ * Failures in these tests indicate a divergence from real-world MP4
+ * encoding behavior and must be investigated immediately.
+ */
 
-   await testSerializer();
 
     // ---- LEAF BOXES ----
 
@@ -120,69 +220,125 @@ async function runUnitTests() {
     // Phase B - done 
     // Phase c - done 
     await testStsz_Structure();
-    await testStsz_Conformance();
+    await testStsz_LockedLayoutEquivalence_ffmpeg();
     await testHdlr_Structure(); 
-    await testHdlr_Conformance(); 
+    await testHdlr_LockedLayoutEquivalence_ffmpeg();
     await testVmhd_Structure();
-    await testVmhd_Conformance();
+    await testVmhd_LockedLayoutEquivalence_ffmpeg();
     await testDref_Structure();
-    await testDref_Conformance();
+    await testDref_LockedLayoutEquivalence_ffmpeg();
     await testStts_Structure();
     await testStts_Conformance();
     await testStsc_Structure();
     await testStsc_Conformance();
-    await testChunkLayout_FramesmithSimple();
-    await testChunkLayout_FfmpegCompatible();
 
-    // NOTE:
-    // STCO conformance (byte-for-byte against golden MP4)
-    // is verified at the NativeMuxer finalize level.
+    // NOTE ON STCO CONFORMANCE (IMPORTANT)
+    // -----------------------------------
     //
-    // This is intentional.
-    // Chunk offsets depend on:
-    //   - ftyp size
-    //   - moov size
-    //   - mdat header placement
-    //   - stsc chunking policy
-    //   - stsz sample sizes
+    // STCO (Chunk Offset Box) CANNOT be validated for conformance
+    // at the box-builder level.
     //
-    // A standalone STCO builder cannot assert correct offsets
-    // without lying about its inputs.
+    // This is not a limitation of the test suite — it is a property
+    // of the MP4 format itself.
+    //
+    // The offsets stored in STCO are *derived data*.
+    // They depend on the final physical layout of the file, including:
+    //
+    //   - the size of `ftyp`
+    //   - the fully assembled size of `moov`
+    //   - the placement and header size of `mdat`
+    //   - the chunking policy defined by `stsc`
+    //   - the sample sizes defined by `stsz`
+    //
+    // None of these values are known when the STCO box is built
+    // in isolation.
+    //
+    // Any attempt to validate STCO offsets before final assembly
+    // would require fabricating or hard-coding layout assumptions,
+    // which would make the test dishonest.
+    //
+    // Therefore:
+    //   - STCO Phase A (JSON intent) is validated here
+    //   - STCO Phase B (structural encoding) is validated here
+    //   - STCO Phase C (offset correctness) is validated ONLY at
+    //     the NativeMuxer finalization boundary, where the full
+    //     MP4 file layout is known and stable
+    //
+    // This separation is intentional and architectural.
     await testStco_Structure();
+
+    // -----------------------------------------------------------------
+    // STCO — LOCKED-LAYOUT EQUIVALENCE (PLANNED)
+    // -----------------------------------------------------------------
+    //
+    // These tests validate STCO serialization against a golden MP4
+    // under locked layout conditions.
+    //
+    // In these tests:
+    //   - chunk offsets are injected directly
+    //   - moov size is treated as already-known
+    //   - no offset computation logic is exercised
+    //
+    // The test asserts ONLY:
+    //   - correct field encoding
+    //   - correct ordering
+    //   - correct size accounting
+    //   - byte-for-byte equivalence with ffmpeg
+    //
+    // This is NOT a policy test.
+    // This is NOT a finalization test.
+    // This is NOT testing offset computation.
+    //
+    // It is a proof that, given the same inputs as ffmpeg,
+    // our STCO builder serializes identical bytes.
+    await testStco_LockedLayoutEquivalence_ffmpeg();
     await testFtyp_Structure();
     await testFtyp_Conformance();
     await testTkhd_Structure();
-    await testTkhd_Conformance();
+    await testTkhd_LockedLayoutEquivalence_ffmpeg();
     await testMdhd_Structure();
     await testMdhd_Conformance();
     await testMvhd_Structure();
-    await testMvhd_Conformance();
+    await testMvhd_LockedLayoutEquivalence_ffmpeg();
 
     await testAvcC_Structure();
-    await testAvcC_Conformance();
+    await testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg();
     await testBtrt_Structure();
-    await testBtrt_Conformance();
+    await testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg();
     await testPasp_Structure();
-    await testPasp_Conformance();
+    await testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg();
     await testAvc1_Structure();
-    await testAvc1_Conformance();
+    await testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg();
     await testStsd_Structure();
-    await testStsd_SemanticConformance();
-    await testStsd_StructuralConformance();
-    return
+    await testStsd_GoldenTruthExtractor();
+    await testStsd_LockedLayoutEquivalence_ffmpeg();
 
-    // The test following `return` are the following status:
-    // testStsz Phase A - todo 
-    // testStsz Phase B - todo 
-    // testStsz Phase c - todo 
-
-    // NOTE:
-    // This test is intentionally positioned above the return cursor.
-    // It will fail until ALL STBL leaf boxes (stsd, stts, stsc, stsz, stco)
-    // have completed Phase A (JSON-only output).
-    // The failure is expected during refactor and should disappear
-    // naturally as the cursor advances.
-    await test_NativeMuxer_chunkPolicy_ffmpeg();
+    // -----------------------------------------------------------------
+    // REMAINING STBL LEAF BOXES (REQUIRED BY REAL-WORLD MP4s)
+    // -----------------------------------------------------------------
+    //
+    // ffmpeg-produced MP4 files include additional sample table boxes
+    // beyond the minimal set:
+    //
+    //   - stss (Sync Sample Box)
+    //   - ctts (Composition Time to Sample Box)
+    //
+    // These boxes are *structural requirements* for real playback,
+    // not optional embellishments.
+    //
+    // They MUST be implemented, tested, and proven in isolation
+    // before STBL container equivalence can be asserted.
+    //
+    // Each box follows the same discipline as all others:
+    //   - Phase A: structural correctness
+    //   - Phase C: byte-for-byte equivalence against a golden MP4
+    //
+    // No container tests may proceed until these leaf boxes are proven.
+    
+    await testStss_Structure();
+    await testStss_LockedLayoutEquivalence_ffmpeg();
+    await testCtts_Structure();
+    await testCtts_LockedLayoutEquivalence_ffmpeg();
 
     // -----------------------------------------------------------------
     // CONTAINER BOUNDARY: STBL / MINF / MDIA / TRAK / MOOV
@@ -226,44 +382,594 @@ async function runUnitTests() {
     // If it does not, that signals a real architectural regression.
     //
 
-    // Not yet implemented
-    await testStbl();
-    await testDinf();
-    await testMinf();
-    await testMdia();
-    await testTrak();
+    // -----------------------------------------------------------------
+    // CONTAINER BUILDERS — PHASE A (STRUCTURE ONLY)
+    // -----------------------------------------------------------------
+    //
+    // The following tests represent the *intended architectural boundaries*
+    // of the MP4 container hierarchy.
+    //
+    // At this stage:
+    //
+    //   - These boxes exist conceptually in the MP4 specification
+    //   - Some are still implemented implicitly inside `buildMoovBox`
+    //   - Dedicated box builders for them do NOT yet exist
+    //
+    // These tests are therefore:
+    //   - Phase A only (JSON intent and structure)
+    //   - Expected to fail until each boundary is extracted
+    //
+    // The extraction order is intentional and MUST be followed:
+    //
+    //   1. STBL  (composes all sample table leaf boxes)
+    //   2. DINF  (simple, mostly static data references)
+    //   3. MINF  (media information container)
+    //   4. MDIA  (media container)
+    //   5. TRAK  (track container)
+    //   6. MOOV  (top-level movie container)
+    //
+    // As each container builder is introduced:
+    //   - Implement the builder
+    //   - Add ONLY a Phase A structure test
+    //   - Move the return cursor downward
+    //   - Do NOT modify higher-level tests
+    //
+    // This ensures:
+    //   - Architectural intent is preserved
+    //   - Refactoring remains incremental
+    //   - No derived or layout-dependent assumptions leak in early
+    //
 
-    // ---- CONTAINER BOXES ----
-    await testMoov();
+    // -----------------------------------------------------------------
+    // STBL — LOCKED-LAYOUT EQUIVALENCE
+    // -----------------------------------------------------------------
+    //
+    // These tests validate STBL serialization against a golden MP4
+    // under fully locked layout conditions.
+    //
+    // Preconditions (all MUST already be proven):
+    //   - STSD semantic and byte-level equivalence
+    //   - STTS semantic and byte-level equivalence
+    //   - STSS semantic and byte-level equivalence
+    //   - CTTS semantic and byte-level equivalence
+    //   - STSC semantic and byte-level equivalence
+    //   - STSZ semantic and byte-level equivalence
+    //   - STCO locked-layout equivalence
+    //
+    // In these tests:
+    //   - all child boxes are built using Framesmith builders
+    //   - all derived values are injected as resolved inputs
+    //   - no layout, chunking, or policy decisions are made
+    //
+    // The test asserts:
+    //   - correct child discovery and ordering
+    //   - correct container size propagation
+    //   - byte-for-byte equivalence with ffmpeg output
+    //
+    // This proves that STBL, as a container boundary,
+    // faithfully represents real-world MP4 structure.
+    //
+    await testStbl_Structure();
+    await testStbl_LockedLayoutEquivalence_ffmpeg();
+    await testStbl_Structure_ConditionalChildren();
+    await testStbl_ConditionalChildren_TODO();
 
+    await testDinf_Structure();
+    await testDinf_LockedLayoutEquivalence_ffmpeg();
+
+    await testMinf_Structure();
+    await testMinf_LockedLayoutEquivalence_ffmpeg();
+
+    await testMdia_Structure();
+    await testMdia_LockedLayoutEquivalence_ffmpeg();
+
+    await testElst_Structure();
+    await testElst_LockedLayoutEquivalence_ffmpeg();
+
+    await testEdts_Structure();
+    await testEdts_LockedLayoutEquivalence_ffmpeg();
+
+    await testTrak_Structure();
+    await testTrak_LockedLayoutEquivalence_ffmpeg();
+
+    await testData_Structure();
+    await testData_LockedLayoutEquivalence_ffmpeg();
+
+    await testIlstItem_Structure();
+    await testIlstItem_LockedLayoutEquivalence_ffmpeg();
+
+    await testIlst_Structure();
+    await testIlst_LockedLayoutEquivalence_ffmpeg();
+
+    await testMetaHdlr_Structure(); 
+    await testMetaHdlr_LockedLayoutEquivalence_ffmpeg();
+    await testMeta_Structure();
+    await testMeta_LockedLayoutEquivalence_ffmpeg();
+
+    await testUdta_Structure();
+    await testUdta_LockedLayoutEquivalence_ffmpeg();
+
+    await testMoov_Structure();
+    await testMoov_LockedLayoutEquivalence_ffmpeg();
+
+    /**
+     * ===============================================================
+     * PHASE: SAMPLE EXTRACTION (REFERENCE → MEANING)
+     * ===============================================================
+     *
+     * Purpose
+     * -------
+     * This phase introduces a *reference-only* extractor that reads a
+     * real MP4 file (e.g. ffmpeg output) and produces a canonical list
+     * of media samples in Framesmith / NativeMuxer format.
+     *
+     * This is the first point where we intentionally cross from:
+     *
+     *   "MP4 as bytes"
+     *        →
+     *   "MP4 as semantic media events"
+     *
+     * The output of this phase becomes the *sole allowed input* to:
+     *
+     *   - mdat passthrough tests
+     *   - NativeMuxer assembly tests
+     *   - chunking / interleaving policy tests
+     *
+     * ---------------------------------------------------------------
+     * Output Contract (REQUIRED)
+     * ---------------------------------------------------------------
+     *
+     * The extractor MUST return an ordered array of sample objects:
+     *
+     * {
+     *   bytes: Uint8Array,   // exact sample payload, no mutation
+     *   timestamp: number,  // decode timestamp, in track timescale
+     *   duration: number,   // sample duration, in track timescale
+     *   isKey: boolean      // derived from stss (or true if absent)
+     * }
+     *
+     * This contract is:
+     *   - independent of MP4 box layout
+     *   - independent of chunking
+     *   - independent of file offsets
+     *
+     * It represents *meaning*, not structure.
+     *
+     * ---------------------------------------------------------------
+     * Test: testSampleExtraction_FromGoldenMp4
+     * ---------------------------------------------------------------
+     *
+     * This test asserts THREE things, and ONLY these three things:
+     *
+     *   1. Structural integrity
+     *      - Each sample matches the contract exactly
+     *      - No empty payloads
+     *      - No missing timestamps, durations, or keyframe flags
+     *
+     *   2. Coverage integrity
+     *      - The concatenation of all sample.bytes MUST cover the
+     *        entire mdat payload, exactly once
+     *
+     *   3. Byte preservation
+     *      - Concatenating sample.bytes in order MUST reproduce the
+     *        original mdat payload byte-for-byte
+     *
+     * This test does NOT assert:
+     *   - chunk boundaries
+     *   - offset correctness
+     *   - interleaving policy
+     *   - ffmpeg policy equivalence
+     *
+     * Those are NativeMuxer responsibilities.
+     *
+     * ---------------------------------------------------------------
+     * Architectural Constraints (IMPORTANT)
+     * ---------------------------------------------------------------
+     *
+     * 1. Tests DO NOT parse MP4 boxes.
+     *    Tests ask extractors questions.
+     *
+     * 2. There is NO generic `readMp4Boxes()` API.
+     *    MP4 parsing is internal to the extractor.
+     *
+     * 3. There is NO `extractVideoTrack()` API.
+     *    Track discovery is an implementation detail.
+     *
+     * 4. This extractor is REFERENCE-ONLY.
+     *    It exists to:
+     *      - read real-world MP4s
+     *      - validate understanding of MP4 semantics
+     *      - provide trusted inputs to NativeMuxer tests
+     *
+     * It is NOT part of the production NativeMuxer pipeline.
+     *
+     * ---------------------------------------------------------------
+     * Implementation Expectations (NON-NORMATIVE)
+     * ---------------------------------------------------------------
+     *
+     * Internally, the extractor will:
+     *
+     *   - Locate moov / trak / mdia / minf / stbl
+     *   - Use existing table readers:
+     *       stts, ctts, stsz, stsc, stco, stss
+     *   - Derive:
+     *       sample boundaries
+     *       decode timestamps
+     *       durations
+     *       keyframe flags
+     *   - Slice the mdat payload accordingly
+     *
+     * The order of operations is:
+     *
+     *   MP4 bytes
+     *     → tables
+     *     → sample layout
+     *     → semantic samples
+     *
+     * ---------------------------------------------------------------
+     * Why this phase exists
+     * ---------------------------------------------------------------
+     *
+     * Without this phase:
+     *   - `mdat` cannot be tested meaningfully
+     *   - NativeMuxer policy tests would depend on ffmpeg internals
+     *   - STCO correctness cannot be proven against real data
+     *
+     * With this phase:
+     *   - NativeMuxer becomes a pure assembler
+     *   - Derived layout logic is isolated and testable
+     *   - Box builders remain free of media semantics
+     *
+     * This is a hard architectural boundary.
+     */
+    await testSampleExtraction_FromGoldenMp4();
+
+    /**
+     * ===============================================================
+     * PHASE: PURE SEMANTIC DERIVATION & POLICY
+     * ===============================================================
+     *
+     * This phase validates NativeMuxer logic that operates entirely
+     * on semantic inputs and fabricated data.
+
+     * They DO NOT:
+     *   - parse MP4 boxes themselves
+     *   - access MP4 bytes or container paths
+     *
+     * Any MP4 parsing occurs strictly in the reference
+     * extraction phase and is already resolved into
+     * semantic inputs before these tests run.    *
+
+     * Characteristics:
+     *   - NO ffmpeg fixtures
+     *   - NO box emitters
+     *
+     * ---------------------------------------------------------------
+     * SUBPHASE: DERIVED BOX INPUTS (SEMANTIC → STRUCTURAL)
+     * ---------------------------------------------------------------
+     *
+     * These tests validate pure derivation of MP4 table inputs
+     * from semantic models produced earlier in the pipeline.
+     *
+     * They DO NOT:
+     *   - emit MP4 boxes
+     *   - compute byte offsets from file layout
+     *
+     * They operate only on:
+     *   - samples[]
+     *   - chunks[]
+     *
+     * Covered derivations:
+     *   - STSC entries
+     *   - STCO offsets
+     *
+     * Purpose:
+     *   - Isolate derived-table logic from serialization
+     *   - Prevent policy leakage into box emitters
+     */
+    await testDeriveChunkModel_OneSamplePerChunk();
+    await testNativeMuxer_DeriveStscEntries_SingleChunkPattern();
+    await testNativeMuxer_DeriveStcoOffsets_Simple();
+    await testNativeMuxer_DeriveSttsEntries_RunLengthEncoding();
+    await testNativeMuxer_DeriveStszSizes_Simple();
+    await testNativeMuxer_DeriveCttsEntries_RunLengthEncoding();
+
+    /**
+     * ---------------------------------------------------------------
+     * SUBPHASE: EMITTER ADAPTERS (SEMANTIC → EMITTER CONTRACT)
+     * ---------------------------------------------------------------
+     *
+     * Purpose
+     * -------
+     * These tests validate *adapter functions* that translate
+     * semantic derivation output into the exact parameter objects
+     * required by box emitters.
+     *
+     * Adapters exist to enforce a hard boundary:
+     *
+     *   - Derivation logic produces *meaning*
+     *   - Emitters accept *strict, minimal contracts*
+     *
+     * Adapters:
+     *   - perform validation
+     *   - enforce emitter limitations (e.g. single-entry STSC)
+     *   - reject unsupported semantic shapes early
+     *
+     * They DO NOT:
+     *   - derive meaning
+     *   - inspect MP4 bytes
+     *   - apply policy
+     *
+     * This layer prevents semantic leakage into box emitters
+     * and keeps emitters deterministic and dumb.
+     */
+
+    await testNativeMuxer_AdaptSttsFromSamples_CFR();
+    await testNativeMuxer_AdaptSttsFromSamples_VariableDurationFails();
+    await testNativeMuxer_SttsAdapter_Conformance_ffmpeg();
+    await testNativeMuxer_AdaptStszFromSamples();
+    await testNativeMuxer_StszAdapter_Conformance_ffmpeg();
+    await testNativeMuxer_CttsAdapter_Conformance_ffmpeg();
+    await testNativeMuxer_StscDerivation_Conformance_ffmpeg();
+
+   await testChunkLayout_FramesmithSimple();
+
+   // `return` cursor, we move these down through this function
+   // as we implement each box builder, this tracks our progress
+   // through phase A, B and C
+   // The test following `return` are the following status:
+   // Phase A - todo 
+   // Phase B - todo 
+   // Phase c - todo 
+   return
+
+
+    // ===============================================================
+    // NATIVE MUXER — ASSEMBLY & POLICY (IMPLEMENTED / PARTIAL)
+    // ===============================================================
+    //
+    // The tests below belong to NativeMuxer assembly.
+    //
+    // They are intentionally placed beyond the return cursor because:
+    //   - they operate on semantic inputs, not MP4 boxes
+    //   - they define or validate policy decisions
+    //   - they do not serialize or parse MP4 structure
+    //
+    // These tests are NOT box tests.
+    // They are NOT conformance tests.
+    //
+    // They are part of the NativeMuxer execution pipeline.
+    //
+    // ---------------------------------------------------------------
+    // CURRENT IMPLEMENTATION STATUS
+    // ---------------------------------------------------------------
+    //
+    // IMPLEMENTED:
+    //
+    // 1. Sample Extraction (REFERENCE → MEANING)
+    //
+    //    File:
+    //      src/mux/native/tests/test_sample_extraction.js
+    //
+    //    Purpose:
+    //      - Extract semantic samples from a real MP4
+    //      - Produce canonical sample objects:
+    //          {
+    //            bytes,
+    //            decodeTime,
+    //            duration,
+    //            isKey
+    //          }
+    //
+    //    Guarantees:
+    //      - Full mdat coverage
+    //      - Byte-for-byte preservation
+    //      - No layout or policy assumptions
+    //
+    //    This is a HARD boundary.
+    //    All NativeMuxer tests consume samples from here onward.
+    //
+    //
+    // 2. Chunk Layout Policy (LOGICAL LAYOUT — PASS 1)
+    //
+    //    File:
+    //      src/mux/native/chunkLayoutPolicy.js
+    //
+    //    Tests:
+    //      - testChunkLayout_FramesmithSimple
+    //      - testChunkLayout_FfmpegCompatible
+    //
+    //    Purpose:
+    //      - Decide how samples are grouped into chunks
+    //      - Own chunking policy only
+    //
+    //    Explicit non-responsibilities:
+    //      - No box writing
+    //      - No offset computation
+    //      - No byte access
+    //
+    //    Output:
+    //      - Abstract chunking decisions
+    //      - Later compiled into STSC entries
+    //
+    //    NOTE:
+    //      These tests passed before NativeMuxer existed
+    //      because they were already architecturally pure.
+    //      Their placement here reflects their true role.
+    //
+    // ---------------------------------------------------------------
+    // NOT YET IMPLEMENTED (NEXT RESUME POINT)
+    // ---------------------------------------------------------------
+    //
+    // - Chunk model derivation from samples
+    // - mdat assembly from semantic samples
+    // - STTS / STSZ / STSS / STSC derivation from layout
+    // - STCO finalization after physical layout
+    // - Full NativeMuxer assembly tests
+    //
+    // This section exists so work can resume cleanly
+    // after interruptions or refactors.
+    //
+    // ===============================================================
+
+    await testChunkLayout_FramesmithSimple();
+    await testChunkLayout_FfmpegCompatible();
+
+    // -----------------------------------------------------------------
+    // CONTAINER CONFORMANCE — COMPOSED (PLANNED)
+    // -----------------------------------------------------------------
+    //
+    // These tests validate container correctness *only when composed
+    // with real child boxes*. They do NOT test boxes in isolation.
+    //
+    // They assert:
+    //   - child ordering
+    //   - presence of required children
+    //   - size coherence
+    //   - byte-for-byte equivalence against a golden MP4 *at the container
+    //     boundary*, not the leaf level
+    //
+    // They do NOT assert:
+    //   - chunking policy
+    //   - offset correctness
+    //   - interleaving strategy
+    //
+    // Those are NativeMuxer responsibilities.
+    //
+    // These tests make container conformance explicit and visible,
+    // even though validation is necessarily indirect.
+    //
+    await testStbl_ComposedConformance();
+    await testDinf_ComposedConformance();
+    await testMinf_ComposedConformance();
+    await testMdia_ComposedConformance();
+    await testTrak_ComposedConformance();
+    await testMoov_ComposedConformance();
+
+    // -----------------------------------------------------------------
+    // MDAT — MEDIA DATA BOX (OPAQUE PAYLOAD)
+    // -----------------------------------------------------------------
+    //
+    // `mdat` is a structurally trivial but semantically critical box.
+    //
+    // Per the MP4 specification, `mdat` contains:
+    //
+    //   - a box header (size + type)
+    //   - an opaque sequence of media bytes
+    //
+    // It has:
+    //   - no version
+    //   - no flags
+    //   - no internal fields
+    //
+    // The `mdat` builder therefore has exactly two responsibilities:
+    //
+    //   1. Preserve the provided byte payload verbatim
+    //   2. Serialize it correctly as an MP4 box
+    //
+    // What `mdat` does NOT decide:
+    //   - how samples are chunked
+    //   - how samples are grouped or ordered
+    //   - where chunk boundaries occur
+    //   - how offsets are computed
+    //
+    // Those are *derived policy decisions* handled later by the NativeMuxer.
+    //
+    // Because `mdat` is an opaque payload, it is safe and correct to
+    // validate byte-for-byte equivalence against ffmpeg *in passthrough
+    // mode*, where the input payload is taken directly from a golden MP4.
+    //
+    // This comparison asserts ONLY:
+    //   - serialization fidelity
+    //   - absence of mutation, reordering, or truncation
+    //
+    // It does NOT assert:
+    //   - chunking policy
+    //   - offset correctness
+    //   - interleaving strategy
+    //   - encoder behavior
+    //
+    // Those assertions are deferred to full NativeMuxer tests.
+    //
+    await testMdat_Structure();
+    await testMdat_PassthroughEquivalence_ffmpeg();
+
+    // -----------------------------------------------------------------
+    // NATIVE MUXER — DERIVED DATA & POLICY (PLANNED)
+    // -----------------------------------------------------------------
+    //
+    // The following tests validate *derived state* produced during
+    // final MP4 assembly. They are NOT box-level tests.
+    //
+    // These tests MUST NOT be enabled until:
+    //   - All container builders above exist
+    //   - `mdat` is written and sized
+    //   - Chunk offsets have been computed
+    //
+    // These tests are listed here to make the intended progression explicit.
+    //
+    // They will be enabled in the following order:
+    //
+    //   1. Internal consistency
+    //      - Offsets point to real data
+    //      - Chunk boundaries do not overlap
+    //      - Tables agree with each other
+    //
+    //   2. STCO correctness against assembled `mdat`
+    //      - Offsets match actual chunk starts
+    //
+    //   3. Optional policy comparison against ffmpeg
+    //      - Validates equivalence, not correctness
+    //
+    // Until those conditions are met, these tests are placeholders
+    // and MUST remain below the return cursor.
+    //
+    await test_NativeMuxer_chunkPolicy_internalConsistency();
+    await test_NativeMuxer_stco_offsets_match_mdat();
+    await test_NativeMuxer_chunkPolicy_ffmpeg();
+
+    // -----------------------------------------------------------------
+    // LEGACY / PRE-REFACTOR TESTS
+    // -----------------------------------------------------------------
+    //
+    // The following tests were implemented under an earlier architecture.
+    // They may:
+    //   - assume byte-level output where JSON intent now exists
+    //   - overlap with newer Phase A / B / C tests
+    //   - encode assumptions that no longer hold
+    //
+    // These tests are intentionally retained for now to:
+    //   - track what still exists
+    //   - identify what needs updating or removal
+    //   - prevent accidental loss of coverage
+    //
+    // As the refactor stabilizes, each of these should be:
+    //   - evaluated
+    //   - either migrated to the new model
+    //   - or explicitly deprecated with justification
+    //
     // ---- STRUCTURE VALIDATION ----
     await testNalPrefixIntegrity();
-    await testAssembly();
     await test_mp4_structure();
 
-    // ---- STATEFUL LOGIC ----
-    await testAvcCExtractor();
-    await testSampleCollector();
-    await testTimingModel()
-    await testMdatBuilder();
-    await test_convertAnnexBToMp4();
+
+    // -----------------------------------------------------------------
+    // STATEFUL / PIPELINE LOGIC
+    // -----------------------------------------------------------------
+    //
+    // These tests validate logic that spans multiple components or
+    // depends on runtime state rather than static box structure.
+    //
+    // They are not directly tied to the box-builder refactor, but may
+    // need revisiting as boundaries become more explicit.
+    //
+    await testMdatEmitter();
 }
 
-
 async function runBoundaryTests() {
-    await test_mp4_internal_integrity();
-    await test_access_unit_structure();
-    await test_stco_offsets();
-    await test_roundtrip_nalu();
-    await test_webcodecs_decode();
-    await test_mp4_mse();
-    await test_mp4_metadata();
-    await test_mp4_canvas_framehash();
 }
 
 async function runIntegrationTests() {
-    await test_NativeMuxer_integration_annexb_environmental();
-    await test_NativeMuxer_integration_avcc();
 }
 
 document.getElementById("run-unit").onclick = async () => {

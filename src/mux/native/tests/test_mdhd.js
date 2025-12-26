@@ -1,8 +1,10 @@
-import { buildMdhdBox } from "../boxes/mdhdBox.js";
+import { emitMdhdBox } from "../box-emitters/mdhdBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32FromMp4BoxBytes, readUint16FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
-import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { readUint32, readUint16, readFourCC } from "../bytes/mp4ByteReader.js";
+import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 import { assertEqual } from "./assertions.js";
+
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 export async function testMdhd_Structure() {
     console.log("=== mdhd Granular structural tests ===");
@@ -11,7 +13,7 @@ export async function testMdhd_Structure() {
     const duration  = 90000 * 5;
 
     const box = serializeBoxTree(
-        buildMdhdBox({ timescale, duration })
+        emitMdhdBox({ timescale, duration })
     );
 
     // ---------------------------------------------------------
@@ -19,7 +21,7 @@ export async function testMdhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mdhd.size",
-        readUint32FromMp4BoxBytes(box, 0),
+        readUint32(box, 0),
         box.length
     );
 
@@ -28,7 +30,7 @@ export async function testMdhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mdhd.type",
-        readBoxTypeFromMp4BoxBytes(box, 4),
+        readFourCC(box, 4),
         "mdhd"
     );
 
@@ -60,7 +62,7 @@ export async function testMdhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mdhd.creation_time",
-        readUint32FromMp4BoxBytes(box, 12),
+        readUint32(box, 12),
         0
     );
 
@@ -69,7 +71,7 @@ export async function testMdhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mdhd.modification_time",
-        readUint32FromMp4BoxBytes(box, 16),
+        readUint32(box, 16),
         0
     );
 
@@ -78,7 +80,7 @@ export async function testMdhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mdhd.timescale",
-        readUint32FromMp4BoxBytes(box, 20),
+        readUint32(box, 20),
         timescale
     );
 
@@ -87,7 +89,7 @@ export async function testMdhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mdhd.duration",
-        readUint32FromMp4BoxBytes(box, 24),
+        readUint32(box, 24),
         duration
     );
 
@@ -98,7 +100,7 @@ export async function testMdhd_Structure() {
 
     assertEqual(
         "mdhd.language",
-        readUint16FromMp4BoxBytes(box, 28),
+        readUint16(box, 28),
         expectedLanguage
     );
 
@@ -107,86 +109,77 @@ export async function testMdhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mdhd.predefined",
-        readUint16FromMp4BoxBytes(box, 30),
+        readUint16(box, 30),
         0
     );
 
     console.log("PASS: mdhd granular structural tests");
 }
 
+
 export async function testMdhd_Conformance() {
     console.log("=== testMdhd_Conformance (golden MP4) ===");
 
+    // -------------------------------------------------------------
+    // 1. Load golden MP4
+    // -------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const buf  = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const refMdhd = extractBoxByPath(
-        buf,
-        ["moov", "trak", "mdia", "mdhd"]
+    // -------------------------------------------------------------
+    // 2. Read reference MDHD via parser registry
+    // -------------------------------------------------------------
+    const ref = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/mdia/mdhd"
     );
 
-    if (!refMdhd) {
-        throw new Error("FAIL: mdhd box not found in golden MP4");
-    }
+    const refFields = ref.readFields();
+    const params    = ref.getBuilderInput();
 
-    const ref = parseMdhd(refMdhd);
-
-    const outRaw = serializeBoxTree(
-        buildMdhdBox({
-            timescale: ref.timescale,
-            duration:  ref.duration
-        })
+    // -------------------------------------------------------------
+    // 3. Rebuild MDHD via Framesmith
+    // -------------------------------------------------------------
+    const outBytes = serializeBoxTree(
+        emitMdhdBox(params)
     );
 
-    const out = parseMdhd(outRaw);
+    // -------------------------------------------------------------
+    // 4. Read rebuilt MDHD via same parser
+    // -------------------------------------------------------------
+    const outFields = getGoldenTruthBox.fromBox(
+        outBytes,
+        "moov/trak/mdia/mdhd"
+    ).readFields();
 
-    // ---------------------------------------------------------
-    // Field-level conformance
-    // ---------------------------------------------------------
-    assertEqual("mdhd.version",   out.version,   ref.version);
-    assertEqual("mdhd.flags",     out.flags,     ref.flags);
-    assertEqual("mdhd.timescale", out.timescale, ref.timescale);
-    assertEqual("mdhd.duration",  out.duration,  ref.duration);
-    assertEqual("mdhd.language",  out.language,  ref.language);
+    // -------------------------------------------------------------
+    // 5. Field-level conformance
+    // -------------------------------------------------------------
+    assertEqual("mdhd.version",   outFields.version,   refFields.version);
+    assertEqual("mdhd.flags",     outFields.flags,     refFields.flags);
+    assertEqual("mdhd.timescale", outFields.timescale, refFields.timescale);
+    assertEqual("mdhd.duration",  outFields.duration,  refFields.duration);
+    assertEqual("mdhd.language",  outFields.language,  refFields.language);
 
-    // ---------------------------------------------------------
-    // Byte-for-byte conformance
-    // ---------------------------------------------------------
+    // -------------------------------------------------------------
+    // 6. Byte-for-byte conformance
+    // -------------------------------------------------------------
+    const refRaw = refFields.raw;
+
     assertEqual(
         "mdhd.size",
-        out.raw.length,
-        ref.raw.length
+        outBytes.length,
+        refRaw.length
     );
 
-    for (let i = 0; i < ref.raw.length; i++) {
+    for (let i = 0; i < refRaw.length; i++) {
         assertEqual(
             `mdhd.byte[${i}]`,
-            out.raw[i],
-            ref.raw[i]
+            outBytes[i],
+            refRaw[i]
         );
     }
 
     console.log("PASS: mdhd matches golden MP4 byte-for-byte");
-}
-
-// ---------------------------------------------------------------------------
-// Helper: parse mdhd into field-level representation
-// ---------------------------------------------------------------------------
-
-function parseMdhd(box) {
-    return {
-        type: readBoxTypeFromMp4BoxBytes(box, 4),
-        version: box[8],
-        flags:
-            (box[9] << 16) |
-            (box[10] << 8) |
-            box[11],
-
-        timescale: readUint32FromMp4BoxBytes(box, 20),
-        duration:  readUint32FromMp4BoxBytes(box, 24),
-        language:  readUint16FromMp4BoxBytes(box, 28),
-
-        raw: box
-    };
 }
 

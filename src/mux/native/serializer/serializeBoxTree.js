@@ -73,7 +73,7 @@
  *   { int: number }            // u32, big-endian
  *   { short: number }          // u16, big-endian
  *   { byte: number }           // u8
- *   { bytes: Uint8Array }      // raw byte copy (verbatim)
+ *   { OpaqueBytesPassthroug: Uint8Array }      // raw byte copy (verbatim)
  *
  *   { array: "byte"|"short"|"int", values: number[] }
  *
@@ -85,6 +85,72 @@
  *
  * This vocabulary is intentionally small.
  * If something is not representable here, the DSL must be extended explicitly.
+ * 
+ * ---------------------------------------------------------------------------
+ * RAW BYTES vs BYTE ARRAYS (CRITICAL DISTINCTION)
+ * ---------------------------------------------------------------------------
+ *
+ * This DSL deliberately distinguishes between two different kinds of binary
+ * data commonly found in MP4 files:
+ *
+ *   1. Serializer-owned binary fields
+ *   2. Serializer-opaque passthrough payloads
+ *
+ * These are NOT interchangeable.
+ *
+ *
+ * 1. Serializer-owned binary fields
+ * ---------------------------------
+ *
+ * Use:
+ *
+ *   { array: "byte", values: number[] }
+ *
+ * When:
+ *   - the bytes are part of a box’s defined structure
+ *   - the serializer is responsible for emitting them
+ *   - the bytes are small, bounded, and positionally defined
+ *
+ * Examples:
+ *   - avcC payloads (SPS / PPS)
+ *   - codec configuration records
+ *   - metadata values (e.g. ilst > data)
+ *
+ * These bytes may be semantically opaque to the builder, but they are
+ * structurally owned by the MP4 container.
+ *
+ * The serializer writes them intentionally, byte-by-byte.
+ *
+ *
+ * 2. Serializer-opaque passthrough payloads
+ * -----------------------------------------
+ *
+ * Use:
+ *
+ *   { OpaqueBytesPassthrough: Uint8Array }
+ *
+ * ONLY when:
+ *   - the payload is not structurally owned by the MP4 container
+ *   - the serializer must not conceptually touch or reinterpret it
+ *   - size and content are governed by external policy
+ *
+ * Example:
+ *   - mdat media samples
+ *
+ * For this reason, raw byte passthrough is intentionally restricted to
+ * `mdat` boxes only.
+ *
+ *
+ * Design Rule:
+ * ------------
+ *
+ * If the serializer is responsible for emitting the bytes,
+ * use `{ array: "byte" }`.
+ *
+ * If the serializer must not reason about the bytes at all,
+ * use `{ OpaqueBytesPassthrough }`, and only in `mdat`.
+ *
+ * This distinction is enforced by validation and is not optional.
  *
  * ---------------------------------------------------------------------------
  * BODY vs CHILDREN (CRITICAL DISTINCTION)
@@ -266,7 +332,9 @@ export function computeBoxSize(node) {
         if ("int" in field) size += 4;
         else if ("short" in field) size += 2;
         else if ("byte" in field) size += 1;
-        else if ("bytes" in field) size += field.bytes.length;
+        else if ("OpaqueBytesPassthrough" in field) {
+            size += field.OpaqueBytesPassthrough.length;
+        }
 
         else if ("array" in field) {
             const type = field.array;
@@ -349,9 +417,10 @@ export function writeBox(node, buffer, offset) {
             offset += 1;
         }
 
-        else if ("bytes" in field) {
-            buffer.set(field.bytes, offset);
-            offset += field.bytes.length;
+        else if ("OpaqueBytesPassthrough" in field) {
+            const payload = field.OpaqueBytesPassthrough;
+            buffer.set(payload, offset);
+            offset += payload.length;
         }
 
         else if ("array" in field) {
@@ -434,7 +503,7 @@ function validateBoxNode(node, path = node.type) {
         }
 
         for (const field of node.body) {
-            validateBodyField(field, path);
+            validateBodyField(field, path, node.type);
         }
     }
 
@@ -461,9 +530,16 @@ function validateBoxNode(node, path = node.type) {
     }
 }
 
-function validateBodyField(field, path) {
+function validateBodyField(field, path, boxType) {
     if (!field || typeof field !== "object") {
         throw new Error(`Box ${path}: invalid body field`);
+    }
+
+    // ❌ Raw bytes are forbidden except in mdat
+    if ("OpaqueBytesPassthrough" in field && boxType !== "mdat") {
+        throw new Error(
+            `Box ${path}: OpaqueBytesPassthrough is only allowed in 'mdat' boxes`
+        );
     }
 
     // ❌ Raw box node accidentally placed in body
@@ -487,7 +563,7 @@ function validateBodyField(field, path) {
         "int" in field ||
         "short" in field ||
         "byte" in field ||
-        "bytes" in field ||
+        "OpaqueBytesPassthrough" in field ||
         "array" in field ||
         ("type" in field && Object.keys(field).length === 1)
     ) {

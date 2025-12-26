@@ -1,48 +1,48 @@
-import { readUint32FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
+import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { buildFtypBox } from "../boxes/ftypBox.js";
-import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { emitFtypBox } from "../box-emitters/ftypBox.js";
 import { assertEqual } from "./assertions.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 export async function testFtyp_Structure() {
     console.log("=== testFtyp_Structure ===");
 
-    const node = buildFtypBox();
+    const node = emitFtypBox();
     const ftyp = serializeBoxTree(node);
 
     // ---- Header --------------------------------------------------------------
     assertEqual(
         "ftyp.size",
-        readUint32FromMp4BoxBytes(ftyp, 0),
+        readUint32(ftyp, 0),
         ftyp.length
     );
 
     assertEqual(
         "ftyp.type",
-        readBoxTypeFromMp4BoxBytes(ftyp, 4),
+        readFourCC(ftyp, 4),
         "ftyp"
     );
 
     // ---- major_brand ---------------------------------------------------------
     assertEqual(
         "ftyp.major_brand",
-        readBoxTypeFromMp4BoxBytes(ftyp, 8),
+        readFourCC(ftyp, 8),
         "isom"
     );
 
     // ---- minor_version -------------------------------------------------------
     assertEqual(
         "ftyp.minor_version",
-        readUint32FromMp4BoxBytes(ftyp, 12),
+        readUint32(ftyp, 12),
         512
     );
 
     // ---- compatible_brands ---------------------------------------------------
     const brands = [
-        readBoxTypeFromMp4BoxBytes(ftyp, 16),
-        readBoxTypeFromMp4BoxBytes(ftyp, 20),
-        readBoxTypeFromMp4BoxBytes(ftyp, 24),
-        readBoxTypeFromMp4BoxBytes(ftyp, 28),
+        readFourCC(ftyp, 16),
+        readFourCC(ftyp, 20),
+        readFourCC(ftyp, 24),
+        readFourCC(ftyp, 28),
     ];
 
     const expectedBrands = ["isom", "iso2", "avc1", "mp41"];
@@ -61,80 +61,78 @@ export async function testFtyp_Structure() {
 export async function testFtyp_Conformance() {
     console.log("=== testFtyp_Conformance (golden MP4) ===");
 
-    // 1. Load reference MP4
+    // -------------------------------------------------------------
+    // 1. Load golden MP4
+    // -------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const buf = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    // 2. Extract reference ftyp
-    const refFtyp = extractBoxByPath(buf, ["ftyp"]);
+    // -------------------------------------------------------------
+    // 2. Read reference FTYP via parser registry
+    // -------------------------------------------------------------
+    const ref = getGoldenTruthBox.fromMp4(
+        mp4,
+        "ftyp"
+    );
 
-    // 3. Build Framesmith ftyp
-    const outFtyp = serializeBoxTree(buildFtypBox());
+    const refFields = ref.readFields();
+    const params    = ref.getBuilderInput();
 
-    // 4. Parse both
-    const ref = parseFtyp(refFtyp);
-    const out = parseFtyp(outFtyp);
+    // -------------------------------------------------------------
+    // 3. Rebuild FTYP using Framesmith builder
+    // -------------------------------------------------------------
+    const outBytes = serializeBoxTree(
+        emitFtypBox(params)
+    );
 
-    // ---- Reference sanity ----------------------------------------------------
-    assertEqual("ftyp.ref.type", ref.type, "ftyp");
-    assertEqual("ftyp.out.type", out.type, "ftyp");
+    // -------------------------------------------------------------
+    // 4. Read rebuilt FTYP via same parser
+    // -------------------------------------------------------------
+    const out = getGoldenTruthBox.fromBox(
+        outBytes,
+        "ftyp"
+    ).readFields();
 
-    // ---- Field-level conformance ---------------------------------------------
-    assertEqual("ftyp.major_brand",  out.majorBrand,  ref.majorBrand);
-    assertEqual("ftyp.minor_version", out.minorVersion, ref.minorVersion);
+    // -------------------------------------------------------------
+    // 5. Field-level conformance
+    // -------------------------------------------------------------
+    assertEqual("ftyp.type", out.type, refFields.type);
+    assertEqual("ftyp.major_brand", out.majorBrand, refFields.majorBrand);
+    assertEqual("ftyp.minor_version", out.minorVersion, refFields.minorVersion);
 
     assertEqual(
         "ftyp.compatible_brands.length",
         out.compatibleBrands.length,
-        ref.compatibleBrands.length
+        refFields.compatibleBrands.length
     );
 
-    for (let i = 0; i < ref.compatibleBrands.length; i++) {
+    for (let i = 0; i < refFields.compatibleBrands.length; i++) {
         assertEqual(
             `ftyp.compatible_brands[${i}]`,
             out.compatibleBrands[i],
-            ref.compatibleBrands[i]
+            refFields.compatibleBrands[i]
         );
     }
 
-    // ---- Absolute byte-for-byte ----------------------------------------------
+    // -------------------------------------------------------------
+    // 6. Byte-for-byte equivalence
+    // -------------------------------------------------------------
+    const refRaw = refFields.raw;
+
     assertEqual(
         "ftyp.size",
-        outFtyp.length,
-        refFtyp.length
+        outBytes.length,
+        refRaw.length
     );
 
-    for (let i = 0; i < refFtyp.length; i++) {
+    for (let i = 0; i < refRaw.length; i++) {
         assertEqual(
             `ftyp.byte[${i}]`,
-            outFtyp[i],
-            refFtyp[i]
+            outBytes[i],
+            refRaw[i]
         );
     }
 
     console.log("PASS: ftyp matches golden MP4 byte-for-byte");
 }
 
-// -----------------------------------------------------------------------------
-// Shared parser for semantic comparison
-// -----------------------------------------------------------------------------
-function parseFtyp(box) {
-    const size = readUint32FromMp4BoxBytes(box, 0);
-    const type = readBoxTypeFromMp4BoxBytes(box, 4);
-
-    const majorBrand = readBoxTypeFromMp4BoxBytes(box, 8);
-    const minorVersion = readUint32FromMp4BoxBytes(box, 12);
-
-    const compatibleBrands = [];
-    for (let offset = 16; offset + 4 <= size; offset += 4) {
-        compatibleBrands.push(readBoxTypeFromMp4BoxBytes(box, offset));
-    }
-
-    return {
-        size,
-        type,
-        majorBrand,
-        minorVersion,
-        compatibleBrands
-    };
-}

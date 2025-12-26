@@ -1,6 +1,5 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
-
+import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
 export async function testSerializer() {
     console.log("=== testSerializer ===");
 
@@ -16,15 +15,15 @@ export async function testSerializer() {
 
     let bytes = serializeBoxTree(node);
 
-    if (readUint32FromMp4BoxBytes(bytes, 0) !== 12) {
+    if (readUint32(bytes, 0) !== 12) {
         throw new Error("FAIL: int size incorrect");
     }
 
-    if (readBoxTypeFromMp4BoxBytes(bytes, 4) !== "test") {
+    if (readFourCC(bytes, 4) !== "test") {
         throw new Error("FAIL: int type incorrect");
     }
 
-    if (readUint32FromMp4BoxBytes(bytes, 8) !== 123456) {
+    if (readUint32(bytes, 8) !== 123456) {
         throw new Error("FAIL: int field incorrect");
     }
 
@@ -42,7 +41,7 @@ export async function testSerializer() {
 
     bytes = serializeBoxTree(node);
 
-    if (readUint32FromMp4BoxBytes(bytes, 0) !== 16) {
+    if (readUint32(bytes, 0) !== 16) {
         throw new Error("FAIL: versioned size incorrect");
     }
 
@@ -54,7 +53,7 @@ export async function testSerializer() {
         throw new Error("FAIL: numeric flags incorrect");
     }
 
-    if (readUint32FromMp4BoxBytes(bytes, 12) !== 99) {
+    if (readUint32(bytes, 12) !== 99) {
         throw new Error("FAIL: versioned body field incorrect");
     }
 
@@ -115,9 +114,9 @@ export async function testSerializer() {
 
     bytes = serializeBoxTree(node);
 
-    if (readUint32FromMp4BoxBytes(bytes, 8) !== 1) throw new Error("FAIL: array[0] incorrect");
-    if (readUint32FromMp4BoxBytes(bytes, 12) !== 2) throw new Error("FAIL: array[1] incorrect");
-    if (readUint32FromMp4BoxBytes(bytes, 16) !== 3) throw new Error("FAIL: array[2] incorrect");
+    if (readUint32(bytes, 8) !== 1) throw new Error("FAIL: array[0] incorrect");
+    if (readUint32(bytes, 12) !== 2) throw new Error("FAIL: array[1] incorrect");
+    if (readUint32(bytes, 16) !== 3) throw new Error("FAIL: array[2] incorrect");
 
     // -----------------------------------------------------------
     // 6. nested child box
@@ -135,31 +134,31 @@ export async function testSerializer() {
 
     bytes = serializeBoxTree(node);
 
-    if (readBoxTypeFromMp4BoxBytes(bytes, 4) !== "pare") {
+    if (readFourCC(bytes, 4) !== "pare") {
         throw new Error("FAIL: parent type incorrect");
     }
 
-    if (readUint32FromMp4BoxBytes(bytes, 8) !== 123) {
+    if (readUint32(bytes, 8) !== 123) {
         throw new Error("FAIL: parent field incorrect");
     }
 
     const childOffset = 12;
 
-    if (readBoxTypeFromMp4BoxBytes(bytes, childOffset + 4) !== "chil") {
+    if (readFourCC(bytes, childOffset + 4) !== "chil") {
         throw new Error("FAIL: child type incorrect");
     }
 
-    if (readUint32FromMp4BoxBytes(bytes, childOffset + 8) !== 777) {
+    if (readUint32(bytes, childOffset + 8) !== 777) {
         throw new Error("FAIL: child field incorrect");
     }
 
     // -----------------------------------------------------------
-    // 7. bytes field
+    // 7. opaque passthrough payload (allowed only in mdat)
     // -----------------------------------------------------------
     node = {
-        type: "byte",
+        type: "mdat",
         body: [
-            { bytes: new Uint8Array([9, 8, 7, 6]) }
+            { OpaqueBytesPassthrough: new Uint8Array([9, 8, 7, 6]) }
         ]
     };
 
@@ -171,7 +170,7 @@ export async function testSerializer() {
         bytes[10] !== 7 ||
         bytes[11] !== 6
     ) {
-        throw new Error("FAIL: bytes field incorrect");
+        throw new Error("FAIL: mdat bytes field incorrect");
     }
 
     // -----------------------------------------------------------
@@ -233,10 +232,29 @@ export async function testSerializer() {
         ]
     });
 
-    if (readBoxTypeFromMp4BoxBytes(wrapped, 4) !== "test") {
+    if (readFourCC(wrapped, 4) !== "test") {
         throw new Error("FAIL: wrapped body box not serialized correctly");
     }
 
+    // -----------------------------------------------------------
+    // 11. reject opaque passthrough outside mdat
+    // -----------------------------------------------------------
+    let rejected = false;
+
+    try {
+        serializeBoxTree({
+            type: "test",
+            body: [
+                { OpaqueBytesPassthrough: new Uint8Array([1]) }
+            ]
+        });
+    } catch {
+        rejected = true;
+    }
+
+    if (!rejected) {
+        throw new Error("FAIL: OpaqueBytesPassthrough allowed outside mdat");
+    }
 
     console.log("PASS: Serializer tests");
 }
