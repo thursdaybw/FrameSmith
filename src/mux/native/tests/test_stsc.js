@@ -1,8 +1,9 @@
-import { buildStscBox } from "../boxes/stscBox.js";
+import { emitStscBox } from "../box-emitters/stscBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
-import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 import { assertEqual } from "./assertions.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 export async function testStsc_Structure() {
     console.log("=== testStsc_Structure ===");
@@ -14,7 +15,7 @@ export async function testStsc_Structure() {
         sampleDescriptionIndex: 1
     };
 
-    const node = buildStscBox(layout);
+    const node = emitStscBox(layout);
     const stsc = serializeBoxTree(node);
 
     // ---------------------------------------------------------
@@ -22,13 +23,13 @@ export async function testStsc_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stsc.type",
-        readBoxTypeFromMp4BoxBytes(stsc, 4),
+        readFourCC(stsc, 4),
         "stsc"
     );
 
     assertEqual(
         "stsc.size",
-        readUint32FromMp4BoxBytes(stsc, 0),
+        readUint32(stsc, 0),
         28
     );
 
@@ -49,7 +50,7 @@ export async function testStsc_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stsc.entry_count",
-        readUint32FromMp4BoxBytes(stsc, 12),
+        readUint32(stsc, 12),
         1
     );
 
@@ -58,19 +59,19 @@ export async function testStsc_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stsc.first_chunk",
-        readUint32FromMp4BoxBytes(stsc, 16),
+        readUint32(stsc, 16),
         1
     );
 
     assertEqual(
         "stsc.samples_per_chunk",
-        readUint32FromMp4BoxBytes(stsc, 20),
+        readUint32(stsc, 20),
         1
     );
 
     assertEqual(
         "stsc.sample_description_index",
-        readUint32FromMp4BoxBytes(stsc, 24),
+        readUint32(stsc, 24),
         1
     );
 
@@ -81,7 +82,7 @@ export async function testStsc_Structure() {
 
     assertEqual(
         "stsc.immutability",
-        readUint32FromMp4BoxBytes(stsc, 16),
+        readUint32(stsc, 16),
         1
     );
 
@@ -95,57 +96,54 @@ export async function testStsc_Conformance() {
     // 1. Load golden MP4
     // -------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const buf  = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // -------------------------------------------------------------
-    // 2. Extract reference STSC
+    // 2. Read reference STSC via parser registry
     // -------------------------------------------------------------
-    const refStsc = extractBoxByPath(
-        buf,
-        ["moov", "trak", "mdia", "minf", "stbl", "stsc"]
+    const ref = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/mdia/minf/stbl/stsc"
     );
 
-    if (!refStsc) {
-        throw new Error("FAIL: stsc box not found in golden MP4");
-    }
+    const refFields = ref.readFields();
+    const params    = ref.getBuilderInput();
 
     // -------------------------------------------------------------
-    // 3. Parse reference
+    // 3. Guard: supported semantic shape
     // -------------------------------------------------------------
-    const ref = parseStsc(refStsc);
-
-    if (ref.entryCount !== 1) {
+    if (refFields.entryCount !== 1) {
         throw new Error(
-            `FAIL: golden MP4 stsc uses ${ref.entryCount} entries\n` +
+            `FAIL: golden MP4 stsc uses ${refFields.entryCount} entries\n` +
             `Framesmith currently supports canonical single-entry STSC only`
         );
     }
 
-    const refEntry = ref.entries[0];
+    const refEntry = refFields.entries[0];
 
     // -------------------------------------------------------------
-    // 4. Build Framesmith STSC from reference layout
+    // 4. Rebuild STSC using Framesmith builder
     // -------------------------------------------------------------
-    const outStsc = serializeBoxTree(
-        buildStscBox({
-            firstChunk: refEntry.firstChunk,
-            samplesPerChunk: refEntry.samplesPerChunk,
-            sampleDescriptionIndex: refEntry.sampleDescriptionIndex
-        })
+    const outBytes = serializeBoxTree(
+        emitStscBox(params)
     );
 
     // -------------------------------------------------------------
-    // 5. Parse output
+    // 5. Read rebuilt STSC via same parser
     // -------------------------------------------------------------
-    const out = parseStsc(outStsc);
+    const out = getGoldenTruthBox.fromBox(
+        outBytes,
+        "moov/trak/mdia/minf/stbl/stsc"
+    ).readFields();
 
     // -------------------------------------------------------------
     // 6. Field-level conformance
     // -------------------------------------------------------------
-    assertEqual("stsc.type", out.type, "stsc");
-    assertEqual("stsc.version", out.version, ref.version);
-    assertEqual("stsc.flags", out.flags, ref.flags);
-    assertEqual("stsc.entry_count", out.entryCount, ref.entryCount);
+    assertEqual(
+        "stsc.entry_count",
+        out.entryCount,
+        refFields.entryCount
+    );
 
     const outEntry = out.entries[0];
 
@@ -170,54 +168,21 @@ export async function testStsc_Conformance() {
     // -------------------------------------------------------------
     // 7. Byte-for-byte conformance
     // -------------------------------------------------------------
+    const refRaw = refFields.raw;
+
     assertEqual(
         "stsc.size",
-        out.raw.length,
-        ref.raw.length
+        outBytes.length,
+        refRaw.length
     );
 
-    for (let i = 0; i < ref.raw.length; i++) {
+    for (let i = 0; i < refRaw.length; i++) {
         assertEqual(
             `stsc.byte[${i}]`,
-            out.raw[i],
-            ref.raw[i]
+            outBytes[i],
+            refRaw[i]
         );
     }
 
     console.log("PASS: stsc matches golden MP4 byte-for-byte");
-}
-
-function parseStsc(box) {
-    const size = readUint32FromMp4BoxBytes(box, 0);
-    const type = readBoxTypeFromMp4BoxBytes(box, 4);
-
-    const version = box[8];
-    const flags =
-        (box[9] << 16) |
-        (box[10] << 8) |
-        box[11];
-
-    const entryCount = readUint32FromMp4BoxBytes(box, 12);
-
-    const entries = [];
-    let offset = 16;
-
-    for (let i = 0; i < entryCount; i++) {
-        entries.push({
-            firstChunk: readUint32FromMp4BoxBytes(box, offset),
-            samplesPerChunk: readUint32FromMp4BoxBytes(box, offset + 4),
-            sampleDescriptionIndex: readUint32FromMp4BoxBytes(box, offset + 8),
-        });
-        offset += 12;
-    }
-
-    return {
-        size,
-        type,
-        version,
-        flags,
-        entryCount,
-        entries,
-        raw: box
-    };
 }

@@ -1,8 +1,9 @@
-import { buildTkhdBox } from "../boxes/tkhdBox.js";
+import { emitTkhdBox } from "../box-emitters/tkhdBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
-import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
+import { splitFixed1616 } from "../bytes/mp4NumericFormats.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 export async function testTkhd_Structure() {
     console.log("=== tkhd Granular structural tests ===");
@@ -12,8 +13,19 @@ export async function testTkhd_Structure() {
     const duration = 90000 * 10;
     const trackId  = 1;
 
+    // Explicit fractional components (synthetic intent)
+    const widthFraction  = 0;
+    const heightFraction = 0;
+
     const box = serializeBoxTree(
-        buildTkhdBox({ width, height, duration, trackId })
+        emitTkhdBox({
+            width,
+            height,
+            widthFraction,
+            heightFraction,
+            duration,
+            trackId
+        })
     );
 
     // ---------------------------------------------------------
@@ -22,7 +34,7 @@ export async function testTkhd_Structure() {
     const expectedSize = box.length;
     assertEqual(
         "tkhd.size",
-        readUint32FromMp4BoxBytes(box, 0),
+        readUint32(box, 0),
         expectedSize
     );
 
@@ -31,7 +43,7 @@ export async function testTkhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "tkhd.type",
-        readBoxTypeFromMp4BoxBytes(box, 4),
+        readFourCC(box, 4),
         "tkhd"
     );
 
@@ -77,7 +89,7 @@ export async function testTkhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "tkhd.creation_time",
-        readUint32FromMp4BoxBytes(box, 12),
+        readUint32(box, 12),
         0
     );
 
@@ -86,7 +98,7 @@ export async function testTkhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "tkhd.modification_time",
-        readUint32FromMp4BoxBytes(box, 16),
+        readUint32(box, 16),
         0
     );
 
@@ -95,7 +107,7 @@ export async function testTkhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "tkhd.track_id",
-        readUint32FromMp4BoxBytes(box, 20),
+        readUint32(box, 20),
         trackId
     );
 
@@ -104,7 +116,7 @@ export async function testTkhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "tkhd.reserved.post_track_id",
-        readUint32FromMp4BoxBytes(box, 24),
+        readUint32(box, 24),
         0
     );
 
@@ -113,7 +125,7 @@ export async function testTkhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "tkhd.duration",
-        readUint32FromMp4BoxBytes(box, 28),
+        readUint32(box, 28),
         duration
     );
 
@@ -122,13 +134,13 @@ export async function testTkhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "tkhd.reserved[0]",
-        readUint32FromMp4BoxBytes(box, 32),
+        readUint32(box, 32),
         0
     );
 
     assertEqual(
         "tkhd.reserved[1]",
-        readUint32FromMp4BoxBytes(box, 36),
+        readUint32(box, 36),
         0
     );
 
@@ -180,7 +192,7 @@ export async function testTkhd_Structure() {
     for (let i = 0; i < 9; i++) {
         assertEqual(
             `tkhd.matrix[${i}]`,
-            readUint32FromMp4BoxBytes(box, 48 + i * 4),
+            readUint32(box, 48 + i * 4),
             expectedMatrix[i]
         );
     }
@@ -188,98 +200,133 @@ export async function testTkhd_Structure() {
     // ---------------------------------------------------------
     // FIELD 16: width (16.16 fixed)
     // ---------------------------------------------------------
+    const widthFixed = readUint32(box, 84);
+
     assertEqual(
-        "tkhd.width_fixed",
-        readUint32FromMp4BoxBytes(box, 84),
-        width << 16
+        "tkhd.width.integer",
+        widthFixed >>> 16,
+        width
+    );
+
+    assertEqual(
+        "tkhd.width.fraction",
+        widthFixed & 0xFFFF,
+        widthFraction
     );
 
     // ---------------------------------------------------------
     // FIELD 17: height (16.16 fixed)
     // ---------------------------------------------------------
+    const heightFixed = readUint32(box, 88);
+
     assertEqual(
-        "tkhd.height_fixed",
-        readUint32FromMp4BoxBytes(box, 88),
-        height << 16
+        "tkhd.height.integer",
+        heightFixed >>> 16,
+        height
+    );
+
+    assertEqual(
+        "tkhd.height.fraction",
+        heightFixed & 0xFFFF,
+        heightFraction
     );
 
     console.log("PASS: tkhd granular structural tests");
 }
 
-export async function testTkhd_Conformance() {
-    console.log("=== testTkhd_Conformance (golden MP4) ===");
+export async function testTkhd_LockedLayoutEquivalence_ffmpeg() {
+    console.log("=== testTkhd_LockedLayoutEquivalence_ffmpeg(golden MP4) ===");
 
+    // -------------------------------------------------------------
+    // 1. Load golden MP4
+    // -------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const buf  = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const refTkhd = extractBoxByPath(
-        buf,
-        ["moov", "trak", "tkhd"]
+    // -------------------------------------------------------------
+    // 2. Read reference TKHD via parser registry
+    // -------------------------------------------------------------
+    const ref = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/tkhd"
     );
 
-    if (!refTkhd) {
-        throw new Error("FAIL: tkhd box not found in golden MP4");
-    }
+    const refFields = ref.readFields();
+    const params    = ref.getBuilderInput();
 
-    const ref = parseTkhd(refTkhd);
-
-    const outRaw = serializeBoxTree(
-        buildTkhdBox({
-            trackId:  ref.trackId,
-            duration: ref.duration,
-            width:    ref.width  >> 16,
-            height:   ref.height >> 16
-        })
+    // -------------------------------------------------------------
+    // 3. Rebuild TKHD via Framesmith
+    // -------------------------------------------------------------
+    const outBytes = serializeBoxTree(
+        emitTkhdBox(params)
     );
 
-    const out = parseTkhd(outRaw);
+    // -------------------------------------------------------------
+    // 4. Read rebuilt TKHD via same parser
+    // -------------------------------------------------------------
+    const outFields = getGoldenTruthBox.fromBox(
+        outBytes,
+        "moov/trak/tkhd"
+    ).readFields();
 
-    // ---------------------------------------------------------
-    // Field-level conformance
-    // ---------------------------------------------------------
-    assertEqual("tkhd.version", out.version, ref.version);
-    assertEqual("tkhd.flags", out.flags, ref.flags);
-    assertEqual("tkhd.track_id", out.trackId, ref.trackId);
-    assertEqual("tkhd.duration", out.duration, ref.duration);
-    assertEqual("tkhd.width_fixed", out.width, ref.width);
-    assertEqual("tkhd.height_fixed", out.height, ref.height);
+    // -------------------------------------------------------------
+    // 5. Field-level conformance (semantic gate)
+    // -------------------------------------------------------------
+    assertEqual("tkhd.version", outFields.version, refFields.version);
+    assertEqual("tkhd.flags", outFields.flags, refFields.flags);
+    assertEqual("tkhd.track_id", outFields.trackId, refFields.trackId);
+    assertEqual("tkhd.duration", outFields.duration, refFields.duration);
 
-    // ---------------------------------------------------------
-    // Byte-for-byte conformance
-    // ---------------------------------------------------------
+    const refWidth  = splitFixed1616(refFields.widthFixed);
+    const outWidth  = splitFixed1616(outFields.widthFixed);
+
+    const refHeight = splitFixed1616(refFields.heightFixed);
+    const outHeight = splitFixed1616(outFields.heightFixed);
+
+    // Integer pixel semantics
+    assertEqual(
+        "tkhd.width.integer_pixels",
+        outWidth.integer,
+        refWidth.integer
+    );
+
+    assertEqual(
+        "tkhd.height.integer_pixels",
+        outHeight.integer,
+        refHeight.integer
+    );
+
+    // Fractional pixel encoding (explicitly asserted)
+    assertEqual(
+        "tkhd.width.fractional_pixels",
+        outWidth.fraction,
+        refWidth.fraction
+    );
+
+    assertEqual(
+        "tkhd.height.fractional_pixels",
+        outHeight.fraction,
+        refHeight.fraction
+    );
+
+    // -------------------------------------------------------------
+    // 6. Byte-for-byte conformance (safety net)
+    // -------------------------------------------------------------
+    const refRaw = refFields.raw;
+
     assertEqual(
         "tkhd.size",
-        out.raw.length,
-        ref.raw.length
+        outBytes.length,
+        refRaw.length
     );
 
-    for (let i = 0; i < ref.raw.length; i++) {
+    for (let i = 0; i < refRaw.length; i++) {
         assertEqual(
             `tkhd.byte[${i}]`,
-            out.raw[i],
-            ref.raw[i]
+            outBytes[i],
+            refRaw[i]
         );
     }
 
     console.log("PASS: tkhd matches golden MP4 byte-for-byte");
 }
-
-function parseTkhd(box) {
-    const version = box[8];
-    const flags =
-        (box[9] << 16) |
-        (box[10] << 8) |
-        box[11];
-
-    return {
-        type: readBoxTypeFromMp4BoxBytes(box, 4),
-        version,
-        flags,
-        trackId: readUint32FromMp4BoxBytes(box, 20),
-        duration: readUint32FromMp4BoxBytes(box, 28),
-        width: readUint32FromMp4BoxBytes(box, 84),
-        height: readUint32FromMp4BoxBytes(box, 88),
-        raw: box
-    };
-}
-

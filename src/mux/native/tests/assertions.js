@@ -27,3 +27,27 @@ export function assertExists(name, value) {
         throw new Error(`FAIL: missing required ${name}`);
     }
 }
+
+export function assertNoRawBytes(node, path = "root") {
+    if (!node || typeof node !== "object") {
+        return;
+    }
+
+    if (Array.isArray(node.body)) {
+        for (const part of node.body) {
+            if (part && typeof part === "object" && "bytes" in part) {
+                throw new Error(
+                    `Raw byte passthrough detected at ${path}.body — ` +
+                    `raw bytes are forbidden outside mdat`
+                );
+            }
+        }
+    }
+
+    if (Array.isArray(node.children)) {
+        for (const child of node.children) {
+            assertNoRawBytes(child, `${path}/${child.type}`);
+        }
+    }
+}
+

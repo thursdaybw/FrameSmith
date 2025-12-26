@@ -1,4 +1,4 @@
-import { readUint32FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "../testUtils.js";
+import { readUint32, readFourCC } from "../../bytes/mp4ByteReader.js";
 
 /**
  * SampleEntryReader
@@ -24,8 +24,8 @@ export class SampleEntryReader {
         let offset = this.headerSize;
 
         while (offset + 8 <= this.bytes.length) {
-            const size = readUint32FromMp4BoxBytes(this.bytes, offset);
-            const type = readBoxTypeFromMp4BoxBytes(this.bytes, offset + 4);
+            const size = readUint32(this.bytes, offset);
+            const type = readFourCC(this.bytes, offset + 4);
 
             if (size < 8) {
                 throw new Error(

@@ -1,8 +1,8 @@
-import { buildSttsBox } from "../boxes/sttsBox.js";
+import { emitSttsBox } from "../box-emitters/sttsBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
-import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 export async function testStts_Structure() {
     console.log("=== testStts_Structure ===");
@@ -11,7 +11,10 @@ export async function testStts_Structure() {
     const delta = Math.floor(90000 / fps);
     const count = 47;
 
-    const node = buildSttsBox(count, delta);
+    const node = emitSttsBox({
+        sampleCount: count,
+        sampleDuration: delta
+    });
     const stts = serializeBoxTree(node);
 
     // ---------------------------------------------------------
@@ -19,13 +22,13 @@ export async function testStts_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stts.type",
-        readBoxTypeFromMp4BoxBytes(stts, 4),
+        readFourCC(stts, 4),
         "stts"
     );
 
     assertEqual(
         "stts.version_and_flags",
-        readUint32FromMp4BoxBytes(stts, 8),
+        readUint32(stts, 8),
         0
     );
 
@@ -34,7 +37,7 @@ export async function testStts_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stts.entry_count",
-        readUint32FromMp4BoxBytes(stts, 12),
+        readUint32(stts, 12),
         1
     );
 
@@ -43,7 +46,7 @@ export async function testStts_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stts.sample_count",
-        readUint32FromMp4BoxBytes(stts, 16),
+        readUint32(stts, 16),
         count
     );
 
@@ -52,7 +55,7 @@ export async function testStts_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stts.sample_delta",
-        readUint32FromMp4BoxBytes(stts, 20),
+        readUint32(stts, 20),
         delta
     );
 
@@ -61,7 +64,7 @@ export async function testStts_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stts.size",
-        readUint32FromMp4BoxBytes(stts, 0),
+        readUint32(stts, 0),
         24
     );
 
@@ -79,6 +82,7 @@ export async function testStts_Structure() {
  * - uses the same entry layout
  * - uses the same timing values
  */
+
 export async function testStts_Conformance() {
     console.log("=== testStts_Conformance (golden MP4) ===");
 
@@ -86,118 +90,74 @@ export async function testStts_Conformance() {
     // 1. Load golden MP4
     // -------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const buf  = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // -------------------------------------------------------------
-    // 2. Extract reference stts
+    // 2. Read reference STTS via MP4 navigation
     // -------------------------------------------------------------
-    const refStts = extractBoxByPath(
-        buf,
-        ["moov", "trak", "mdia", "minf", "stbl", "stts"]
+    const ref = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/mdia/minf/stbl/stts"
     );
 
-    if (!refStts) {
-        throw new Error("FAIL: stts box not found in golden MP4");
-    }
+    const refFields = ref.readFields();
+    const params    = ref.getBuilderInput();
 
     // -------------------------------------------------------------
-    // 3. Parse reference
+    // 3. Rebuild STTS via Framesmith
     // -------------------------------------------------------------
-    const ref = parseStts(refStts);
-
-    if (ref.entryCount !== 1) {
-        throw new Error(
-            `FAIL: golden MP4 stts uses ${ref.entryCount} entries\n` +
-            `Framesmith currently supports canonical single-entry STTS only`
-        );
-    }
-
-    const refEntry = ref.entries[0];
-
-    // -------------------------------------------------------------
-    // 4. Build Framesmith STTS from reference values
-    // -------------------------------------------------------------
-    const outStts = serializeBoxTree(
-        buildSttsBox(refEntry.sampleCount, refEntry.sampleDelta)
+    const outSttsBytes = serializeBoxTree(
+        emitSttsBox(params)
     );
 
     // -------------------------------------------------------------
-    // 5. Parse output
+    // 4. Read rebuilt STTS via box entry
     // -------------------------------------------------------------
-    const out = parseStts(outStts);
+    const out = getGoldenTruthBox.fromBox(
+        outSttsBytes,
+        "moov/trak/mdia/minf/stbl/stts"
+    ).readFields();
 
     // -------------------------------------------------------------
-    // 6. Field-level conformance
+    // 5. Field-level conformance
     // -------------------------------------------------------------
-    assertEqual("stts.type", out.type, "stts");
-    assertEqual("stts.version", out.version, ref.version);
-    assertEqual("stts.flags", out.flags, ref.flags);
-    assertEqual("stts.entry_count", out.entryCount, ref.entryCount);
-
-    const outEntry = out.entries[0];
-
     assertEqual(
-        "stts.sample_count",
-        outEntry.sampleCount,
-        refEntry.sampleCount
+        "stts.entryCount",
+        out.entryCount,
+        refFields.entryCount
     );
 
     assertEqual(
-        "stts.sample_delta",
-        outEntry.sampleDelta,
-        refEntry.sampleDelta
+        "stts.sampleCount",
+        out.entries[0].sampleCount,
+        refFields.entries[0].sampleCount
+    );
+
+    assertEqual(
+        "stts.sampleDelta",
+        out.entries[0].sampleDelta,
+        refFields.entries[0].sampleDelta
     );
 
     // -------------------------------------------------------------
-    // 7. Byte-for-byte conformance
+    // 6. Byte-for-byte conformance
     // -------------------------------------------------------------
+    const refRaw = refFields.raw;
+
     assertEqual(
         "stts.size",
-        out.raw.length,
-        ref.raw.length
+        outSttsBytes.length,
+        refRaw.length
     );
 
-    for (let i = 0; i < ref.raw.length; i++) {
+    for (let i = 0; i < refRaw.length; i++) {
         assertEqual(
             `stts.byte[${i}]`,
-            out.raw[i],
-            ref.raw[i]
+            outSttsBytes[i],
+            refRaw[i]
         );
     }
 
     console.log("PASS: stts matches golden MP4 byte-for-byte");
-}
-
-function parseStts(box) {
-    const size = readUint32FromMp4BoxBytes(box, 0);
-    const type = readBoxTypeFromMp4BoxBytes(box, 4);
-
-    const version = box[8];
-    const flags =
-        (box[9] << 16) |
-        (box[10] << 8) |
-        box[11];
-
-    const entryCount = readUint32FromMp4BoxBytes(box, 12);
-
-    const entries = [];
-    let offset = 16;
-
-    for (let i = 0; i < entryCount; i++) {
-        const sampleCount = readUint32FromMp4BoxBytes(box, offset);
-        const sampleDelta = readUint32FromMp4BoxBytes(box, offset + 4);
-        entries.push({ sampleCount, sampleDelta });
-        offset += 8;
-    }
-
-    return {
-        size,
-        type,
-        version,
-        flags,
-        entryCount,
-        entries,
-        raw: box
-    };
 }
 

@@ -1,57 +1,50 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { buildAvc1Box } from "../boxes/stsdBox/avc1Box.js";
-import {
-    readUint32FromMp4BoxBytes,
-    readUint16FromMp4BoxBytes,
-    readBoxTypeFromMp4BoxBytes
-} from "./testUtils.js";
-
-import {
-    extractBoxByPath,
-    extractSampleEntry,
-    extractChildBoxFromSampleEntry
-} from "./reference/BoxExtractor.js";
-
-import { SampleEntryReader } from "./reference/SampleEntryReader.js";
+import { emitAvc1Box } from "../box-emitters/stsdBox/avc1Box.js";
+import { readUint16, readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { assertEqual, assertEqualHex } from "./assertions.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 export async function testAvc1_Structure() {
-    console.log("=== testAvc1 ===");
+    console.log("=== testAvc1_Structure ===");
 
     const width  = 1920;
     const height = 1080;
-    const avcC   = Uint8Array.from([1, 2, 3, 4]); // minimal dummy
+    const avcC   = Uint8Array.from([1, 2, 3, 4]); // minimal dummy payload
 
-    const node = buildAvc1Box({
+    // -------------------------------------------------------------
+    // 1. Build synthetic avc1
+    // -------------------------------------------------------------
+    const node = emitAvc1Box({
         width,
         height,
         avcC,
         btrt: {
-            bufferSize: 0,
-            maxBitrate: 0,
-            avgBitrate: 0
+            bufferSizeDB: 0,
+            maxBitrate:   0,
+            avgBitrate:   0
         }
     });
 
     const avc1 = serializeBoxTree(node);
 
-    //
-    // ---- SAFETY: box header ----
-    //
+    // -------------------------------------------------------------
+    // 2. Box header
+    // -------------------------------------------------------------
     assertEqual(
         "avc1.size",
-        readUint32FromMp4BoxBytes(avc1, 0),
+        readUint32(avc1, 0),
         avc1.length
     );
 
     assertEqual(
         "avc1.type",
-        readBoxTypeFromMp4BoxBytes(avc1, 4),
+        readFourCC(avc1, 4),
         "avc1"
     );
 
-    //
-    // ---- FIELD 1: reserved(6 bytes) ----
-    //
+    // -------------------------------------------------------------
+    // 3. Reserved (6 bytes)
+    // -------------------------------------------------------------
     for (let i = 8; i < 14; i++) {
         assertEqual(
             `avc1.reserved[${i - 8}]`,
@@ -60,18 +53,18 @@ export async function testAvc1_Structure() {
         );
     }
 
-    //
-    // ---- FIELD 2: data_reference_index ----
-    //
+    // -------------------------------------------------------------
+    // 4. data_reference_index
+    // -------------------------------------------------------------
     assertEqual(
         "avc1.data_reference_index",
-        readUint16FromMp4BoxBytes(avc1, 14),
+        readUint16(avc1, 14),
         1
     );
 
-    //
-    // ---- FIELD 3: pre_defined / reserved ----
-    //
+    // -------------------------------------------------------------
+    // 5. pre_defined / reserved block
+    // -------------------------------------------------------------
     for (let off = 16; off < 16 + 2 + 2 + 12; off++) {
         assertEqual(
             `avc1.visual_reserved@${off}`,
@@ -80,59 +73,59 @@ export async function testAvc1_Structure() {
         );
     }
 
-    //
-    // ---- FIELD 4: width / height ----
-    //
+    // -------------------------------------------------------------
+    // 6. width / height
+    // -------------------------------------------------------------
     assertEqual(
         "avc1.width",
-        readUint16FromMp4BoxBytes(avc1, 32),
+        readUint16(avc1, 32),
         width
     );
 
     assertEqual(
         "avc1.height",
-        readUint16FromMp4BoxBytes(avc1, 34),
+        readUint16(avc1, 34),
         height
     );
 
-    //
-    // ---- FIELD 5: resolution ----
-    //
+    // -------------------------------------------------------------
+    // 7. resolution
+    // -------------------------------------------------------------
     const expectedRes = 0x00480000;
 
     assertEqualHex(
         "avc1.horizresolution",
-        readUint32FromMp4BoxBytes(avc1, 36),
+        readUint32(avc1, 36),
         expectedRes
     );
 
     assertEqualHex(
         "avc1.vertresolution",
-        readUint32FromMp4BoxBytes(avc1, 40),
+        readUint32(avc1, 40),
         expectedRes
     );
 
-    //
-    // ---- FIELD 6: reserved ----
-    //
+    // -------------------------------------------------------------
+    // 8. reserved
+    // -------------------------------------------------------------
     assertEqual(
         "avc1.reserved_44",
-        readUint32FromMp4BoxBytes(avc1, 44),
+        readUint32(avc1, 44),
         0
     );
 
-    //
-    // ---- FIELD 7: frame_count ----
-    //
+    // -------------------------------------------------------------
+    // 9. frame_count
+    // -------------------------------------------------------------
     assertEqual(
         "avc1.frame_count",
-        readUint16FromMp4BoxBytes(avc1, 48),
+        readUint16(avc1, 48),
         1
     );
 
-    //
-    // ---- FIELD 8: compressorname ----
-    //
+    // -------------------------------------------------------------
+    // 10. compressorname padding
+    // -------------------------------------------------------------
     const nameLen = avc1[50];
 
     const isSentinel = nameLen === 0x80;
@@ -155,145 +148,164 @@ export async function testAvc1_Structure() {
         );
     }
 
-    //
-    // ---- FIELD 9: depth ----
-    //
+    // -------------------------------------------------------------
+    // 11. depth
+    // -------------------------------------------------------------
     assertEqualHex(
         "avc1.depth",
-        readUint16FromMp4BoxBytes(avc1, 82),
+        readUint16(avc1, 82),
         0x0018
     );
 
-    //
-    // ---- FIELD 10: pre_defined (-1) ----
-    //
+    // -------------------------------------------------------------
+    // 12. pre_defined (-1)
+    // -------------------------------------------------------------
     assertEqualHex(
         "avc1.pre_defined_minus_one",
-        readUint16FromMp4BoxBytes(avc1, 84),
+        readUint16(avc1, 84),
         0xffff
     );
 
-    //
-    // ---- FIELD 11: must contain avcC ----
-    //
-    extractChildBoxFromSampleEntry(avc1, "avcC");
+    // -------------------------------------------------------------
+    // 13. Must contain avcC (parser-owned knowledge)
+    // -------------------------------------------------------------
+    const parsed = getGoldenTruthBox.fromBox(
+        avc1,
+        "moov/trak/mdia/minf/stbl/stsd/avc1"
+    );
 
-    console.log("PASS: avc1 granular tests");
+    const fields = parsed.readFields();
+
+    assertEqual(
+        "avc1.avcC.present",
+        fields.avcC instanceof Uint8Array,
+        true
+    );
+
+    assertEqual(
+        "avc1.avcC.length",
+        fields.avcC.length,
+        avcC.length
+    );
+
+    for (let i = 0; i < avcC.length; i++) {
+        assertEqual(
+            `avc1.avcC.byte[${i}]`,
+            fields.avcC[i],
+            avcC[i]
+        );
+    }
+
+    console.log("PASS: avc1 structural correctness");
 }
 
-/**
- * Phase C — avc1 Conformance (Golden MP4)
- */
-export async function testAvc1_Conformance() {
-    console.log("=== testAvc1_Conformance (golden MP4) ===");
+export async function testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg() {
+    console.log(
+        "=== testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg ==="
+    );
 
+    // -------------------------------------------------------------
+    // 1. Load golden MP4
+    // -------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const buf  = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const stsd = extractBoxByPath(
-        buf,
-        ["moov", "trak", "mdia", "minf", "stbl", "stsd"]
+    // -------------------------------------------------------------
+    // 2. Parse reference avc1 via registry (single source of truth)
+    // -------------------------------------------------------------
+    const refParsed = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/mdia/minf/stbl/stsd",
+        { sampleEntry: "avc1" }
     );
 
-    const refRaw = extractSampleEntry(stsd, "avc1");
-    const ref = parseAvc1(refRaw);
+    const refFields = refParsed.readFields();
+    const buildParams = refParsed.getBuilderInput();
 
-    const reader = new SampleEntryReader(ref.raw, 86);
-    const refBtrtBox = reader.getChild("btrt");
-
-    const refBtrtFields = {
-        bufferSize: readUint32FromMp4BoxBytes(refBtrtBox, 8),
-        maxBitrate: readUint32FromMp4BoxBytes(refBtrtBox, 12),
-        avgBitrate: readUint32FromMp4BoxBytes(refBtrtBox, 16)
-    };
-
-    const outRaw = serializeBoxTree(
-        buildAvc1Box({
-            width:          ref.width,
-            height:         ref.height,
-            avcC:           ref.avcC,
-            compressorName: ref.compressorName,
-            btrt:           refBtrtFields
-        })
+    // -------------------------------------------------------------
+    // 3. Rebuild avc1 strictly from declared metadata
+    // -------------------------------------------------------------
+    const outBytes = serializeBoxTree(
+        emitAvc1Box(buildParams)
     );
 
-    const out = parseAvc1(outRaw);
+    // -------------------------------------------------------------
+    // 4. Re-parse rebuilt avc1 via same parser
+    // -------------------------------------------------------------
+    const outParsed = getGoldenTruthBox.fromBox(
+        outBytes,
+        "moov/trak/mdia/minf/stbl/stsd/avc1"
+    );
 
-    //
-    // ---- Field-level checks ----
-    //
-    assertEqual("width", out.width, ref.width);
-    assertEqual("height", out.height, ref.height);
-    assertEqualHex("horizresolution", out.horizRes, ref.horizRes);
-    assertEqualHex("vertresolution",  out.vertRes,  ref.vertRes);
-    assertEqual("frame_count", out.frameCount, ref.frameCount);
-    assertEqualHex("depth", out.depth, ref.depth);
-    assertEqual("compressorname", out.compressorName, ref.compressorName);
+    const outFields = outParsed.readFields();
 
-    //
-    // ---- Child boxes ----
-    //
-    const refAvcC  = extractChildBoxFromSampleEntry(ref.raw, "avcC");
-    const outAvcC  = extractChildBoxFromSampleEntry(out.raw, "avcC");
+    // -------------------------------------------------------------
+    // 5. Declared metadata equivalence
+    // -------------------------------------------------------------
+    assertEqual("avc1.width",  outFields.width,  refFields.width);
+    assertEqual("avc1.height", outFields.height, refFields.height);
 
-    for (let i = 0; i < refAvcC.length; i++) {
-        if (refAvcC[i] !== outAvcC[i]) {
-            throw new Error(`FAIL: avcC byte mismatch at ${i}`);
-        }
+    assertEqual(
+        "avc1.compressorName",
+        outFields.compressorName,
+        refFields.compressorName
+    );
+
+    assertEqual(
+        "avc1.btrt.bufferSize",
+        outFields.btrt.bufferSizeDB,
+        refFields.btrt.bufferSizeDB
+    );
+
+    assertEqual(
+        "avc1.btrt.maxBitrate",
+        outFields.btrt.maxBitrate,
+        refFields.btrt.maxBitrate
+    );
+
+    assertEqual(
+        "avc1.btrt.avgBitrate",
+        outFields.btrt.avgBitrate,
+        refFields.btrt.avgBitrate
+    );
+
+    // -------------------------------------------------------------
+    // 6. Opaque payload preservation (avcC)
+    // -------------------------------------------------------------
+    assertEqual(
+        "avc1.avcC.length",
+        outFields.avcC.length,
+        refFields.avcC.length
+    );
+
+    for (let i = 0; i < refFields.avcC.length; i++) {
+        assertEqual(
+            `avc1.avcC.byte[${i}]`,
+            outFields.avcC[i],
+            refFields.avcC[i]
+        );
     }
 
-    //
-    // ---- Absolute byte-for-byte ----
-    //
-    if (out.raw.length !== ref.raw.length) {
-        throw new Error(`FAIL: avc1 size mismatch`);
+    // -------------------------------------------------------------
+    // 7. Absolute locked-layout equivalence
+    // -------------------------------------------------------------
+    const refRaw = refFields.raw;
+
+    assertEqual(
+        "avc1.size",
+        outBytes.length,
+        refRaw.length
+    );
+
+    for (let i = 0; i < refRaw.length; i++) {
+        assertEqual(
+            `avc1.byte[${i}]`,
+            outBytes[i],
+            refRaw[i]
+        );
     }
 
-    for (let i = 0; i < ref.raw.length; i++) {
-        if (out.raw[i] !== ref.raw[i]) {
-            throw new Error(`FAIL: avc1 byte mismatch at ${i}`);
-        }
-    }
-
-    console.log("PASS: avc1 matches golden MP4 byte-for-byte");
-}
-
-
-// ---------------------------------------------------------------------------
-// Helpers (ASSERTION ONLY — no extraction logic)
-// ---------------------------------------------------------------------------
-
-function parseAvc1(box) {
-    return {
-        width:          readUint16FromMp4BoxBytes(box, 32),
-        height:         readUint16FromMp4BoxBytes(box, 34),
-        horizRes:       readUint32FromMp4BoxBytes(box, 36),
-        vertRes:        readUint32FromMp4BoxBytes(box, 40),
-        frameCount:     readUint16FromMp4BoxBytes(box, 48),
-        compressorName: readCompressorName(box),
-        depth:          readUint16FromMp4BoxBytes(box, 82),
-        avcC:           extractChildBoxFromSampleEntry(box, "avcC").slice(8),
-        raw:            box
-    };
-}
-
-// Extracts the legacy VisualSampleEntry compressorname field.
-// This logic is intentionally duplicated across avc1 and stsd tests
-// to make semantic equivalence explicit and easy to reason about.
-function readCompressorName(box) {
-    const len = box[50];
-    if (len === 0) return "";
-    return new TextDecoder().decode(box.slice(51, 51 + len));
-}
-
-function assertEqual(name, actual, expected) {
-    if (actual !== expected) {
-        throw new Error(`FAIL: avc1 ${name} mismatch`);
-    }
-}
-
-function assertEqualHex(name, actual, expected) {
-    if (actual !== expected) {
-        throw new Error(`FAIL: avc1 ${name} mismatch`);
-    }
+    console.log(
+        "PASS: avc1 declared metadata matches golden MP4 byte-for-byte"
+    );
 }

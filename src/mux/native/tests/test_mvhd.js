@@ -1,8 +1,8 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { buildMvhdBox } from "../boxes/mvhdBox.js";
-import { readUint32FromMp4BoxBytes, readUint16FromMp4BoxBytes, readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
-import { extractBoxByPath } from "./reference/BoxExtractor.js";
+import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
+import { readUint32, readUint16, readFourCC } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 export async function testMvhd_Structure() {
     console.log("=== mvhd Granular structural tests ===");
@@ -12,7 +12,7 @@ export async function testMvhd_Structure() {
     const nextTrackId = 2;
 
     const mvhd = serializeBoxTree(
-        buildMvhdBox({ timescale, duration, nextTrackId })
+        emitMvhdBox({ timescale, duration, nextTrackId })
     );
 
     // ---------------------------------------------------------
@@ -20,7 +20,7 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.size",
-        readUint32FromMp4BoxBytes(mvhd, 0),
+        readUint32(mvhd, 0),
         mvhd.length
     );
 
@@ -29,7 +29,7 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.type",
-        readBoxTypeFromMp4BoxBytes(mvhd, 4),
+        readFourCC(mvhd, 4),
         "mvhd"
     );
 
@@ -61,7 +61,7 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.creation_time",
-        readUint32FromMp4BoxBytes(mvhd, 12),
+        readUint32(mvhd, 12),
         0
     );
 
@@ -70,7 +70,7 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.modification_time",
-        readUint32FromMp4BoxBytes(mvhd, 16),
+        readUint32(mvhd, 16),
         0
     );
 
@@ -79,7 +79,7 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.timescale",
-        readUint32FromMp4BoxBytes(mvhd, 20),
+        readUint32(mvhd, 20),
         timescale
     );
 
@@ -88,7 +88,7 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.duration",
-        readUint32FromMp4BoxBytes(mvhd, 24),
+        readUint32(mvhd, 24),
         duration
     );
 
@@ -97,7 +97,7 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.rate",
-        readUint32FromMp4BoxBytes(mvhd, 28),
+        readUint32(mvhd, 28),
         0x00010000
     );
 
@@ -106,7 +106,7 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.volume",
-        readUint16FromMp4BoxBytes(mvhd, 32),
+        readUint16(mvhd, 32),
         0x0100
     );
 
@@ -115,7 +115,7 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.reserved.short",
-        readUint16FromMp4BoxBytes(mvhd, 34),
+        readUint16(mvhd, 34),
         0
     );
 
@@ -124,13 +124,13 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.reserved[0]",
-        readUint32FromMp4BoxBytes(mvhd, 36),
+        readUint32(mvhd, 36),
         0
     );
 
     assertEqual(
         "mvhd.reserved[1]",
-        readUint32FromMp4BoxBytes(mvhd, 40),
+        readUint32(mvhd, 40),
         0
     );
 
@@ -146,7 +146,7 @@ export async function testMvhd_Structure() {
     for (let i = 0; i < 9; i++) {
         assertEqual(
             `mvhd.matrix[${i}]`,
-            readUint32FromMp4BoxBytes(mvhd, 44 + i * 4),
+            readUint32(mvhd, 44 + i * 4),
             expectedMatrix[i]
         );
     }
@@ -157,7 +157,7 @@ export async function testMvhd_Structure() {
     for (let i = 0; i < 6; i++) {
         assertEqual(
             `mvhd.pre_defined[${i}]`,
-            readUint32FromMp4BoxBytes(mvhd, 80 + i * 4),
+            readUint32(mvhd, 80 + i * 4),
             0
         );
     }
@@ -167,84 +167,77 @@ export async function testMvhd_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "mvhd.next_track_ID",
-        readUint32FromMp4BoxBytes(mvhd, 104),
+        readUint32(mvhd, 104),
         nextTrackId
     );
 
     console.log("PASS: mvhd granular structural tests");
 }
 
-export async function testMvhd_Conformance() {
-    console.log("=== testMvhd_Conformance (golden MP4) ===");
+export async function testMvhd_LockedLayoutEquivalence_ffmpeg() {
+    console.log("=== testMvhd_LockedLayoutEquivalence_ffmpeg (golden MP4) ===");
 
+    // -------------------------------------------------------------
+    // 1. Load golden MP4
+    // -------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const buf  = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const refRaw = extractBoxByPath(buf, ["moov", "mvhd"]);
-    if (!refRaw) {
-        throw new Error("FAIL: mvhd box not found in golden MP4");
-    }
-
-    const ref = parseMvhd(refRaw);
-
-    const outRaw = serializeBoxTree(
-        buildMvhdBox({
-            timescale:   ref.timescale,
-            duration:    ref.duration,
-            nextTrackId: ref.nextTrackId
-        })
+    // -------------------------------------------------------------
+    // 2. Read reference MVHD via parser registry
+    // -------------------------------------------------------------
+    const ref = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/mvhd"
     );
 
-    const out = parseMvhd(outRaw);
+    const refFields = ref.readFields();
+    const params    = ref.getBuilderInput();
 
-    // ---------------------------------------------------------
-    // Field-level conformance
-    // ---------------------------------------------------------
-    assertEqual("mvhd.version",     out.version,     ref.version);
-    assertEqual("mvhd.flags",       out.flags,       ref.flags);
-    assertEqual("mvhd.timescale",   out.timescale,   ref.timescale);
-    assertEqual("mvhd.duration",    out.duration,    ref.duration);
-    assertEqual("mvhd.nextTrackId", out.nextTrackId, ref.nextTrackId);
-    assertEqual("mvhd.volume",      out.volume,      ref.volume);
+    // -------------------------------------------------------------
+    // 3. Rebuild MVHD via Framesmith
+    // -------------------------------------------------------------
+    const outBytes = serializeBoxTree(
+        emitMvhdBox(params)
+    );
 
-    // ---------------------------------------------------------
-    // Byte-for-byte conformance
-    // ---------------------------------------------------------
+    // -------------------------------------------------------------
+    // 4. Read rebuilt MVHD via same parser
+    // -------------------------------------------------------------
+    const outFields = getGoldenTruthBox.fromBox(
+        outBytes,
+        "moov/mvhd"
+    ).readFields();
+
+    // -------------------------------------------------------------
+    // 5. Field-level equivalence (semantic gate)
+    // -------------------------------------------------------------
+    assertEqual("mvhd.version",     outFields.version,     refFields.version);
+    assertEqual("mvhd.flags",       outFields.flags,       refFields.flags);
+    assertEqual("mvhd.timescale",   outFields.timescale,   refFields.timescale);
+    assertEqual("mvhd.duration",    outFields.duration,    refFields.duration);
+    assertEqual("mvhd.nextTrackId", outFields.nextTrackId, refFields.nextTrackId);
+    assertEqual("mvhd.volume",      outFields.volume,      refFields.volume);
+    assertEqual("mvhd.rate",        outFields.rate,        refFields.rate);
+
+    // -------------------------------------------------------------
+    // 6. Byte-for-byte equivalence
+    // -------------------------------------------------------------
+    const refRaw = refFields.raw;
+
     assertEqual(
         "mvhd.size",
-        out.raw.length,
-        ref.raw.length
+        outBytes.length,
+        refRaw.length
     );
 
-    for (let i = 0; i < ref.raw.length; i++) {
+    for (let i = 0; i < refRaw.length; i++) {
         assertEqual(
             `mvhd.byte[${i}]`,
-            out.raw[i],
-            ref.raw[i]
+            outBytes[i],
+            refRaw[i]
         );
     }
 
     console.log("PASS: mvhd matches golden MP4 byte-for-byte");
-}
-
-function parseMvhd(box) {
-    const version = box[8];
-    const flags =
-        (box[9] << 16) |
-        (box[10] << 8) |
-        box[11];
-
-    const volumeRaw = readUint16FromMp4BoxBytes(box, 32);
-
-    return {
-        type: readBoxTypeFromMp4BoxBytes(box, 4),
-        version,
-        flags,
-        timescale: readUint32FromMp4BoxBytes(box, 20),
-        duration: readUint32FromMp4BoxBytes(box, 24),
-        rate: readUint32FromMp4BoxBytes(box, 28),
-        volume: volumeRaw, // ← 8.8 fixed
-        nextTrackId: readUint32FromMp4BoxBytes(box, 104),
-        raw: box
-    };
 }

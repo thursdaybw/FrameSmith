@@ -1,14 +1,9 @@
-import { buildStsdBox } from "../boxes/stsdBox.js";
+import { emitStsdBox } from "../box-emitters/stsdBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import {
-    readUint32FromMp4BoxBytes,
-    readUint16FromMp4BoxBytes,
-    readBoxTypeFromMp4BoxBytes
-} from "./testUtils.js";
-
-import { extractBoxByPath, extractSampleEntry } from "./reference/BoxExtractor.js";
-import { SampleEntryReader } from "./reference/SampleEntryReader.js";
+import { readUint16, readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 import { assertEqual, assertExists } from "./assertions.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 export async function testStsd_Structure() {
 
@@ -20,12 +15,12 @@ export async function testStsd_Structure() {
     const avcC = Uint8Array.from([1, 2, 3, 4]);
 
     const btrt = {
-        bufferSize: 0,
+        bufferSizeDB: 0,
         maxBitrate: 31504,
         avgBitrate: 31504
     };
 
-    const node = buildStsdBox({
+    const node = emitStsdBox({
         width,
         height,
         codec: "avc1",
@@ -33,8 +28,6 @@ export async function testStsd_Structure() {
         compressorName: "",
         btrt
     });
-
-    const serialized = serializeBoxTree(node);
 
     // ------------------------------------------------------------
     // 1. Box identity
@@ -131,297 +124,70 @@ export async function testStsd_Structure() {
         true
     );
 
-    // ------------------------------------------------------------
-    // 7. Sample Entry Traversibility
-    // ------------------------------------------------------------
-    let discovered;
-    try {
-        discovered = extractSampleEntry(serialized, "avc1");
-    } catch (err) {
-        throw new Error(
-            "FAIL: stsd structure invalid\n" +
-            "Reason: declared avc1 sample entry is not discoverable\n" +
-            err.message
-        );
-    }
-
-    assertEqual(
-        "stsd.traversal.avc1_exists",
-        !!discovered && discovered.length >= 8,
-        true
-    );
-
-    // ------------------------------------------------------------
-    // 8. Generic traversal invariants
-    // ------------------------------------------------------------
-    let discoveredAvc1;
-    try {
-        discoveredAvc1 = extractSampleEntry(serialized, "avc1");
-    } catch (err) {
-        throw new Error(
-            "FAIL: stsd structure is not generically traversable\n" +
-            err.message
-        );
-    }
-
-    assertEqual(
-        "stsd.generic_traversal.non_empty",
-        discoveredAvc1.length > 0,
-        true
-    );
-
     console.log("PASS: stsd Phase A structural correctness");
 }
 
-async function buildReferenceAndOutputStsd() {
+export async function testStsd_GoldenTruthExtractor() {
+    console.log("=== testStsd_GoldenTruthExtractor ===");
+
     const resp = await fetch("reference/reference_visual.mp4");
-    const buf  = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const refStsd = extractBoxByPath(
-        buf,
-        ["moov", "trak", "mdia", "minf", "stbl", "stsd"]
+    const parsed = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/mdia/minf/stbl/stsd"
     );
 
-    if (!refStsd) {
-        throw new Error("FAIL: stsd box not found in golden MP4");
-    }
+    const fields = parsed.readFields();
+    const input  = parsed.getBuilderInput();
 
-    const refAvc1 = extractSampleEntry(refStsd, "avc1");
-    const refReader = new SampleEntryReader(refAvc1, 86);
+    assertEqual("stsd.entryCount", fields.entryCount, 1);
 
-    const refAvcC  = refReader.getChild("avcC");
-    const refPasp  = refReader.getChild("pasp");
-    const refBtrt  = refReader.getChild("btrt");
+    assertEqual("stsd.codec", input.codec, "avc1");
+    assertExists("stsd.width", input.width);
+    assertExists("stsd.height", input.height);
+    assertExists("stsd.avcC", input.avcC);
+    assertExists("stsd.btrt", input.btrt);
 
-    const refBtrtFields = {
-        bufferSize: readUint32FromMp4BoxBytes(refBtrt, 8),
-        maxBitrate: readUint32FromMp4BoxBytes(refBtrt, 12),
-        avgBitrate: readUint32FromMp4BoxBytes(refBtrt, 16)
-    };
-
-    const refCompressorName = readCompressorName(refAvc1);
-
-    const node = buildStsdBox({
-        width:  readUint16FromMp4BoxBytes(refAvc1, 32),
-        height: readUint16FromMp4BoxBytes(refAvc1, 34),
-        codec:  "avc1",
-        avcC:   refAvcC.slice(8),
-        compressorName: refCompressorName,
-        btrt:   refBtrtFields
-    });
-
-    const outStsd = serializeBoxTree(node);
-
-    return {
-        refStsd,
-        refAvc1,
-        refAvcC,
-        refPasp,
-        refBtrt,
-        outStsd
-    };
+    console.log("PASS: stsd golden truth extractor");
 }
 
-export async function testStsd_SemanticConformance() {
-    console.log("=== testStsd_SemanticConformance (golden MP4) ===");
+export async function testStsd_LockedLayoutEquivalence_ffmpeg() {
 
-    const {
-        refAvc1,
-        refAvcC,
-        refPasp,
-        refBtrt,
-        outStsd
-    } = await buildReferenceAndOutputStsd();
-
-    const outAvc1 = extractSampleEntry(outStsd, "avc1");
-    const outReader = new SampleEntryReader(outAvc1, 86);
-
-    const outAvcC = outReader.getChild("avcC");
-    const outPasp = outReader.getChild("pasp");
-    const outBtrt = outReader.getChild("btrt");
-
-    // ---- presence ----
-    assertExists("avcC", outAvcC);
-    assertExists("pasp", outPasp);
-    assertExists("btrt", outBtrt);
-
-    // ---- avcC payload ----
-    assertEqual("avcC.size", outAvcC.length, refAvcC.length);
-
-    for (let i = 0; i < refAvcC.length; i++) {
-        assertEqual(
-            `avcC.byte[${i}]`,
-            outAvcC[i],
-            refAvcC[i]
-        );
-    }
-
-    // ---- pasp ----
-    assertEqual(
-        "pasp.hSpacing",
-        readUint32FromMp4BoxBytes(outPasp, 8),
-        readUint32FromMp4BoxBytes(refPasp, 8)
+    console.log(
+        "=== testStsd_LockedLayoutEquivalence_ffmpeg ==="
     );
 
-    assertEqual(
-        "pasp.vSpacing",
-        readUint32FromMp4BoxBytes(outPasp, 12),
-        readUint32FromMp4BoxBytes(refPasp, 12)
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    const parsed = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/mdia/minf/stbl/stsd"
     );
 
-    // ---- btrt ----
-    assertEqual(
-        "btrt.bufferSize",
-        readUint32FromMp4BoxBytes(outBtrt, 8),
-        readUint32FromMp4BoxBytes(refBtrt, 8)
+    const buildParams = parsed.getBuilderInput();
+
+    const outBytes = serializeBoxTree(
+        emitStsdBox(buildParams)
     );
 
-    assertEqual(
-        "btrt.maxBitrate",
-        readUint32FromMp4BoxBytes(outBtrt, 12),
-        readUint32FromMp4BoxBytes(refBtrt, 12)
+    const refBytes = extractBoxByPathFromMp4(
+        mp4,
+        "moov/trak/mdia/minf/stbl/stsd"
     );
 
-    assertEqual(
-        "btrt.avgBitrate",
-        readUint32FromMp4BoxBytes(outBtrt, 16),
-        readUint32FromMp4BoxBytes(refBtrt, 16)
-    );
+    assertEqual("stsd.size", outBytes.length, refBytes.length);
 
-    console.log("PASS: stsd semantic equivalence verified");
-}
-
-export async function testStsd_StructuralConformance() {
-    console.log("=== testStsd_StructuralConformance (golden MP4) ===");
-
-    const { refStsd, outStsd } =
-        await buildReferenceAndOutputStsd();
-
-    assertEqual(
-        "stsd.size",
-        outStsd.length,
-        refStsd.length
-    );
-
-
-    const refStsdFields = dissectStsd(refStsd);
-    const outStsdFields = dissectStsd(outStsd);
-
-    console.log("---- STSD FIELD BREAKDOWN (REFERENCE) ----");
-    for (const f of refStsdFields) {
-        console.log(f);
-    }
-
-    console.log("---- STSD FIELD BREAKDOWN (OUTPUT) ----");
-    for (const f of outStsdFields) {
-        console.log(f);
-    }
-
-
-    const refAvc1 = extractSampleEntry(refStsd, "avc1");
-    const outAvc1 = extractSampleEntry(outStsd, "avc1");
-
-    const refAvc1Fields = dissectAvc1(refAvc1);
-    const outAvc1Fields = dissectAvc1(outAvc1);
-
-    console.log("---- AVC1 FIELD DIFF ----");
-    console.log("REF:", refAvc1Fields);
-    console.log("OUT:", outAvc1Fields);
-    console.log("--------------------------");
-
-    for (let i = 0; i < refStsd.length; i++) {
+    for (let i = 0; i < refBytes.length; i++) {
         assertEqual(
             `stsd.byte[${i}]`,
-            outStsd[i],
-            refStsd[i]
+            outBytes[i],
+            refBytes[i]
         );
     }
 
-    console.log("PASS: stsd matches golden MP4 byte-for-byte");
-}
-
-// ------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------
-
-// Extracts the legacy VisualSampleEntry compressorname field.
-// This logic is intentionally duplicated across avc1 and stsd tests
-// to make semantic equivalence explicit and easy to reason about.
-function readCompressorName(box) {
-    const len = box[50];
-    if (len === 0) return "";
-    return new TextDecoder().decode(box.slice(51, 51 + len));
-}
-
-function dissectAvc1(box) {
-    return {
-        width:  readUint16FromMp4BoxBytes(box, 32),
-        height: readUint16FromMp4BoxBytes(box, 34),
-
-        horizRes: readUint32FromMp4BoxBytes(box, 36),
-        vertRes:  readUint32FromMp4BoxBytes(box, 40),
-
-        frameCount: readUint16FromMp4BoxBytes(box, 48),
-
-        compressorNameLength: box[50],
-        compressorNameRaw: box.slice(51, 82),
-
-        depth: readUint16FromMp4BoxBytes(box, 82),
-        sentinel: readUint16FromMp4BoxBytes(box, 84)
-    };
-}
-
-function dissectStsd(box) {
-    const fields = [];
-
-    let offset = 0;
-
-    // size
-    fields.push({
-        name: "size",
-        offset,
-        value: readUint32FromMp4BoxBytes(box, offset)
-    });
-    offset += 4;
-
-    // type
-    fields.push({
-        name: "type",
-        offset,
-        value: readBoxTypeFromMp4BoxBytes(box, offset)
-    });
-    offset += 4;
-
-    // version
-    fields.push({
-        name: "version",
-        offset,
-        value: box[offset]
-    });
-    offset += 1;
-
-    // flags (3 bytes)
-    fields.push({
-        name: "flags",
-        offset,
-        value: (box[offset] << 16) | (box[offset + 1] << 8) | box[offset + 2]
-    });
-    offset += 3;
-
-    // entry_count
-    fields.push({
-        name: "entry_count",
-        offset,
-        value: readUint32FromMp4BoxBytes(box, offset)
-    });
-    offset += 4;
-
-    // everything after this is opaque sample entry bytes
-    fields.push({
-        name: "sample_entry_bytes",
-        offset,
-        length: box.length - offset
-    });
-
-    return fields;
+    console.log(
+        "PASS: stsd parser rebuilds ffmpeg output byte-for-byte"
+    );
 }

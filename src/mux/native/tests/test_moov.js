@@ -1,170 +1,217 @@
-import { readUint32FromMp4BoxBytes } from "./testUtils.js";
-import { readBoxTypeFromMp4BoxBytes } from "./testUtils.js";
-import { buildMoovBox } from "../boxes/moovBox.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+import { asContainer } from "../box-model/Box.js";
 
-// Create minimal placeholder boxes.
-// They behave like real MP4 boxes: [size(4 bytes), type(4 bytes), payload].
-function dummyBox(type, payloadSize = 0) {
-    const size = 8 + payloadSize;
-    const out = new Uint8Array(size);
-    out[0] = (size >>> 24) & 0xFF;
-    out[1] = (size >>> 16) & 0xFF;
-    out[2] = (size >>>  8) & 0xFF;
-    out[3] = (size       ) & 0xFF;
+import {
+    readUint32,
+    readFourCC
+} from "../bytes/mp4ByteReader.js";
 
-    out[4] = type.charCodeAt(0);
-    out[5] = type.charCodeAt(1);
-    out[6] = type.charCodeAt(2);
-    out[7] = type.charCodeAt(3);
+import {
+    assertEqual,
+    assertEqualHex,
+    assertExists
+} from "./assertions.js";
 
-    return out;
-}
+import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 
-export async function testMoov() {
-    console.log("=== testMoov ===");
+import { emitMoovBox } from "../box-emitters/moovBox.js";
+import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
+import { emitTrakBox } from "../box-emitters/trakBox.js";
+import { emitUdtaBox } from "../box-emitters/udtaBox.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
-    // --- Construct dummy children for structure-only testing --------------
-    const mvhd = dummyBox("mvhd", 16);
-    const tkhd = dummyBox("tkhd", 16);
-    const mdhd = dummyBox("mdhd", 16);
-    const hdlr = dummyBox("hdlr", 16);
-    const vmhd = dummyBox("vmhd", 16);
-    const dref = dummyBox("dref", 16);
-    const stsd = dummyBox("stsd", 16);
-    const stts = dummyBox("stts", 16);
-    const stsc = dummyBox("stsc", 16);
-    const stsz = dummyBox("stsz", 16);
-    const stco = dummyBox("stco", 16);
+/**
+ * =========================================================
+ * MOOV — Structural Correctness (Phase A)
+ * =========================================================
+ *
+ * This test validates that emitMoovBox():
+ *   - emits a valid MP4 container
+ *   - declares the correct children
+ *   - preserves child ordering
+ *
+ * It does NOT validate:
+ *   - sizes
+ *   - offsets
+ *   - byte-level equivalence
+ */
+export function testMoov_Structure() {
 
-    // --- Build moov using the main builder --------------------------------
-    const moov = buildMoovBox({
-        mvhd,
-        tkhd,
-        mdhd,
-        hdlr,
-        vmhd,
-        dref,
-        stsd,
-        stts,
-        stsc,
-        stsz,
-        stco,
+    console.log("=== testMoov_Structure ===");
+
+    const mvhd = emitMvhdBox({
+        timescale: 1000,
+        duration: 0,
+        nextTrackId: 1
     });
 
-    // --- Test 1: moov header ------------------------------------------------
-    const moovSize = readUint32(moov, 0);
-    if (moovSize !== moov.length) {
-        throw new Error("FAIL: moov size field incorrect");
-    }
-    if (readBoxTypeFromMp4BoxBytes(moov, 4) !== "moov") {
-        throw new Error("FAIL: moov type incorrect");
+    const tkhd = { type: "tkhd", body: [] };
+    const mdia = { type: "mdia", body: [] };
+
+    const trak = emitTrakBox({
+        tkhd,
+        mdia
+    });
+
+    const udta = emitUdtaBox({
+        children: []
+    });
+
+    const node = emitMoovBox({
+        mvhd,
+        traks: [trak],
+        udta
+    });
+
+    const bytes = serializeBoxTree(node);
+
+    // -----------------------------------------------------
+    // Box header
+    // -----------------------------------------------------
+    assertEqual("moov.type", readFourCC(bytes, 4), "moov");
+
+    // -----------------------------------------------------
+    // Child discovery (structure only)
+    // -----------------------------------------------------
+    const container = asContainer(bytes);
+    const children  = container.enumerateChildren();
+
+    assertEqual("moov.child.count", children.length, 3);
+
+    assertEqual("moov.child[0].type", children[0].type, "mvhd");
+    assertEqual("moov.child[1].type", children[1].type, "trak");
+    assertEqual("moov.child[2].type", children[2].type, "udta");
+
+    console.log("PASS: MOOV structural correctness");
+}
+
+
+/**
+ * =========================================================
+ * MOOV — Locked Layout Equivalence (ffmpeg)
+ * =========================================================
+ *
+ * Rules:
+ * ------
+ * - Field-level assertions come FIRST
+ * - Full byte-for-byte comparison is LAST
+ * - If the final assertion fails, earlier assertions are insufficient
+ *
+ * Purpose:
+ * --------
+ * Prove that, given identical child boxes, emitMoovBox()
+ * serializes to identical bytes as ffmpeg.
+ */
+export async function testMoov_LockedLayoutEquivalence_ffmpeg() {
+
+    console.log("=== testMoov_LockedLayoutEquivalence_ffmpeg ===");
+
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // -----------------------------------------------------
+    // Reference extraction (ASSERTION SOURCE ONLY)
+    // -----------------------------------------------------
+    const refMoov = extractBoxByPathFromMp4(mp4, "moov");
+    assertExists("reference moov", refMoov);
+
+    // -----------------------------------------------------
+    // Rebuild MOOV strictly from golden truth
+    // -----------------------------------------------------
+    const moovInput = getGoldenTruthBox
+        .fromMp4(mp4, "moov")
+        .getBuilderInput();
+
+    const out = serializeBoxTree(
+        emitMoovBox(moovInput)
+    );
+
+    // -----------------------------------------------------
+    // Header fields (explicit, labelled)
+    // -----------------------------------------------------
+    assertEqual("moov.type", readFourCC(out, 4), "moov");
+
+    // -----------------------------------------------------
+    // Child discovery (TYPE + OFFSET ONLY)
+    // -----------------------------------------------------
+    const refContainer = asContainer(refMoov);
+    const outContainer = asContainer(out);
+
+    const refChildren = refContainer.enumerateChildren();
+    const outChildren = outContainer.enumerateChildren();
+
+    assertEqual("moov.child.count", outChildren.length, refChildren.length);
+
+    for (let i = 0; i < refChildren.length; i++) {
+
+        assertEqual(
+            `moov.child[${i}].type`,
+            outChildren[i].type,
+            refChildren[i].type
+        );
+
+        assertEqual(
+            `moov.child[${i}].offset`,
+            outChildren[i].offset,
+            refChildren[i].offset
+        );
     }
 
-    // Expected hierarchy:
-    //
-    // moov
-    //   mvhd
-    //   trak
-    //     tkhd
-    //     mdia
-    //       mdhd
-    //       hdlr
-    //       minf
-    //         vmhd
-    //         dinf
-    //           dref
-    //         stbl
-    //           stsd
-    //           stts
-    //           stsc
-    //           stsz
-    //           stco
+    // -----------------------------------------------------
+    // Child byte-for-byte equivalence (isolated)
+    // -----------------------------------------------------
+    for (let i = 0; i < refChildren.length; i++) {
 
-    // --- Step 1: mvhd -------------------------------------------------------
-    let offset = 8; // moov header ends at 8
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "mvhd") {
-        throw new Error("FAIL: mvhd missing or incorrect position");
-    }
-    offset += readUint32(moov, offset);
+        const refChild = refMoov.slice(
+            refChildren[i].offset,
+            refChildren[i].offset + refChildren[i].size
+        );
 
-    // --- Step 2: trak --------------------------------------------------------
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "trak") {
-        throw new Error("FAIL: trak missing or incorrect position");
-    }
-    const trakSize = readUint32(moov, offset);
-    const trakStart = offset;
-    offset = trakStart + 8;
+        const outChild = out.slice(
+            outChildren[i].offset,
+            outChildren[i].offset + outChildren[i].size
+        );
 
-    // --- Step 3: tkhd --------------------------------------------------------
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "tkhd") {
-        throw new Error("FAIL: tkhd missing inside trak");
-    }
-    offset += readUint32(moov, offset);
+        assertEqual(
+            `moov.child[${i}].size`,
+            outChild.length,
+            refChild.length
+        );
 
-    // --- Step 4: mdia --------------------------------------------------------
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "mdia") {
-        throw new Error("FAIL: mdia missing inside trak");
-    }
-    const mdiaSize = readUint32(moov, offset);
-    const mdiaStart = offset;
-    offset = mdiaStart + 8;
-
-    // --- Step 5: mdhd --------------------------------------------------------
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "mdhd") {
-        throw new Error("FAIL: mdhd missing inside mdia");
-    }
-    offset += readUint32(moov, offset);
-
-    // --- Step 6: hdlr --------------------------------------------------------
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "hdlr") {
-        throw new Error("FAIL: hdlr missing inside mdia");
-    }
-    offset += readUint32(moov, offset);
-
-    // --- Step 7: minf --------------------------------------------------------
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "minf") {
-        throw new Error("FAIL: minf missing inside mdia");
-    }
-    const minfSize = readUint32(moov, offset);
-    const minfStart = offset;
-    offset = minfStart + 8;
-
-    // --- Step 8: vmhd --------------------------------------------------------
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "vmhd") {
-        throw new Error("FAIL: vmhd missing inside minf");
-    }
-    offset += readUint32(moov, offset);
-
-    // --- Step 9: dinf --------------------------------------------------------
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "dinf") {
-        throw new Error("FAIL: dinf missing inside minf");
-    }
-    const dinfSize = readUint32(moov, offset);
-    const dinfStart = offset;
-    offset = dinfStart + 8;
-
-    // dref inside dinf
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "dref") {
-        throw new Error("FAIL: dref missing inside dinf");
-    }
-    offset = dinfStart + dinfSize;
-
-    // --- Step 10: stbl -------------------------------------------------------
-    if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== "stbl") {
-        throw new Error("FAIL: stbl missing inside minf");
-    }
-    const stblSize = readUint32(moov, offset);
-    const stblStart = offset;
-    offset = stblStart + 8;
-
-    // stbl children in correct order
-    const expectedStbl = ["stsd", "stts", "stsc", "stsz", "stco"];
-    for (let type of expectedStbl) {
-        if (readBoxTypeFromMp4BoxBytes(moov, offset + 4) !== type) {
-            throw new Error(`FAIL: expected ${type} inside stbl`);
+        for (let b = 0; b < refChild.length; b++) {
+            assertEqualHex(
+                `moov.child[${i}].byte[${b}]`,
+                outChild[b],
+                refChild[b]
+            );
         }
-        offset += readUint32(moov, offset);
     }
 
-    console.log("PASS: moov assembly tests");
+    // -----------------------------------------------------
+    // Derived fields (LAST)
+    // -----------------------------------------------------
+    assertEqual(
+        "moov.size.field",
+        readUint32(out, 0),
+        readUint32(refMoov, 0)
+    );
+
+    assertEqual(
+        "moov.total.length",
+        out.length,
+        refMoov.length
+    );
+
+    // -----------------------------------------------------
+    // FINAL SAFETY NET — full box comparison
+    // -----------------------------------------------------
+    for (let i = 0; i < refMoov.length; i++) {
+        assertEqualHex(
+            `moov.byte[${i}]`,
+            out[i],
+            refMoov[i]
+        );
+    }
+
+    console.log("PASS: MOOV locked-layout equivalence with ffmpeg");
 }
