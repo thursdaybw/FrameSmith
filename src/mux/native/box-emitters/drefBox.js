@@ -1,64 +1,100 @@
 import { writeUint32, writeString } from "../binary/Writer.js";
+
 /**
  * DREF — Data Reference Box
- * ------------------------
- * Declares where the media data for a track is stored.
+ * ========================
  *
- * This box does NOT contain media data.
- * It contains references that explain *how to locate* that data.
+ * DREF declares *where the media bytes for a track are stored*.
  *
- * In practice, there are two broad models:
+ * Unlike many legacy MP4 boxes, DREF still expresses a real,
+ * meaningful decision that decoders actively rely on.
  *
- *   1. External data
- *      Media samples live in a separate file or resource.
+ * It answers exactly one question:
  *
- *   2. Self-contained data
- *      Media samples live inside this same MP4 file.
+ *   “Should the decoder look for media data inside this file,
+ *    or somewhere else?”
  *
  * ---
  *
- * Framesmith’s design choice:
+ * Framesmith design decision:
  * ---------------------------
- * Framesmith always emits the canonical modern form:
  *
- *   - A single `url ` entry
- *   - Marked as self-contained (flags = 1)
+ * Framesmith **intentionally supports exactly one data model**:
  *
- * Meaning:
- *   “All media data for this track lives inside this MP4 file.”
+ *   - Self-contained media
+ *   - All samples stored inside this MP4 file
+ *   - No external references
+ *
+ * This is expressed as:
+ *
+ *   dref
+ *     └─ url  (version 0, flags = 1, no payload)
  *
  * This matches:
  *   - ffmpeg output
  *   - mp4box.js output
- *   - browser expectations
- *   - real-world player behavior
- *
- * External data references are a legacy feature and are not
- * required for modern MP4 generation.
+ *   - browser playback expectations
+ *   - the vast majority of real-world MP4 files
  *
  * ---
  *
- * Why this box still exists:
- * --------------------------
- * Early media formats allowed tracks to reference:
- *   - network streams
- *   - sidecar data files
- *   - shared media repositories
+ * Important distinction from VMHD:
+ * --------------------------------
  *
- * MP4 retained this mechanism for compatibility.
+ * VMHD exists for historical reasons and has no semantic impact
+ * on modern playback pipelines.
  *
- * Modern encoders almost universally emit a self-contained `url `
- * reference, even when no URL string is present.
+ * DREF is different.
  *
- * The presence of this box is mandatory.
- * The complexity inside it is mostly historical.
+ * DREF *does* encode a meaningful policy decision:
+ *   - local vs external media
+ *   - single-file vs multi-resource assets
+ *
+ * Framesmith does NOT ignore this decision.
+ * Framesmith **chooses one policy and freezes it**.
  *
  * ---
  *
- * External references:
+ * Why this box is compiler-owned:
+ * -------------------------------
+ *
+ * Framesmith is a self-contained MP4 compiler.
+ *
+ * Allowing external media references would:
+ *   - complicate assembly
+ *   - complicate portability
+ *   - complicate browser playback
+ *   - violate Framesmith’s design goals
+ *
+ * Therefore:
+ *   - This builder takes no parameters
+ *   - Fixtures do NOT carry DREF semantics
+ *   - Golden oracles with external references are rejected
+ *
+ * This is a conscious architectural constraint,
+ * not an implementation shortcut.
+ *
+ * ---
+ *
+ * Conformance and testing:
+ * ------------------------
+ *
+ * If a future golden MP4 uses a different DREF layout:
+ *   - Byte-for-byte conformance tests will fail
+ *   - The failure is expected
+ *   - The resolution is a design decision, not a bug fix
+ *
+ * Supporting additional DREF forms would require:
+ *   - explicit API changes
+ *   - explicit fixture shape changes
+ *   - explicit architectural approval
+ *
+ * ---
+ *
+ * References:
  * - ISO/IEC 14496-12 — Data Reference Box (dref)
- * - MP4 registry: https://mp4ra.org/registered-types/boxes
- * - ffmpeg, mp4box.js reference output
+ * - MP4RA box registry
+ * - ffmpeg / mp4box.js reference output
  */
 export function emitDrefBox() {
 

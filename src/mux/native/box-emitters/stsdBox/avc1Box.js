@@ -88,6 +88,7 @@ export function emitAvc1Box({
     compressorName = "",
     btrt
 }) {
+
     if (!Number.isInteger(width) || width <= 0) {
         throw new Error("emitAvc1Box: width must be a positive integer");
     }
@@ -102,25 +103,32 @@ export function emitAvc1Box({
         );
     }
 
-    if (!btrt) {
-        throw new Error(
-            "emitAvc1Box: btrt is required for ffmpeg-compatible avc1 output"
-        );
-    }
-
-    if (
-        typeof btrt !== "object" ||
-        !Number.isInteger(btrt.bufferSizeDB) ||
-        !Number.isInteger(btrt.maxBitrate) ||
-        !Number.isInteger(btrt.avgBitrate)
-    ) {
-        throw new Error(
-            "emitAvc1Box: btrt must contain integer bufferSize, maxBitrate, avgBitrate"
-        );
+    if (btrt !== undefined) {
+        if (
+            typeof btrt !== "object" ||
+            !Number.isInteger(btrt.bufferSizeDB) ||
+            !Number.isInteger(btrt.maxBitrate) ||
+            !Number.isInteger(btrt.avgBitrate)
+        ) {
+            throw new Error(
+                "emitAvc1Box: btrt must contain integer bufferSizeDB, maxBitrate, avgBitrate"
+            );
+        }
     }
 
     const avcCBox = emitAvcCBox({ avcC });
     const compressorFields = buildCompressorNameFields(compressorName);
+
+    const children = [
+        avcCBox,
+        emitPaspBox()
+    ];
+
+    if (btrt !== undefined) {
+        children.push(
+            emitBtrtBox(btrt)
+        );
+    }
 
     return {
         type: "avc1",
@@ -166,11 +174,7 @@ export function emitAvc1Box({
             { short: 0xffff }
         ],
 
-        children: [
-            avcCBox,
-            emitPaspBox(),
-            emitBtrtBox(btrt)
-        ]
+        children: children,
     };
 }
 
@@ -195,6 +199,7 @@ function buildCompressorNameFields(compressorName) {
     const encoder = new TextEncoder();
     const nameBytes = encoder.encode(compressorName);
     const nameLength = Math.min(nameBytes.length, 31);
+
 
     return [
         /**

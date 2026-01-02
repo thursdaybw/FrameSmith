@@ -35,6 +35,7 @@ import { registerMetaHdlrGoldenTruthExtractor } from "./metaHdlr.goldenTruthExtr
 import { registerMetaGoldenTruthExtractor } from "./meta.goldenTruthExtractor.js";
 import { registerUdtaGoldenTruthExtractor } from "./udta.goldenTruthExtractor.js";
 import { registerMoovGoldenTruthExtractor } from "./moov.goldenTruthExtractor.js";
+import { registerFreeGoldenTruthExtractor } from "./free.goldenTruthExtractor.js";
 
 // -----------------------------------------------------------------------------
 // Parser wiring (CHANGE HERE)
@@ -42,6 +43,7 @@ import { registerMoovGoldenTruthExtractor } from "./moov.goldenTruthExtractor.js
 
 const PARSER_WIRING = [
     ["ftyp",                                    registerFtypGoldenTruthExtractor],
+    ["free",                                    registerFreeGoldenTruthExtractor],
     ["moov",                                    registerMoovGoldenTruthExtractor],
     ["moov/mvhd",                               registerMvhdGoldenTruthExtractor],
     ["moov/udta",                               registerUdtaGoldenTruthExtractor],

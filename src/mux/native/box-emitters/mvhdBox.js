@@ -64,6 +64,16 @@
  *
  * Framesmith generates short-form/medium-form video, so version 0 is correct,
  * simplest, and most widely compatible.
+ * 
+ * Box bytes:
+ *
+ * 0–3   creation_time        (u32)
+ * 4–7   modification_time    (u32)
+ * 8–11  timescale            (u32)
+ * 12–15 duration             (u32)
+ * 16–19 rate                 (u32)   ← fixed-point 16.16
+ * 20–21 volume               (u16)   ← fixed-point 8.8
+ * 22–23 reserved             (u16)
  *
  * External References:
  * --------------------

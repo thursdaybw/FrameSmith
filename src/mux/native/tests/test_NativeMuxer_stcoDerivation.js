@@ -1,4 +1,4 @@
-import { deriveStcoOffsets } from "../deriveStcoOffsets.js";
+import { deriveStcoOffsets } from "../derivers/deriveStcoOffsets.js";
 import { assertEqual } from "./assertions.js";
 
 export function testNativeMuxer_DeriveStcoOffsets_Simple() {

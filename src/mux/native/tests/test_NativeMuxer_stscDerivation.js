@@ -1,4 +1,4 @@
-import { deriveStscEntries } from "../deriveStscEntries.js";
+import { deriveStscEntries } from "../derivers/deriveStscEntries.js";
 import { assertEqual } from "./assertions.js";
 
 export function testNativeMuxer_DeriveStscEntries_SingleChunkPattern() {
@@ -8,7 +8,7 @@ export function testNativeMuxer_DeriveStscEntries_SingleChunkPattern() {
     );
 
     // ---------------------------------------------------------
-    // Canonical inputs
+    // Canonical semantic samples
     // ---------------------------------------------------------
     const samples = [
         { duration: 512, sampleDescriptionIndex: 1 },
@@ -16,9 +16,15 @@ export function testNativeMuxer_DeriveStscEntries_SingleChunkPattern() {
         { duration: 512, sampleDescriptionIndex: 1 }
     ];
 
+    // ---------------------------------------------------------
+    // Canonical wrapped chunk model
+    // ---------------------------------------------------------
     const chunks = [
         {
-            samples
+            samples: samples.map((sample, index) => ({
+                sample,
+                sampleIndex: index
+            }))
         }
     ];
 
@@ -59,3 +65,4 @@ export function testNativeMuxer_DeriveStscEntries_SingleChunkPattern() {
         "PASS: STSC derivation (single canonical entry)"
     );
 }
+

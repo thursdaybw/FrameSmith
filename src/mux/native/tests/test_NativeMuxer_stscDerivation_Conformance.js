@@ -1,12 +1,12 @@
-import { extractVideoSamplesFromMp4 } from "./reference/Mp4SampleExtractor.js";
-import { deriveChunkModel } from "../deriveChunkModel.js";
-import { deriveStscEntries } from "../deriveStscEntries.js";
+import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
+import { deriveChunkModel } from "../derivers/deriveChunkModel.js";
+import { deriveStscEntries } from "../derivers/deriveStscEntries.js";
 import { adaptStscEntriesToEmitterParams } from "../adapters/adaptStscEntriesToEmitterParams.js";
 import { emitStscBox } from "../box-emitters/stscBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 import { assertEqualHex, assertEqual } from "./assertions.js";
-import { ChunkPolicies } from "../policies/chunkPolicies.js";
+import { ChunkingStrategies } from "../derivers/strategies/chunkingStrategies.js";
 
 export async function testNativeMuxer_StscDerivation_Conformance_ffmpeg() {
 
@@ -23,7 +23,7 @@ export async function testNativeMuxer_StscDerivation_Conformance_ffmpeg() {
     // ---------------------------------------------------------
     // 2. Extract semantic samples (oracle)
     // ---------------------------------------------------------
-    const samples = extractVideoSamplesFromMp4({
+    const samples = extractSemanticAccessUnitsFromMp4({
         mp4Bytes: mp4
     });
 
@@ -32,7 +32,7 @@ export async function testNativeMuxer_StscDerivation_Conformance_ffmpeg() {
     // ---------------------------------------------------------
     const chunks = deriveChunkModel(
         samples,
-        ChunkPolicies.ALL_SAMPLES_ONE_CHUNK
+        ChunkingStrategies.ALL_SAMPLES_ONE_CHUNK
     );
 
     // ---------------------------------------------------------

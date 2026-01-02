@@ -109,10 +109,13 @@ export function emitStsdBox(params) {
         "codec",
         "avcC",
         "compressorName",
+    ];
+
+    const optionalKeys = [
         "btrt"
     ];
 
-    const allowedKeys = [...requiredKeys];
+    const allowedKeys = [...requiredKeys, ...optionalKeys];
 
     // Reject unknown keys
     for (const key of Object.keys(params)) {
@@ -179,21 +182,19 @@ export function emitStsdBox(params) {
         );
     }
 
-    // btrt is REQUIRED for ffmpeg-compatible output
-    if (
-        typeof btrt !== "object" ||
-        btrt === null ||
-        !Number.isInteger(btrt.bufferSizeDB) ||
-        !Number.isInteger(btrt.maxBitrate) ||
-        !Number.isInteger(btrt.avgBitrate)
-    ) {
-        throw new Error(
-            "emitStsdBox: btrt must contain integer bufferSizeDB, maxBitrate, avgBitrate"
-        );
+    if (btrt !== undefined) {
+        if (
+            typeof btrt !== "object" ||
+            btrt === null ||
+            !Number.isInteger(btrt.bufferSizeDB) ||
+            !Number.isInteger(btrt.maxBitrate) ||
+            !Number.isInteger(btrt.avgBitrate)
+        ) {
+            throw new Error(
+                "emitStsdBox: btrt must contain integer bufferSizeDB, maxBitrate, avgBitrate when supplied"
+            );
+        }
     }
-    // ------------------------------------------------------------
-    // Sample entry delegation
-    // ------------------------------------------------------------
 
     /**
      * SampleEntry
@@ -209,13 +210,25 @@ export function emitStsdBox(params) {
      *
      * STSD does not inspect or modify this structure.
      */
-    const sampleEntry = emitAvc1Box({
-        width,
-        height,
-        avcC,
-        compressorName,
-        btrt,
-    });
+    let sampleEntry;
+
+    if (btrt !== undefined) {
+        sampleEntry = emitAvc1Box({
+            width,
+            height,
+            avcC,
+            compressorName,
+            btrt
+        });
+    } else {
+        sampleEntry = emitAvc1Box({
+            width,
+            height,
+            avcC,
+            compressorName
+        });
+    }
+
 
     // ------------------------------------------------------------
     // STSD node

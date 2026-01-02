@@ -177,6 +177,10 @@ export async function testStsd_LockedLayoutEquivalence_ffmpeg() {
         "moov/trak/mdia/minf/stbl/stsd"
     );
 
+    console.log(
+        new TextDecoder().decode(refBytes)
+    );
+
     assertEqual("stsd.size", outBytes.length, refBytes.length);
 
     for (let i = 0; i < refBytes.length; i++) {

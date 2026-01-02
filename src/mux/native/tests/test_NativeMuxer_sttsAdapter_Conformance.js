@@ -1,4 +1,4 @@
-import { extractVideoSamplesFromMp4 } from "./reference/Mp4SampleExtractor.js";
+import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
 import { adaptSttsFromSamples } from "../adapters/adaptSttsFromSamples.js";
 import { emitSttsBox } from "../box-emitters/sttsBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
@@ -20,7 +20,7 @@ export async function testNativeMuxer_SttsAdapter_Conformance_ffmpeg() {
     // ---------------------------------------------------------
     // 2. Extract semantic samples (reference-only)
     // ---------------------------------------------------------
-    const samples = extractVideoSamplesFromMp4({
+    const samples = extractSemanticAccessUnitsFromMp4({
         mp4Bytes: mp4
     });
 

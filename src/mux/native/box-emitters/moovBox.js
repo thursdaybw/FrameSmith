@@ -41,7 +41,7 @@ export function emitMoovBox(params) {
         }
     }
 
-    if (udta && typeof udta.type !== "string") {
+    if (udta && !udta.type) {
         throw new Error("emitMoovBox: udta must be a box node");
     }
 

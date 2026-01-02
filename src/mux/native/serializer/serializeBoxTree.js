@@ -319,6 +319,12 @@ function normalizeFlags(node) {
 // ---------------------------------------------------------------------------
 
 export function computeBoxSize(node) {
+
+    // RAW BOX NODE (verbatim passthrough)
+    if (node && node.bytes instanceof Uint8Array) {
+        return node.bytes.length;
+    }
+
     let size = 8; // size(4) + type(4)
 
     const hasVersionFlags = Object.prototype.hasOwnProperty.call(node, "version");
@@ -374,6 +380,13 @@ export function computeBoxSize(node) {
 // ---------------------------------------------------------------------------
 
 export function writeBox(node, buffer, offset) {
+
+    // RAW BOX NODE (verbatim passthrough)
+    if (node && node.bytes instanceof Uint8Array) {
+        buffer.set(node.bytes, offset);
+        return offset + node.bytes.length;
+    }
+
     const start = offset;
     const size = computeBoxSize(node);
 
@@ -477,21 +490,73 @@ export function writeBox(node, buffer, offset) {
 // ---------------------------------------------------------------------------
 
 export function serializeBoxTree(node) {
-    validateBoxNode(node);
+    validateBoxNode(node, "<root>");
     const size = computeBoxSize(node);
     const out = new Uint8Array(size);
     writeBox(node, out, 0);
     return out;
 }
 
+function validateBoxNode(node, path) {
 
-function validateBoxNode(node, path = node.type) {
-    if (!node || typeof node !== "object") {
-        throw new Error(`Invalid box node at ${path}`);
+    if (node === undefined) {
+        throw new Error(`Box ${path} is undefined`);
+    }
+
+    if (node === null) {
+        throw new Error(`Box ${path} is null`);
+    }
+
+    if (typeof node !== "object") {
+        throw new Error(
+            `Box ${path} must be an object, got ${typeof node}`
+        );
     }
 
     if (typeof node.type !== "string" || node.type.length !== 4) {
         throw new Error(`Box at ${path} has invalid type`);
+    }
+
+    // ------------------------------------------------------------
+    // RAW BOX NODE VALIDATION (box-level passthrough)
+    // ------------------------------------------------------------
+
+    const hasBytes =
+        Object.prototype.hasOwnProperty.call(node, "bytes");
+
+    if (hasBytes) {
+
+        // Only udta may be represented as a raw box
+        if (node.type !== "udta") {
+            throw new Error(
+                `Box ${path}: raw byte boxes are only allowed for 'udta', ` +
+                `got '${node.type}'`
+            );
+        }
+
+        // bytes must be Uint8Array
+        if (!(node.bytes instanceof Uint8Array)) {
+            throw new Error(
+                `Box ${path}: 'bytes' must be a Uint8Array`
+            );
+        }
+
+        // raw box must not mix representations
+        if (node.body !== undefined || node.children !== undefined) {
+            throw new Error(
+                `Box ${path}: raw box must not define 'body' or 'children'`
+            );
+        }
+
+        // raw box must be at least a valid MP4 box header
+        if (node.bytes.length < 8) {
+            throw new Error(
+                `Box ${path}: raw box bytes too short to be a valid MP4 box`
+            );
+        }
+
+        // raw box is fully validated; do not descend
+        return;
     }
 
     // ------------------------------------------------------------
@@ -502,9 +567,18 @@ function validateBoxNode(node, path = node.type) {
             throw new Error(`Box ${path}: body must be an array`);
         }
 
-        for (const field of node.body) {
-            validateBodyField(field, path, node.type);
+        for (let i = 0; i < node.body.length; i++) {
+            const field = node.body[i];
+
+            if (field === undefined) {
+                throw new Error(
+                    `Box ${path}: body field at index ${i} is undefined`
+                );
+            }
+
+            validateBodyField(field, `${path}[body:${i}]`, node.type);
         }
+
     }
 
     // ------------------------------------------------------------

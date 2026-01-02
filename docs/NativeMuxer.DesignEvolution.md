@@ -339,4 +339,183 @@ So the system never regresses.
 
 ---
 
-**This is the story.**
+## 13. From Passes to a Compiler
+
+Up to this point, NativeMuxer existed as a **set of proven passes**.
+
+Each pass was:
+
+* independently testable,
+* locally correct,
+* and architecturally constrained.
+
+What did *not* yet exist was inevitability.
+
+The system still *felt* like:
+
+* a collection of emitters and a serializer,
+* assembled manually in tests,
+* with “final assembly” treated as an external concern.
+
+That perception did not survive contact with reality.
+
+---
+
+### 13.1 The Golden Oracle as a Temporary Contract
+
+The first attempts at end-to-end compilation were driven by a practical shortcut:
+
+> If a value can be extracted from a known-good MP4,
+> then it can serve as a compiler input.
+
+Golden MP4s produced by ffmpeg acted as an **oracle of correctness**.
+
+From them, it was possible to extract:
+
+* timescales,
+* durations,
+* table shapes,
+* and structural facts sufficient to drive emitters.
+
+For a time, this appeared viable.
+
+The compiler contract was implicitly shaped by:
+
+* “what can be observed in an existing MP4”
+* rather than “what a real client can supply”
+
+This was expedient, but unstable.
+
+---
+
+### 13.2 The WebCodecs Constraint Broke the Illusion
+
+As `compileMp4FromMp4Input` began to take shape, a deeper problem emerged.
+
+The *real* client of NativeMuxer is not ffmpeg.
+It is a system that:
+
+* talks to WebCodecs,
+* receives encoded chunks,
+* and requires a muxer to speak on its behalf.
+
+That client **cannot**:
+
+* derive MP4 tables,
+* normalize timing models,
+* infer representational choices,
+* or reverse-engineer container semantics.
+
+Those responsibilities do not belong at the boundary.
+
+This exposed a hard rule:
+
+> If an input cannot be supplied directly from WebCodecs output
+> without modification, then it does not belong in the public compiler contract.
+
+At that moment, the golden oracle stopped being a valid source of truth for inputs.
+
+It could validate outputs.
+It could not define the interface.
+
+---
+
+### 13.3 Normalization Moved Inward
+
+Once this rule was accepted, the architecture shifted decisively.
+
+Responsibilities that had been *implicitly external* were pulled **into the compiler**:
+
+* normalization of semantic inputs
+* derivation of timing and size tables
+* policy decisions where representation was ambiguous
+* adaptation into emitter-ready structures
+
+This was not an expansion of scope.
+It was a correction of ownership.
+
+The client’s job became minimal and mechanical:
+
+* supply encoded samples,
+* supply declared intent,
+* supply nothing inferred.
+
+Everything else became compiler responsibility.
+
+---
+
+### 13.4 Derivers and Policies Revealed Themselves
+
+With normalization and derivation internalized, something unexpected happened:
+
+New passes did not need to be invented.
+They revealed themselves.
+
+Each time an assumption was removed from the client boundary:
+
+* a deriver became necessary,
+* a policy decision surfaced,
+* an adapter boundary clarified.
+
+These were not speculative abstractions.
+They were **forced by the constraints**.
+
+The compiler pipeline stopped being planned and started being *discovered*.
+
+---
+
+### 13.5 compileMp4FromMp4Input Was Not an Invention
+
+When the end-to-end compilation function finally emerged, it did not introduce new ideas.
+
+It did not:
+
+* invent derivation,
+* invent policy,
+* invent structure,
+* or invent layout.
+
+It merely:
+
+* sequenced already-proven passes,
+* respected their contracts,
+* and produced final bytes.
+
+This was not creative design work.
+
+It was the formal acknowledgment that the compiler already existed.
+
+---
+
+### 13.6 The Moment of Inevitability
+
+The decisive realization was this:
+
+> Once all assumptions are removed from the client boundary,
+> the compiler must do everything else.
+
+At that point:
+
+* NativeMuxer ceased to be “a set of tools”
+* the pipeline ceased to be aspirational
+* and assembly ceased to be architectural work
+
+What remained was composition.
+
+If the remaining work can be expressed entirely as composition,
+then the architecture is complete.
+
+From this moment onward:
+
+* changes could only be additive,
+* extensions could only be orthogonal,
+* and corrections could only occur within existing passes.
+
+The system had crossed the point of no return.
+
+---
+
+This section exists to record **when NativeMuxer stopped being shaped by convenience and became shaped by inevitability**.
+
+From here on, NativeMuxer is not negotiated.
+It is compiled.

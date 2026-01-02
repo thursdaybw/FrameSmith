@@ -1,4 +1,4 @@
-import { deriveSttsEntries } from "../deriveSttsEntries.js";
+import { deriveSttsEntries } from "../derivers/deriveSttsEntries.js";
 import { assertEqual } from "./assertions.js";
 
 export function testNativeMuxer_DeriveSttsEntries_RunLengthEncoding() {

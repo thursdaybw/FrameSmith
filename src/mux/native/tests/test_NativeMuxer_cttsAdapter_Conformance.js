@@ -2,7 +2,7 @@ import { adaptCttsFromSamples } from "../adapters/adaptCttsFromSamples.js";
 import { emitCttsBox } from "../box-emitters/cttsBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
-import { extractVideoSamplesFromMp4 } from "./reference/Mp4SampleExtractor.js";
+import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
 import { assertEqualHex, assertEqual } from "./assertions.js";
 
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
@@ -22,7 +22,7 @@ export async function testNativeMuxer_CttsAdapter_Conformance_ffmpeg() {
     // ---------------------------------------------------------
     // Extract semantic samples (oracle)
     // ---------------------------------------------------------
-    const samples = extractVideoSamplesFromMp4({
+    const samples = extractSemanticAccessUnitsFromMp4({
         mp4Bytes: mp4
     });
 

@@ -143,6 +143,18 @@ NativeMuxer can serve as:
 
 ---
 
+### Platform Scope and Portability
+
+NativeMuxer is browser-native, but not browser-bound.
+
+It runs anywhere JavaScript runs, including desktop browsers, mobile app runtimes, server-side environments, and embedded JavaScript engines. NativeMuxer does not depend on DOM APIs, build tools, or framework-specific assumptions.
+
+NativeMuxer does not care how media is encoded. As long as encoded samples and codec configuration are supplied, it can deterministically assemble a correct MP4 file.
+
+For a deeper discussion of mobile, embedded, and non-browser usage, see WHY-NATIVE-MUXER.md.
+
+---
+
 ## What NativeMuxer Explicitly Does Not Do
 
 NativeMuxer does not:
@@ -179,6 +191,75 @@ What emerges is not just correctness, but **leverage**.
 
 ---
 
+## Where the Time Goes (and Why This Is Fast)
+
+NativeMuxer separates **encoding time** from **muxing time**.
+
+In traditional media pipelines, these two steps are tightly coupled.  
+In NativeMuxer, they are intentionally decoupled.
+
+### Typical Streaming-Oriented Tooling
+
+Most muxers are designed to work *while media is still arriving*.
+
+That means they must:
+
+* commit timing incrementally
+* update tables as samples arrive
+* buffer and rewrite container structures
+* maintain a valid file state at all times
+
+As a result, muxing is not free. It becomes an ongoing process with real overhead.
+
+### NativeMuxer’s Model
+
+NativeMuxer assumes a different workflow:
+
+1. Encode all samples first
+2. Collect all semantic facts
+3. Derive structure once
+4. Emit the MP4 file in a single pass
+
+Because all information is known up front:
+
+* no incremental patching is required
+* no tables are rewritten
+* no offsets are guessed and fixed later
+
+Muxing becomes a **pure memory operation**.
+
+### Practical Performance Comparison
+
+| Stage | Streaming Muxers | NativeMuxer |
+|------|------------------|-------------|
+| Encoding | Dominant cost | Dominant cost (same) |
+| Muxing | Noticeable overhead | Near-zero overhead |
+| Re-muxing | Expensive | Extremely cheap |
+| Retiming | Hard / requires re-encode | Trivial |
+| Re-export | Often re-encode | No re-encode |
+
+In practice, NativeMuxer’s muxing time is approximately:
+
+```
+O(n) over mdat size
+```
+
+Bound almost entirely by memory bandwidth.
+
+For videos up to hours long, muxing time is typically **milliseconds to seconds**, not minutes.
+
+### The Key Architectural Difference
+
+Muxing does not have to be tied to time.
+
+Traditional tools tie muxing to *media arrival*.
+
+NativeMuxer ties muxing to **semantic completeness**.
+
+That single decision is what makes non-linear, deterministic, and fast exports possible.
+
+---
+
 ## Why NativeMuxer Is Different
 
 NativeMuxer exists because most media tooling optimizes for *playback success*, not for *engineering certainty*.
@@ -188,6 +269,26 @@ Traditional tools discover structure from bytes, infer intent, normalize layouts
 NativeMuxer takes the opposite approach.
 
 It requires intent to be explicit, treats bytes as owned data with clear boundaries, and resolves layout deterministically. The result is not just correctness, but leverage.
+
+---
+
+### Transmuxing and Correctness
+
+NativeMuxer is intentionally **not** a fully lossless, opaque transmuxer.
+
+It acts as a **deterministic MP4 compiler**:
+
+* Container structures defined by the MP4 specification are validated, normalized, and emitted correctly.
+* Payloads that are explicitly arbitrary by spec (such as `udta` user data and media samples) are preserved verbatim.
+* Unsupported or ambiguous structures are rejected rather than guessed.
+
+If you need a tool that preserves every byte regardless of correctness, general-purpose tools like ffmpeg or MP4Box are a better fit.
+
+If you need deterministic structure, explicit policy, and byte-level correctness where the spec defines it, NativeMuxer is designed for that job.
+
+---
+
+If you want an even *tighter* version (3–4 lines max), say the word and I’ll compress it further.
 
 ---
 
@@ -357,6 +458,41 @@ This has practical consequences:
 What you read is what runs.
 
 For a system where byte-level correctness matters, removing hidden transformations is not convenience, it is safety.
+
+---
+
+## Known Limitation: Monolithic MDAT Assembly
+
+In its current form, NativeMuxer assembles the entire `mdat` payload as a single `Uint8Array` before writing the file.
+
+This means:
+
+* the full media payload is held in memory
+* offsets are resolved after all samples are present
+* `stco` offsets are finalized in one pass
+
+For the intended use cases (browser-based editing, offline export, batch processing), this is acceptable and intentional.
+
+### Why This Is Not a Dead End
+
+The project is explicitly architected to allow this to evolve.
+
+Because:
+
+* payload assembly is isolated
+* layout resolution is a separate pass
+* offset commitment is explicit
+
+It is straightforward to extend NativeMuxer to support:
+
+* chunked MDAT writing
+* streaming or windowed payload emission
+* late `stco` finalization
+* large-file and low-memory scenarios
+
+This is an **engineering trade-off**, not a structural limitation.
+
+The architecture already supports the extension point.
 
 ---
 

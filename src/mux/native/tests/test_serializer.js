@@ -237,7 +237,7 @@ export async function testSerializer() {
     }
 
     // -----------------------------------------------------------
-    // 11. reject opaque passthrough outside mdat
+    // 11. reject opaque passthrough outside mdat and udta
     // -----------------------------------------------------------
     let rejected = false;
 
@@ -253,7 +253,9 @@ export async function testSerializer() {
     }
 
     if (!rejected) {
-        throw new Error("FAIL: OpaqueBytesPassthrough allowed outside mdat");
+        throw new Error(
+            "FAIL: OpaqueBytesPassthrough allowed outside mdat and udta"
+        );
     }
 
     console.log("PASS: Serializer tests");

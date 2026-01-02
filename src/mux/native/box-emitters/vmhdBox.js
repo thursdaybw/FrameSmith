@@ -2,22 +2,63 @@ import { writeUint32, writeString } from "../binary/Writer.js";
 
 /**
  * VMHD — Video Media Header Box
- * ----------------------------
- * Declares video-specific media defaults for a track.
+ * ============================
  *
- * This box originates from the QuickTime file format and was
- * carried forward into the ISO Base Media File Format (MP4).
+ * IMPORTANT DESIGN NOTE (READ THIS FIRST)
+ * ---------------------------------------
  *
- * In modern playback pipelines, the fields in this box are
- * effectively ignored, but the box itself is still *required*
- * for video tracks to be considered structurally valid.
+ * Framesmith deliberately emits a *canonical*, compiler-owned vmhd box.
  *
- * Think of vmhd as:
- *   “This track is video, and here are its historical defaults.”
+ * This is an intentional architectural decision.
  *
- * It does not describe codec behavior, timing, or samples.
- * It exists to satisfy the container contract.
+ * Why?
+ * ----
+ * vmhd is a legacy QuickTime header whose fields:
+ *   - have no effect on modern playback
+ *   - are ignored by decoders
+ *   - do not participate in timing, codec configuration, or rendering
+ *
+ * The MP4 specification requires vmhd to exist for video tracks,
+ * but does NOT assign semantic meaning to its contents in modern pipelines.
+ *
+ * In practice, reference encoders (including ffmpeg) always emit:
+ *   - version: 0
+ *   - flags: 1
+ *   - graphicsmode: 0
+ *   - opcolor: [0, 0, 0]
+ *
+ * Framesmith therefore treats vmhd as:
+ *   “structural boilerplate required for container validity”
+ *
+ * NOT as semantic input.
+ *
+ * Consequence for Golden Oracle Tests
+ * ----------------------------------
+ *
+ * Framesmith NORMALIZES vmhd by design.
+ *
+ * This means:
+ *   - Byte-for-byte conformance tests are expected to match this canonical vmhd
+ *   - If a future golden MP4 contains a different vmhd payload,
+ *     the byte mismatch will appear *inside vmhd*
+ *
+ * In that situation:
+ *   - Playback correctness is NOT affected
+ *   - Semantic correctness is NOT affected
+ *   - The compiler is behaving as designed
+ *
+ * The test must either:
+ *   - accept vmhd normalization, or
+ *   - explicitly special-case vmhd comparison
+ *
+ * This is not a bug.
+ * This is a documented normalization boundary.
+ *
+ * If lossless structural reproduction is ever required,
+ * it must be implemented as a *separate source adapter*,
+ * not by changing this emitter.
  */
+
 export function emitVmhdBox() {
     return {
         type: "vmhd",

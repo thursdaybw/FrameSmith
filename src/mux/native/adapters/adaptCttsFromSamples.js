@@ -44,15 +44,49 @@ export function adaptCttsFromSamples({ samples }) {
     // ---------------------------------------------------------
     const offsets = samples.map((sample, index) => {
 
+        // DTS
+        if (sample.dts === undefined) {
+            throw new Error(
+                `adaptCttsFromSamples: samples[${index}].dts is missing.\n` +
+                `DTS must be derived before CTTS adaptation.\n` +
+                `This is a pipeline ordering error, not a data error.`
+            );
+        }
+
+        if (typeof sample.dts !== "number") {
+            throw new Error(
+                `adaptCttsFromSamples: samples[${index}].dts must be a number.\n` +
+                `Received type: ${typeof sample.dts}`
+            );
+        }
+
         if (!Number.isInteger(sample.dts)) {
             throw new Error(
-                `adaptCttsFromSamples: samples[${index}].dts must be an integer`
+                `adaptCttsFromSamples: samples[${index}].dts must be an integer.\n` +
+                `Received value: ${sample.dts}`
+            );
+        }
+
+
+        // PTS
+        if (sample.pts === undefined) {
+            throw new Error(
+                `adaptCttsFromSamples: samples[${index}].pts is missing.\n` +
+                `PTS is a required semantic fact and must be present on all samples.`
+            );
+        }
+
+        if (typeof sample.pts !== "number") {
+            throw new Error(
+                `adaptCttsFromSamples: samples[${index}].pts must be a number.\n` +
+                `Received type: ${typeof sample.pts}`
             );
         }
 
         if (!Number.isInteger(sample.pts)) {
             throw new Error(
-                `adaptCttsFromSamples: samples[${index}].pts must be an integer`
+                `adaptCttsFromSamples: samples[${index}].pts must be an integer.\n` +
+                `Received value: ${sample.pts}`
             );
         }
 

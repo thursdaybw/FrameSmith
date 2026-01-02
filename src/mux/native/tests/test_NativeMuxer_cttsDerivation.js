@@ -1,4 +1,4 @@
-import { deriveCttsEntries } from "../deriveCttsEntries.js";
+import { deriveCttsEntries } from "../derivers/deriveCttsEntries.js";
 import { assertEqual } from "./assertions.js";
 
 export function testNativeMuxer_DeriveCttsEntries_RunLengthEncoding() {

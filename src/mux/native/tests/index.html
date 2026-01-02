@@ -7,6 +7,7 @@
 <button id="run-all">Run All Tests</button>
 <script type="module">
 
+
 // ChatGPT Phase ABC branch point: https://chatgpt.com/g/g-p-6823e412c7348191848df481eb52a88b/c/693c11b2-2a5c-8322-8a7b-58d09d3f2ac6
 // Unit tests
 import { testHdlr_Structure, testHdlr_LockedLayoutEquivalence_ffmpeg } from "./test_hdlr.js";
@@ -50,18 +51,42 @@ import { testMetaHdlr_Structure, testMetaHdlr_LockedLayoutEquivalence_ffmpeg } f
 import { testMeta_Structure, testMeta_LockedLayoutEquivalence_ffmpeg } from "./test_meta.js";
 import { testUdta_Structure, testUdta_LockedLayoutEquivalence_ffmpeg } from "./test_udta.js";
 import { testMoov_Structure, testMoov_LockedLayoutEquivalence_ffmpeg } from "./test_moov.js";
+import { testFree_Structure, testFree_LockedLayoutEquivalence_ffmpeg } from "./test_free.js";
+
 import { testDeriveChunkModel_OneSamplePerChunk } from "./test_NativeMuxer_chunkModel.js";
 import { testNativeMuxer_DeriveStscEntries_SingleChunkPattern } from "./test_NativeMuxer_stscDerivation.js";
 import { testNativeMuxer_DeriveStcoOffsets_Simple } from "./test_NativeMuxer_stcoDerivation.js";
 import { testNativeMuxer_DeriveSttsEntries_RunLengthEncoding } from "./test_NativeMuxer_sttsDerivation.js"
-import { testNativeMuxer_DeriveStszSizes_Simple } from "./test_NativeMuxer_stszDerivation.js"
+
+import { 
+    testNativeMuxer_DeriveStssSampleNumbers_Simple,
+    testNativeMuxer_DeriveStssSampleNumbers_NoKeyInfo
+} from "./test_NativeMuxer_stssDerivation.js"
+
 import { testNativeMuxer_AdaptSttsFromSamples_CFR, testNativeMuxer_AdaptSttsFromSamples_VariableDurationFails } from "./test_NativeMuxer_sttsAdapter.js";
 import { testNativeMuxer_SttsAdapter_Conformance_ffmpeg } from "./test_NativeMuxer_sttsAdapter_Conformance.js"
-import { testNativeMuxer_AdaptStszFromSamples } from "./test_NativeMuxer_stszAdapter.js";
-import { testNativeMuxer_StszAdapter_Conformance_ffmpeg } from "./test_NativeMuxer_stszAdapter_Conformance.js";
+
+import { testNativeMuxer_DeriveStszSizesFromPayloads } from "./test_NativeMuxer_deriveStszSizesFromPayloads.js";
+import { testNativeMuxer_DeriveStsz_Conformance_ffmpeg } from "./test_NativeMuxer_stszDerivation_Conformance.js";
+
 import { testNativeMuxer_DeriveCttsEntries_RunLengthEncoding } from "./test_NativeMuxer_cttsDerivation.js";
 import { testNativeMuxer_CttsAdapter_Conformance_ffmpeg } from "./test_NativeMuxer_cttsAdapter_Conformance.js";
 import { testNativeMuxer_StscDerivation_Conformance_ffmpeg } from "./test_NativeMuxer_stscDerivation_Conformance.js";
+import { testNativeMuxer_trackDurationDerivation_basicSum } from "./test_NativeMuxer_trackDurationDerivation.js";
+import { testNativeMuxer_MdatAssembly_FromChunkModel } from "./test_NativeMuxer_mdatAssembly.js";
+import { testNativeMuxer_PhysicalLayoutResolution_Minimal_SingleChunk_Stco } from "./test_NativeMuxer_PhysicalLayoutResolution_Minimal_SingleChunk_Stco.js";
+import { testNativeMuxer_StcoCommit_FromPhysicalLayout } from "./test_NativeMuxer_StcoCommit_FromPhysicalLayout.js";
+import { testNativeMuxer_StcoConformance_ffmpeg } from "./test_NativeMuxer_StcoConformance_ffmpeg.js";
+import { testMdat_Structure } from "./test_mdat.js";
+import { testCommitStbl_InsertsStcoWhenMissing, testCommitStbl_PreservesAllChildrenAndReplacesStco } from "./testCommitStbl_ReplacesExistingStco.js";
+import { testCommitMinf_Structure } from "./test_commitMinf_Structure.js";
+import { testCommitMinf_SizePropagation } from "./test_commitMinf_SizePropagation.js";
+import { testCommitMdia_Structure } from "./test_commitMdia_Structure.js";
+import { testCommitMdia_SizePropagation } from "./test_commitMdia_SizePropagation.js";
+import { testCommitTrak_Structure } from "./test_commitTrak_Structure.js";
+import { testCommitTrak_SizePropagation } from "./test_commitTrak_SizePropagation.js";
+import { testCommitMoov_Structure } from "./test_commitMoov_Structure.js";
+import { testCommitMoov_SizePropagation } from "./test_commitMoov_SizePropagation.js";
 
 import {
     testUdta_Inspection_ffmpeg,
@@ -72,21 +97,57 @@ import {
 
 import { testSerializer } from "./test_serializer.js"
 import { testMdatEmitter } from "./test_mdatEmitter.js";
-import { testChunkLayout_FramesmithSimple, testChunkLayout_FfmpegCompatible } from "./test_chunkLayoutPolicy.js";
-
 
 import { testSampleExtraction_FromGoldenMp4 } from "./test_sample_extraction.js";
 
-// Boundary tests
+import { testNativeMuxer_EndToEnd_Conformance_ffmpeg } from "./test_NativeMuxer_EndToEnd_Conformance_ffmpeg.js";
+import { test_NativeMuxer_Linker_EmitsResolvedMp4 } from "./test_NativeMuxer_Linker_EmitsResolvedMp4.js";
+import { test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical } from "./test_NativeMuxer_EndToEnd_FromMp4BuildInput.js";
+
+import { test_applyAvcCContainerPolicy } from "./policies/test_applyAvcCContainerPolicy.js"
+import { test_avcC_policy_locked_layout_container_complete, test_avcC_policy_locked_layout_semantic_high_profile } from "./test_avcC_policy_locked_layout.js"
+
+
+import { test_SourceClient_WebCodecs_ProducesMp4BuildInput }  from "./test_SourceClient_WebCodecs_ProducesMp4BuildInput.js";
+
+import { test_SourceClient_GoldenMp4_ProducesMp4BuildInput }  from "./test_SourceClient_GoldenMp4_ProducesMp4BuildInput.js";
+
+import { test_DeriveDecodeTimestamps_Invariants }  from "./test_DeriveDecodeTimestamps_Invariants.js";
+import { test_DeriveDecodeTimestamps_LockedLayoutEquivalence_ffmpeg }  from "./test_DeriveDecodeTimestamps_LockedLayoutEquivalence_ffmpeg.js";
+
+import { inspect_GoldenMp4_PtsDtsOrder } from "./test_DeriveDecodeTimestamps_Invariants.js";
+
+import { 
+    test_UdtaPolicy_OpaquePassthrough,
+    test_UdtaPolicy_ExplicitOmission,
+    test_UdtaPolicy_SemanticIdentity_StructureOnly
+} from "./policies/test_UdtaPolicy.js";
+
+import {
+    test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic
+} from "./test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic.js";
+
+import {
+    test_adaptCodecConfigurationToStsdParams
+} from "./adapters/test_adaptCodecConfigurationToStsdParams.js";
+
 
 async function runUnitTests() {
 
+
+/**
+ * PASS 0 — REFERENCE / ORACLE (TEST-ONLY, NOT NATIVE MUXER)
+
+   await inspect_GoldenMp4_PtsDtsOrder();
    await testUdta_Inspection_ffmpeg();
    await testMeta_Inspection_ffmpeg();
    await testMetaHdlr_Inspection_ffmpeg();
    await testMetaIlst_Inspection_ffmpeg();
    await testSerializer();
+ */
+
 /**
+    await test_adaptCodecConfigurationToStsdParams();
  * Test libraries used.
  * src/mux/native/tests/assertions.js
  * src/mux/native/tests/assertions.js
@@ -268,9 +329,16 @@ async function runUnitTests() {
     await testStco_Structure();
 
     // -----------------------------------------------------------------
-    // STCO — LOCKED-LAYOUT EQUIVALENCE (PLANNED)
+    // STCO — FINALIZATION & CONFORMANCE (PASS 4)
     // -----------------------------------------------------------------
     //
+    // STCO is finalized ONLY after physical layout resolution.
+    //
+    // This phase consists of:
+    //   - committing layout-derived offsets into STCO
+    //   - validating byte-for-byte equivalence with ffmpeg
+    //
+    // No layout logic exists beyond this point.
     // These tests validate STCO serialization against a golden MP4
     // under locked layout conditions.
     //
@@ -292,6 +360,7 @@ async function runUnitTests() {
     // It is a proof that, given the same inputs as ffmpeg,
     // our STCO builder serializes identical bytes.
     await testStco_LockedLayoutEquivalence_ffmpeg();
+    
     await testFtyp_Structure();
     await testFtyp_Conformance();
     await testTkhd_Structure();
@@ -369,17 +438,6 @@ async function runUnitTests() {
     //   - leaf box refactors must be complete
     //   - byte-level serialization must be consistent
     //   - container composition begins
-    //
-    // This test is intentionally positioned *after* the return cursor.
-    // It will fail during refactor while any STBL leaf box still emits
-    // bytes directly instead of JSON.
-    //
-    // That failure is EXPECTED.
-    //
-    // As the return cursor advances and leaf boxes are migrated, this
-    // test should transition from red → green *without modification*.
-    //
-    // If it does not, that signals a real architectural regression.
     //
 
     // -----------------------------------------------------------------
@@ -491,6 +549,11 @@ async function runUnitTests() {
 
     await testMoov_Structure();
     await testMoov_LockedLayoutEquivalence_ffmpeg();
+
+    await testMdat_Structure();
+
+    await testFree_Structure();
+    await testFree_LockedLayoutEquivalence_ffmpeg();
 
     /**
      * ===============================================================
@@ -626,8 +689,9 @@ async function runUnitTests() {
 
     /**
      * ===============================================================
-     * PHASE: PURE SEMANTIC DERIVATION & POLICY
-     * ===============================================================
+     * SEMANTIC DERIVATION & POLICY — IMPLEMENTED & LOCKED 
+     * (Architectural Pass 1)
+      ===============================================================
      *
      * This phase validates NativeMuxer logic that operates entirely
      * on semantic inputs and fabricated data.
@@ -671,8 +735,22 @@ async function runUnitTests() {
     await testNativeMuxer_DeriveStscEntries_SingleChunkPattern();
     await testNativeMuxer_DeriveStcoOffsets_Simple();
     await testNativeMuxer_DeriveSttsEntries_RunLengthEncoding();
-    await testNativeMuxer_DeriveStszSizes_Simple();
+    await testNativeMuxer_DeriveStszSizesFromPayloads();
+    await testNativeMuxer_DeriveStsz_Conformance_ffmpeg();
     await testNativeMuxer_DeriveCttsEntries_RunLengthEncoding();
+    await testNativeMuxer_DeriveStssSampleNumbers_Simple();
+    await testNativeMuxer_DeriveStssSampleNumbers_NoKeyInfo();
+    await test_DeriveDecodeTimestamps_Invariants();
+    await test_DeriveDecodeTimestamps_LockedLayoutEquivalence_ffmpeg();
+    await test_applyAvcCContainerPolicy();
+    await test_avcC_policy_locked_layout_container_complete();
+    await test_avcC_policy_locked_layout_semantic_high_profile();
+    await test_UdtaPolicy_OpaquePassthrough();
+    await test_UdtaPolicy_ExplicitOmission();
+    await test_UdtaPolicy_SemanticIdentity_StructureOnly();
+    await test_adaptCodecConfigurationToStsdParams();
+                                                                    
+
 
     /**
      * ---------------------------------------------------------------
@@ -707,12 +785,455 @@ async function runUnitTests() {
     await testNativeMuxer_AdaptSttsFromSamples_CFR();
     await testNativeMuxer_AdaptSttsFromSamples_VariableDurationFails();
     await testNativeMuxer_SttsAdapter_Conformance_ffmpeg();
-    await testNativeMuxer_AdaptStszFromSamples();
-    await testNativeMuxer_StszAdapter_Conformance_ffmpeg();
+
     await testNativeMuxer_CttsAdapter_Conformance_ffmpeg();
     await testNativeMuxer_StscDerivation_Conformance_ffmpeg();
+    await testNativeMuxer_trackDurationDerivation_basicSum();
 
-   await testChunkLayout_FramesmithSimple();
+    // Finally the STCO replacement phase!
+    await testCommitStbl_InsertsStcoWhenMissing();
+    await testCommitStbl_PreservesAllChildrenAndReplacesStco();
+
+    await testCommitMinf_Structure();
+    await testCommitMinf_SizePropagation();
+
+    await testCommitMdia_Structure();
+    await testCommitMdia_SizePropagation();
+
+    await testCommitTrak_Structure();
+    await testCommitTrak_SizePropagation();
+
+    await testCommitMoov_Structure();
+    await testCommitMoov_SizePropagation();
+
+    /*
+     * ===============================================================
+     * COMPLETE — MDAT PAYLOAD ASSEMBLY (LOCKED)
+     * (Architectural classification: Pass 2 — MDAT Assembly)
+     * ===============================================================
+     *
+     * Architecturally, this corresponds to the MDAT assembly stage of the NativeMuxer pipeline.
+     *
+     * This test proves correctness of **mdat payload assembly** from a
+     * derived chunk model.
+     *
+     * What is proven here is NOT MP4 formatting — it is *semantic fidelity*.
+     *
+     * ---------------------------------------------------------------
+     * WHAT THIS TEST PROVES
+     * ---------------------------------------------------------------
+     *
+     * Given:
+     *   - canonical semantic samples extracted from a real MP4
+     *   - a derived chunk model produced by a chunking policy
+     *
+     * This test proves that NativeMuxer can:
+     *
+     *   - assemble a single contiguous mdat payload
+     *   - preserve every byte exactly once
+     *   - preserve global sample order
+     *   - preserve chunk-local boundaries
+     *   - compute correct chunk-relative byte offsets
+     *
+     * This establishes mdat assembly as a **pure, deterministic compiler pass**.
+     *
+     * ---------------------------------------------------------------
+     * WHAT IS NOW ARCHITECTURALLY LOCKED
+     * ---------------------------------------------------------------
+     *
+     * The following are now *invariants* of NativeMuxer:
+     *
+     *   1. `mdat` payload bytes are assembled exclusively from semantic samples
+     *   2. Chunk boundaries are authoritative and preserved
+     *   3. No MP4 box, layout, or offset knowledge exists in this pass
+     *   4. Chunk offsets are relative to mdat payload, not file layout
+     *
+     * Any future change that violates these invariants is a regression.
+     *
+     * ---------------------------------------------------------------
+     * WHAT THIS PASS EXPLICITLY DOES NOT DO
+     * ---------------------------------------------------------------
+     *
+     * This test does NOT:
+     *   - emit an `mdat` box
+     *   - compute absolute file offsets
+     *   - populate STCO
+     *   - depend on box sizes or ordering
+     *   - compare against ffmpeg output
+     *
+     * Those concerns belong to **physical layout resolution**,
+     * which is the next architectural pass.
+     *
+     * ---------------------------------------------------------------
+     * NEXT REQUIRED WORK (MANDATORY)
+     * ---------------------------------------------------------------
+     *
+     * NEXT DEVELOPMENT PHASE — PHYSICAL LAYOUT RESOLUTION (TEST SPEC)
+     * (Architectural Pass 3: Physical Layout Resolution)
+     * 
+     * This upcoming pass will:
+     *   - determine final box ordering
+     *   - resolve absolute file offsets
+     *   - finalize STCO values
+     *   - bind mdat-relative offsets to file-relative positions
+     *
+     * STCO correctness MUST be proven only after this pass exists.
+     *
+     * ---------------------------------------------------------------
+     * TODO (DO NOT SKIP)
+     * ---------------------------------------------------------------
+     *
+     * A second mdat assembly test MUST be added to harden this pass:
+     *
+     *   - Policy: ChunkPolicies.ONE_SAMPLE_PER_CHUNK
+     *   - Purpose: validate multi-chunk assembly invariants
+     *
+     * This test is intentionally deferred until layout work begins,
+     * but it MUST be implemented before declaring NativeMuxer assembly complete.
+     *
+     * Failure to add this test is a correctness gap.
+     */
+    await testNativeMuxer_MdatAssembly_FromChunkModel();
+
+    /**
+     * ===============================================================
+     * PASS 3 — PHYSICAL LAYOUT RESOLUTION (TEST SPEC)
+     * ===============================================================
+     *
+     * This test validates **physical layout resolution** for NativeMuxer.
+     *
+     * Physical layout resolution is the pass where:
+     *
+     *   - box ordering is fixed
+     *   - serialized box sizes are accounted for
+     *   - absolute file offsets are computed
+     *   - STCO offsets are finalized
+     *
+     * This pass is the ONLY place where:
+     *   - file offsets exist
+     *   - chunk-relative offsets become file-relative offsets
+     *
+     * ---------------------------------------------------------------
+     * PURPOSE
+     * ---------------------------------------------------------------
+     *
+     * Prove that NativeMuxer can deterministically resolve a valid
+     * MP4 file layout from:
+     *
+     *   - semantic samples
+     *   - a derived chunk model
+     *   - assembled mdat payload
+     *   - fully defined box structure (except STCO values)
+     *
+     * This test validates layout correctness, NOT serialization fidelity.
+     *
+     * ---------------------------------------------------------------
+     * PRECONDITIONS (MUST ALREADY BE PROVEN)
+     * ---------------------------------------------------------------
+     *
+     * - Sample extraction from a real MP4 is correct
+     * - Chunk model derivation is correct
+     * - MDAT payload assembly is correct (PASS 2)
+     * - All leaf box builders exist and are structurally correct
+     *
+     * This test MUST NOT re-validate those properties.
+     *
+     * ---------------------------------------------------------------
+     * INPUTS
+     * ---------------------------------------------------------------
+     *
+     * 1. Semantic samples (oracle)
+     *
+     *    Extracted from a golden MP4 via:
+     *
+     *      extractVideoSamplesFromMp4({ mp4Bytes })
+     *
+     * 2. Chunk model
+     *
+     *    Derived via:
+     *
+     *      deriveChunkModel(samples, policy)
+     *
+     * 3. MDAT assembly output
+     *
+     *    Produced via:
+     *
+     *      assembleMdatPayloadFromChunks(chunks)
+     *
+     *    {
+     *      payload: Uint8Array,
+     *      chunkOffsets: number[],        // relative to payload
+     *      chunkByteLengths: number[]
+     *    }
+     *
+     * 4. Box graph (JSON intent)
+     *
+     *    - ftyp
+     *    - moov (with all child boxes except final STCO values)
+     *    - mdat (payload only, header not yet serialized)
+     *
+     * ---------------------------------------------------------------
+     * SUBJECT UNDER TEST
+     * ---------------------------------------------------------------
+     *
+     *   resolvePhysicalLayout({
+     *     ftypNode,
+     *     moovNode,
+     *     mdatPayload,
+     *     chunkOffsets
+     *   })
+     *
+     * ---------------------------------------------------------------
+     * REQUIRED OUTPUT
+     * ---------------------------------------------------------------
+     *
+     * The resolver MUST return:
+     *
+     * {
+     *   fileBoxOrder: [ 'ftyp', 'moov', 'mdat' ],
+     *
+     *   boxOffsets: {
+     *     ftyp: number,
+     *     moov: number,
+     *     mdat: number
+     *   },
+     *
+     *   mdatDataOffset: number,
+     *
+     *   stcoOffsets: number[]
+     * }
+     *
+     * ---------------------------------------------------------------
+     * ASSERTIONS (MANDATORY)
+     * ---------------------------------------------------------------
+     *
+     * A. Box ordering (LOCKED)
+     *
+     *    fileBoxOrder MUST equal:
+     *
+     *      [ 'ftyp', 'moov', 'mdat' ]
+     *
+     *    No other ordering is permitted in this pass.
+     *
+     * ---------------------------------------------------------------
+     *
+     * B. Box offset correctness
+     *
+     *    Offsets MUST satisfy:
+     *
+     *      ftypOffset === 0
+     *      moovOffset === ftypOffset + ftypSerializedSize
+     *      mdatOffset === moovOffset + moovSerializedSize
+     *
+     *    Offsets MUST be:
+     *      - monotonically increasing
+     *      - gap-free
+     *      - non-overlapping
+     *
+     * ---------------------------------------------------------------
+     *
+     * C. MDAT payload offset correctness
+     *
+     *    mdatDataOffset MUST equal:
+     *
+     *      mdatOffset + mdatHeaderSize
+     *
+     *    Where:
+     *      mdatHeaderSize === 8 bytes
+     *
+     * ---------------------------------------------------------------
+     *
+     * D. STCO offset finalization
+     *
+     *    For every chunk index i:
+     *
+     *      stcoOffsets[i] ===
+     *        mdatDataOffset + chunkOffsets[i]
+     *
+     * ---------------------------------------------------------------
+     *
+     * E. STCO bounds validity
+     *
+     *    Every STCO offset MUST satisfy:
+     *
+     *      stcoOffset >= mdatDataOffset
+     *      stcoOffset <  mdatDataOffset + mdatPayload.length
+     *
+     * ---------------------------------------------------------------
+     *
+     * F. Cardinality invariants
+     *
+     *    - stcoOffsets.length === chunkOffsets.length
+     *    - chunkOffsets.length === number of chunks
+     *
+     * ---------------------------------------------------------------
+     * EXPLICIT NON-ASSERTIONS
+     * ---------------------------------------------------------------
+     *
+     * This test MUST NOT:
+     *
+     *   - emit any MP4 bytes
+     *   - serialize boxes to buffers
+     *   - compare against ffmpeg output
+     *   - validate sample timing or codec metadata
+     *   - test STCO box encoding
+     *
+     * It validates layout math ONLY.
+     *
+     * ---------------------------------------------------------------
+     * FAILURE INTERPRETATION
+     * ---------------------------------------------------------------
+     *
+     * A failure in this test indicates:
+     *
+     *   - incorrect box size accounting
+     *   - incorrect layout ordering
+     *   - incorrect offset arithmetic
+     *   - premature or incorrect STCO derivation
+     *
+     * It does NOT indicate:
+     *   - box builder errors
+     *   - sample extraction errors
+     *   - chunking policy errors
+     *
+     * ---------------------------------------------------------------
+     * ARCHITECTURAL INVARIANTS (LOCKED BY THIS TEST)
+     * ---------------------------------------------------------------
+     *
+     * 1. STCO values are finalized ONLY after physical layout resolution
+     * 2. No box is aware of its file offset
+     * 3. Layout resolution is deterministic and policy-free
+     * 4. MDAT-relative offsets are the sole input to STCO finalization
+     *
+     * Any future change violating these rules is a regression.
+     *
+     * ---------------------------------------------------------------
+     * NEXT REQUIRED WORK
+     * ---------------------------------------------------------------
+     *
+     * After this test passes:
+     *
+     *   - Implement final STCO emission
+     *   - Emit the `mdat` box using the assembled payload
+     *   - Write a single end-to-end NativeMuxer test
+     *
+     * End-to-end conformance MUST NOT be attempted before this test is green.
+     */
+
+     await testNativeMuxer_PhysicalLayoutResolution_Minimal_SingleChunk_Stco();
+
+    /**
+     * ===============================================================
+     * PASS 4 — STCO FINALIZATION (COMMIT PHASE)
+     * ===============================================================
+     *
+     * This phase is where NativeMuxer crosses from:
+     *
+     *   “layout is known”
+     *        →
+     *   “layout is written into boxes”
+     *
+     * This is the FIRST commit step of the muxer.
+     *
+     * ---------------------------------------------------------------
+     * PURPOSE
+     * ---------------------------------------------------------------
+     *
+     * Finalize the STCO (Chunk Offset Box) using the output of
+     * physical layout resolution (Pass 3).
+     *
+     * At this point:
+     *   - ftyp size is known
+     *   - moov size is known
+     *   - mdat header size is known
+     *   - mdat payload layout is known
+     *   - absolute chunk offsets are final
+     *
+     * STCO offsets are no longer provisional.
+     *
+     * ---------------------------------------------------------------
+     * SUBPHASE A — SEMANTIC COMMIT (NO FFMPEG)
+     * ---------------------------------------------------------------
+     *
+     * This test proves that:
+     *
+     *   - layout.stcoOffsets are written verbatim into STCO
+     *   - no recomputation occurs
+     *   - no hidden layout or policy logic exists in the emitter
+     *
+     * This test does NOT:
+     *   - compare against ffmpeg
+     *   - validate byte-level equivalence
+     *
+     * It answers one question only:
+     *
+     *   “Did we commit exactly what Pass 3 decided?”
+     *
+     * This test MUST pass before any conformance test is meaningful.
+     */
+    await testNativeMuxer_StcoCommit_FromPhysicalLayout();
+
+    /**
+     * ---------------------------------------------------------------
+     * SUBPHASE B — STCO CONFORMANCE (BYTE-FOR-BYTE)
+     * ---------------------------------------------------------------
+     *
+     * This test validates that a finalized STCO box produced by
+     * NativeMuxer is byte-for-byte identical to the STCO box in
+     * a golden MP4 produced by ffmpeg.
+     *
+     * Preconditions (ALL MUST HOLD):
+     *   - Physical layout resolution is proven
+     *   - STCO commit test is proven
+     *   - Chunking policy matches the fixture
+     *
+     * This test:
+     *   - extracts the reference STCO box bytes
+     *   - serializes the NativeMuxer STCO box
+     *   - compares bytes directly
+     *
+     * A failure here indicates:
+     *   - incorrect offset arithmetic
+     *   - incorrect field encoding
+     *   - incorrect size propagation
+     *
+     * It does NOT indicate policy or derivation errors.
+     */
+    await testNativeMuxer_StcoConformance_ffmpeg();
+
+    /**
+     * ===============================================================
+     * PASS 5 — END-TO-END FILE ASSEMBLY (CONFORMANCE)
+     * ===============================================================
+     *
+     * This is the first test that validates NativeMuxer as a complete compiler.
+     *
+     * It asserts that:
+     *   - semantic samples extracted from a real MP4
+     *   - when passed through all NativeMuxer passes
+     *   - produce a byte-for-byte identical MP4 file
+     *
+     * This test:
+     *   - spans all architectural passes
+     *   - allows no mocking
+     *   - allows no injected layout assumptions
+     *
+     * A failure here indicates a boundary violation between passes,
+     * not a local box error.
+     *
+     * This test MUST remain below all Pass 1–4 tests.
+     */
+     await testNativeMuxer_EndToEnd_Conformance_ffmpeg();
+
+     await test_NativeMuxer_Linker_EmitsResolvedMp4();
+
+     await test_SourceClient_WebCodecs_ProducesMp4BuildInput();
+     await test_SourceClient_GoldenMp4_ProducesMp4BuildInput();
+
+     await test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical();
+
+     await test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic();
+
 
    // `return` cursor, we move these down through this function
    // as we implement each box builder, this tracks our progress
@@ -723,97 +1244,204 @@ async function runUnitTests() {
    // Phase c - todo 
    return
 
+    /**
+     * ===============================================================
+     * NATIVE MUXER — ASSEMBLY & POLICY (IMPLEMENTED / PARTIAL) 
+     * (POLICY COMPLETE, ASSEMBLY PARTIAL)
+     * ===============================================================
+     *
+     * This section defines the **current, authoritative architecture**
+     * for NativeMuxer assembly and policy.
+     *
+     * It reflects the system *as it exists today*, not historical
+     * experiments or deprecated abstractions.
+     *
+     * ---------------------------------------------------------------
+     * ARCHITECTURAL CORRECTION (IMPORTANT)
+     * ---------------------------------------------------------------
+     *
+     * NativeMuxer does NOT have a standalone “chunk layout policy”
+     * that returns MP4 table shapes (e.g. STSC fields).
+     *
+     * That model has been deliberately removed.
+     *
+     * Instead:
+     *
+     *   • Policies define **semantic grouping intent only**
+     *   • Chunk models are **derived from samples + policy**
+     *   • MP4 tables (STSC, STCO, etc.) are **derived from the chunk model**
+     *
+     * This preserves a strict separation between:
+     *
+     *   - policy decisions (meaning)
+     *   - derivation logic (meaning → structure)
+     *   - serialization (structure → bytes)
+     *
+     * ---------------------------------------------------------------
+     * CURRENTLY IMPLEMENTED
+     * ---------------------------------------------------------------
+     *
+     * 1. Sample Extraction (REFERENCE → MEANING)
+     *
+     *    Purpose:
+     *      - Read a real MP4 (e.g. ffmpeg output)
+     *      - Extract canonical semantic samples
+     *
+     *    Output contract:
+     *      {
+     *        bytes: Uint8Array,
+     *        timestamp: number,
+     *        duration: number,
+     *        isKey: boolean,
+     *        sampleDescriptionIndex: number
+     *      }
+     *
+     *    Guarantees:
+     *      - Full mdat coverage
+     *      - Byte-for-byte preservation
+     *      - No layout or policy assumptions
+     *
+     *    This is a HARD boundary.
+     *    All NativeMuxer logic consumes samples from this point onward.
+     *
+     *
+     * 2. Chunk Policies (SEMANTIC INTENT)
+     *
+     *    Location:
+     *      src/mux/native/policies/chunkPolicies.js
+     *
+     *    Purpose:
+     *      - Express *how samples should be grouped*
+     *
+     *    Examples:
+     *      - ONE_SAMPLE_PER_CHUNK
+     *      - ALL_SAMPLES_ONE_CHUNK
+     *
+     *    Non-responsibilities:
+     *      - No MP4 knowledge
+     *      - No table derivation
+     *      - No offsets
+     *      - No bytes
+     *
+     *    Policies describe **intent**, not structure.
+     *
+     *
+     * 3. Chunk Model Derivation (PASS 1 — MEANING → MEANING)
+     *
+     *    Function:
+     *      deriveChunkModel(samples, policy)
+     *
+     *    Purpose:
+     *      - Convert semantic samples into an abstract chunk model
+     *      - Apply grouping intent expressed by the policy
+     *
+     *    Output:
+     *      Chunk[]
+     *        {
+     *          samples: Sample[],
+     *          duration: number,
+     *          byteLength: number
+     *        }
+     *
+     *    Guarantees:
+     *      - Every sample appears exactly once
+     *      - No reordering
+     *      - No byte access beyond sample payloads
+     *
+     *    This is the **sole authority** on chunk boundaries.
+     *
+     *
+     * 4. Table Derivation (MEANING → STRUCTURE)
+     *
+     *    From:
+     *      - samples[]
+     *      - chunk model
+     *
+     *    Derive:
+     *      - STSC entries
+     *      - STTS entries
+     *      - STSZ sizes
+     *      - CTTS entries
+     *      - provisional STCO offsets
+     *
+     *    Characteristics:
+     *      - Pure
+     *      - Deterministic
+     *      - No serialization
+     *      - No physical layout assumptions
+     *
+     *
+     * 5. Adapters (STRUCTURE NORMALIZATION)
+     *
+     *    Purpose:
+     *      - Translate semantic derivation output into
+     *        strict emitter input contracts
+     *
+     *    Responsibilities:
+     *      - Validate constraints
+     *      - Enforce current limitations
+     *        (e.g. single-entry STSC)
+     *      - Fail early on unsupported shapes
+     *
+     *    Adapters prevent policy leakage into emitters.
+     *
+     *
+     * 6. Emitters (STRUCTURE → BYTES)
+     *
+     *    Emitters:
+     *      - Accept validated parameter objects only
+     *      - Perform no derivation
+     *      - Perform no policy decisions
+     *
+     *    Emitters are pure serializers.
+     *
+     *  7. Physical layout resolution
+     *
+     * ---------------------------------------------------------------
+     * NOT YET IMPLEMENTED (NEXT WORK)
+     * ---------------------------------------------------------------
+     *
+     * - Full NativeMuxer end-to-end assembly
+     *
+     * These steps MUST occur in this order.
+     *
+     * Any logic that:
+     *   - requires physical offsets
+     *   - depends on final box ordering
+     *   - inspects serialized byte positions
+     *
+     * does NOT belong in the current phase.
+     *
+     * ---------------------------------------------------------------
+     * SUMMARY
+     * ---------------------------------------------------------------
+     *
+     * Chunking is a **semantic decision**.
+     * STSC is a **derived artifact**.
+     * Emitters are **dumb and deterministic**.
+     *
+     * This structure is intentional.
+     * This boundary is enforced by tests.
+     */
 
-    // ===============================================================
-    // NATIVE MUXER — ASSEMBLY & POLICY (IMPLEMENTED / PARTIAL)
-    // ===============================================================
-    //
-    // The tests below belong to NativeMuxer assembly.
-    //
-    // They are intentionally placed beyond the return cursor because:
-    //   - they operate on semantic inputs, not MP4 boxes
-    //   - they define or validate policy decisions
-    //   - they do not serialize or parse MP4 structure
-    //
-    // These tests are NOT box tests.
-    // They are NOT conformance tests.
-    //
-    // They are part of the NativeMuxer execution pipeline.
-    //
-    // ---------------------------------------------------------------
-    // CURRENT IMPLEMENTATION STATUS
-    // ---------------------------------------------------------------
-    //
-    // IMPLEMENTED:
-    //
-    // 1. Sample Extraction (REFERENCE → MEANING)
-    //
-    //    File:
-    //      src/mux/native/tests/test_sample_extraction.js
-    //
-    //    Purpose:
-    //      - Extract semantic samples from a real MP4
-    //      - Produce canonical sample objects:
-    //          {
-    //            bytes,
-    //            decodeTime,
-    //            duration,
-    //            isKey
-    //          }
-    //
-    //    Guarantees:
-    //      - Full mdat coverage
-    //      - Byte-for-byte preservation
-    //      - No layout or policy assumptions
-    //
-    //    This is a HARD boundary.
-    //    All NativeMuxer tests consume samples from here onward.
-    //
-    //
-    // 2. Chunk Layout Policy (LOGICAL LAYOUT — PASS 1)
-    //
-    //    File:
-    //      src/mux/native/chunkLayoutPolicy.js
-    //
-    //    Tests:
-    //      - testChunkLayout_FramesmithSimple
-    //      - testChunkLayout_FfmpegCompatible
-    //
-    //    Purpose:
-    //      - Decide how samples are grouped into chunks
-    //      - Own chunking policy only
-    //
-    //    Explicit non-responsibilities:
-    //      - No box writing
-    //      - No offset computation
-    //      - No byte access
-    //
-    //    Output:
-    //      - Abstract chunking decisions
-    //      - Later compiled into STSC entries
-    //
-    //    NOTE:
-    //      These tests passed before NativeMuxer existed
-    //      because they were already architecturally pure.
-    //      Their placement here reflects their true role.
-    //
-    // ---------------------------------------------------------------
-    // NOT YET IMPLEMENTED (NEXT RESUME POINT)
-    // ---------------------------------------------------------------
-    //
-    // - Chunk model derivation from samples
-    // - mdat assembly from semantic samples
-    // - STTS / STSZ / STSS / STSC derivation from layout
-    // - STCO finalization after physical layout
-    // - Full NativeMuxer assembly tests
-    //
-    // This section exists so work can resume cleanly
-    // after interruptions or refactors.
-    //
-    // ===============================================================
 
-    await testChunkLayout_FramesmithSimple();
-    await testChunkLayout_FfmpegCompatible();
+    /**
+     * ===============================================================
+     * ARCHIVAL / PRE-COMPILER-ARCHITECTURE TESTS
+     * ===============================================================
+     *
+     * The tests below were written before NativeMuxer adopted
+     * a semantic-first, compiler-style architecture.
+     *
+     * They assume container-level equivalence as a primary goal.
+     *
+     * That assumption is no longer valid.
+     *
+     * These tests are retained temporarily for historical reference
+     * and will be removed once end-to-end NativeMuxer assembly tests
+     * are complete.
+     */
+
 
     // -----------------------------------------------------------------
     // CONTAINER CONFORMANCE — COMPOSED (PLANNED)

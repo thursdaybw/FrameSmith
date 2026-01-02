@@ -1,5 +1,6 @@
 import {
     extractBoxByPathFromMp4,
+    extractIlstItemByKeyFromMp4,
     findFourCC
 } from "./reference/BoxExtractor.js";
 
@@ -72,6 +73,41 @@ export async function testMeta_Inspection_ffmpeg() {
     console.log("meta child boxes:");
     for (const c of children) {
         console.log(`  - ${c.type} (${c.size} bytes)`);
+    }
+
+    // --- drill into known children explicitly ---
+
+    const hdlr = extractBoxByPathFromMp4(
+        mp4,
+        "moov/udta/meta/hdlr"
+    );
+
+    if (hdlr) {
+        console.log("meta > hdlr handler_type:",
+            readFourCC(hdlr, 16)
+        );
+    }
+
+    const ilst = extractBoxByPathFromMp4(
+        mp4,
+        "moov/udta/meta/ilst"
+    );
+
+    if (ilst) {
+
+        console.log("meta > ilst raw size:", ilst.length);
+
+        // Known ffmpeg default: ©too
+        const too = extractIlstItemByKeyFromMp4(
+            mp4,
+            "moov/udta/meta/ilst",
+            "©too"
+        );
+
+        if (too) {
+            console.log("meta > ilst item:", "©too", `(${too.length} bytes)`);
+        }
+
     }
 
     console.log("PASS: meta inspection completed");

@@ -23,7 +23,7 @@ export function assertEqualHex(name, actual, expected) {
 }
 
 export function assertExists(name, value) {
-    if (!value) {
+    if (value === undefined || value === null) {
         throw new Error(`FAIL: missing required ${name}`);
     }
 }
@@ -51,3 +51,14 @@ export function assertNoRawBytes(node, path = "root") {
     }
 }
 
+export function assertArrayEqual(label, actual, expected) {
+    assertEqual(`${label} (length)`, actual.length, expected.length);
+
+    for (let i = 0; i < expected.length; i++) {
+        assertEqual(
+            `${label}[${i}]`,
+            actual[i],
+            expected[i]
+        );
+    }
+}

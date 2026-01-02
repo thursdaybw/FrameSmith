@@ -1,5 +1,27 @@
-import { deriveStssSampleNumbers } from "../deriveStssSampleNumbers.js";
+import { deriveStssSampleNumbers } from "../derivers/deriveStssSampleNumbers.js";
 import { assertEqual } from "./assertions.js";
+
+/**
+ * STSS derivation semantics
+ * ========================
+ *
+ * The Sync Sample Box (`stss`) is OPTIONAL in MP4.
+ *
+ * Semantic rules:
+ *
+ *   - If samples include an `isKey` boolean:
+ *       → Keyframe semantics are known.
+ *       → `stss` MUST be derived from samples.
+ *
+ *   - If samples DO NOT include `isKey`:
+ *       → Keyframe semantics are unknown.
+ *       → `stss` MUST NOT be derived.
+ *
+ * In the latter case, the correct result is an EMPTY list,
+ * signalling to the assembler that no `stss` box should be emitted.
+ *
+ * This file tests BOTH cases explicitly.
+ */
 
 export function testNativeMuxer_DeriveStssSampleNumbers_Simple() {
 
@@ -25,5 +47,30 @@ export function testNativeMuxer_DeriveStssSampleNumbers_Simple() {
 
     console.log(
         "PASS: STSS derivation (sync sample numbers)"
+    );
+}
+
+export function testNativeMuxer_DeriveStssSampleNumbers_NoKeyInfo() {
+    console.log(
+        "=== testNativeMuxer_DeriveStssSampleNumbers_NoKeyInfo ==="
+    );
+
+    const samples = [
+        {}, // 1
+        {}, // 2
+        {}, // 3
+        {}, // 4
+    ];
+
+    const syncSamples = deriveStssSampleNumbers({ samples });
+
+    assertEqual(
+        "stss.count (no isKey present)",
+        syncSamples.length,
+        0
+    );
+
+    console.log(
+        "PASS: STSS derivation omitted when isKey is absent"
     );
 }
