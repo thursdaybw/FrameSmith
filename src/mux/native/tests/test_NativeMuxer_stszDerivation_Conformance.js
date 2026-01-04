@@ -1,4 +1,4 @@
-import { deriveStszSizesFromPayloads } from "../derivers/deriveStszSizesFromPayloads.js";
+import { adaptStszSizesFromPayloads } from "../adapters/adaptStszSizesFromPayloads.js";
 import { emitStszBox } from "../box-emitters/stszBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
@@ -31,7 +31,7 @@ export async function testNativeMuxer_DeriveStsz_Conformance_ffmpeg() {
     // Derive → emit
     // ---------------------------------------------------------
     const params =
-        deriveStszSizesFromPayloads({
+        adaptStszSizesFromPayloads({
             accessUnits,
             accessUnitPayloads
         });

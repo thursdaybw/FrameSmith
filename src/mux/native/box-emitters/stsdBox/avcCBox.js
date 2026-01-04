@@ -1,6 +1,11 @@
 /**
  * This box stores the AVCDecoderConfigurationRecord.
  *
+ * The avcC box is fundamentally different from most other MP4 boxes.
+ *
+ * avcC belongs to a small class of codec-owned configuration boxes (e.g. esds)
+ * that are opaque to the MP4 container.
+ *
  * AVC (Advanced Video Coding), also known as H.264, is a video compression
  * standard. It defines *how video frames are encoded*, but it does not define
  * how those frames are stored in a file.

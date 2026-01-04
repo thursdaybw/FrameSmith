@@ -77,14 +77,20 @@ export async function testElst_LockedLayoutEquivalence_ffmpeg() {
 
     const refElst = extractBoxByPathFromMp4(
         mp4,
-        "moov/trak/edts/elst"
+        "moov/trak/edts/elst",
+        {
+            trackType: "video"
+        }
     );
 
     assertExists("reference elst", refElst);
 
     const truth = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/edts/elst"
+        "moov/trak/edts/elst",
+        {
+            trackType: "video"
+        }
     );
 
     const input = truth.getBuilderInput();

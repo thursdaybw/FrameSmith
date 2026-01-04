@@ -1,3 +1,92 @@
+NativeMuxer is a deterministic MP4 compiler designed for workflows where media is assembled after all meaning is known. Instead of discovering structure from bytes as they arrive, NativeMuxer takes explicit semantic input (samples, timestamps, durations, codec configuration, and policy) and emits a standards-compliant MP4 file in a single, deliberate pass. The result is byte-accurate, reproducible output with no hidden inference, no incremental patching, and no container drift.
+
+This architecture makes NativeMuxer particularly well suited to offline, non-linear media workflows such as browser-based editing, automated video assembly, retiming, and remuxing without re-encoding. Encoding cost scales with codec and resolution as expected, while muxing cost remains trivial even for long durations. NativeMuxer does not aim to be clever or adaptive — it aims to be correct, explicit, and boring in the best possible way. That is what makes higher-level systems safe to build on top of it.
+
+---
+
+## Why MP4 Exists (and Why a Compiler Exists at All)
+
+This project exists because MP4 is not “the video”.
+
+MP4 is a **delivery contract**, not a media primitive.
+
+The actual video is:
+
+* encoded access units (NAL units)
+* codec configuration (e.g. `avcC`)
+* timing information
+
+That data alone is sufficient to decode and render video. In the browser, WebCodecs proves this directly: extract the access units, configure the decoder, provide timestamps, and you have playback.
+
+So why MP4?
+
+Because playback is not the hard problem. **Interchange is.**
+
+---
+
+## MP4 as a Compiled Artifact
+
+MP4 exists to solve problems that only appear once media leaves memory:
+
+* random access and seeking
+* synchronization across tracks
+* persistence across tools
+* deterministic playback in dumb players
+* partial reads, streaming, recovery
+
+MP4 is a **compiled representation of media semantics**, not the media itself.
+
+Just as JavaScript is not your application but a compiled artifact that browsers can execute, MP4 is a compiled artifact that media players can execute.
+
+This makes MP4 a *compiler target*, not a format in the casual sense.
+
+---
+
+## Why This Project Is a Compiler
+
+Most tools treat MP4 as a side effect of encoding. They guess. They infer. They tolerate ambiguity.
+
+This project does not.
+
+This compiler:
+
+* takes explicit semantic input
+* normalizes timing
+* enforces invariants
+* emits a deterministic MP4 layout
+
+Nothing is inferred. Nothing is guessed. Every box exists because it has semantic justification.
+
+That is why this is a compiler.
+
+---
+
+## Why Other Containers Exist (Briefly)
+
+Other containers answer the same question with different tradeoffs:
+
+* **MKV** prioritizes flexibility and extensibility
+* **WebM** optimizes for web streaming constraints
+* **MP4** optimizes for broad interoperability and tooling inertia
+
+This project focuses on MP4 because:
+
+* it is the lingua franca of media interchange
+* it is the most constrained
+* it is the hardest to emit correctly without guessing
+
+If you can compile MP4 honestly, you understand container formats at their core.
+
+---
+
+## The Key Insight
+
+MP4 is not required to *play* video.
+
+MP4 is required to **ship** video.
+
+This compiler exists to make that boundary explicit.
+
 ## NativeMuxer: Scope and Use Cases
 
 ### What NativeMuxer Is
@@ -38,6 +127,14 @@ Its inputs are:
 NativeMuxer does not care where these inputs originate.
 
 ---
+
+#### Codec Payload Requirements
+
+NativeMuxer expects codec payloads to be formatted for MP4 containers.
+For H.264 (AVC), this means length-prefixed NAL units as defined by ISO/IEC 14496-15.
+
+Raw Annex B payloads (start-code delimited) are not currently accepted and must be converted prior to muxing.
+Support for Annex B input is planned as an explicit adapter in a future release.
 
 ## Supported and Intended Use Cases
 
@@ -143,6 +240,118 @@ NativeMuxer can serve as:
 
 ---
 
+### WebCodecs Configuration (AVC / H.264)
+
+NativeMuxer does not perform codec reformatting.
+It expects encoder output to already be compatible with MP4 containers.
+
+For H.264 (AVC), this means **length-prefixed NAL units** as defined by ISO/IEC 14496-15.
+
+WebCodecs can emit AVC in two different formats depending on configuration. Only one of them is compatible with NativeMuxer.
+
+---
+
+#### ✔ Correct: MP4-compatible AVC output
+
+Do **not** specify an AVC format when configuring the encoder.
+
+```js
+const encoder = new VideoEncoder({
+    output(chunk, meta) {
+        // chunk contains MP4-compatible AVC payload
+        // meta.decoderConfig.description contains a valid avcC
+    },
+    error(e) {
+        throw e;
+    }
+});
+
+encoder.configure({
+    codec: "avc1.4D401F", // Main Profile, Level 3.1 (example)
+    width: 1280,
+    height: 720,
+    bitrate: 500_000,
+    framerate: 60
+});
+```
+
+**Behavior:**
+
+* Encoded chunks contain **length-prefixed NAL units**
+* Payloads can be written directly into `mdat`
+* `decoderConfig.description` maps cleanly to the `avcC` box
+* Fully compatible with NativeMuxer
+
+This is the **recommended configuration** when exporting MP4.
+
+---
+
+#### ✖ Incorrect: Annex B AVC output (not MP4-ready)
+
+Explicitly requesting Annex B produces payloads that are **not compatible** with MP4 containers.
+
+```js
+const encoder = new VideoEncoder({
+    output(chunk, meta) {
+        // chunk contains Annex B start codes (00 00 00 01)
+    },
+    error(e) {
+        throw e;
+    }
+});
+
+encoder.configure({
+    codec: "avc1.4D401F",
+    width: 1280,
+    height: 720,
+    bitrate: 500_000,
+    framerate: 60,
+    avc: {
+        format: "annexb"
+    }
+});
+```
+
+**Behavior:**
+
+* Encoded chunks contain **start-code-delimited NAL units**
+* Payloads are **not MP4-compatible**
+* Writing these bytes directly into `mdat` produces invalid MP4 files
+* A conversion step is required before muxing
+
+Annex B is commonly used for:
+
+* transport streams
+* raw `.h264` files
+* streaming pipelines
+
+It is **not accepted by NativeMuxer** without explicit preprocessing.
+
+---
+
+#### Design rationale
+
+NativeMuxer is a **container compiler**, not a codec fixer.
+
+It does not:
+
+* guess payload formats
+* rewrite codec data implicitly
+* hide format mismatches
+
+Codec payload adaptation is treated as a **separate, explicit responsibility**.
+
+---
+
+#### Roadmap
+
+Support for Annex B input is planned as a dedicated adapter:
+
+> **Annex B → MP4 AVC adapter**
+> Converts start-code-delimited H.264 payloads into length-prefixed MP4-compatible samples prior to muxing.
+
+---
+
 ### Platform Scope and Portability
 
 NativeMuxer is browser-native, but not browser-bound.
@@ -188,6 +397,9 @@ NativeMuxer avoids the three classic MP4 failure modes:
 3. Undebuggable byte diffs
 
 What emerges is not just correctness, but **leverage**.
+
+These properties are not theoretical; they have been validated with
+multi-hour, high-resolution WebCodecs-driven exports.
 
 ---
 
@@ -246,7 +458,8 @@ O(n) over mdat size
 
 Bound almost entirely by memory bandwidth.
 
-For videos up to hours long, muxing time is typically **milliseconds to seconds**, not minutes.
+For videos up to hours long, muxing time is typically milliseconds, with total export
+time dominated entirely by encoding.
 
 ### The Key Architectural Difference
 
@@ -257,6 +470,48 @@ Traditional tools tie muxing to *media arrival*.
 NativeMuxer ties muxing to **semantic completeness**.
 
 That single decision is what makes non-linear, deterministic, and fast exports possible.
+
+---
+
+## Offline Export at Scale (What This Enables in Practice)
+
+NativeMuxer’s architecture enables a workflow that is difficult or fragile in
+traditional browser-based media tooling: **offline, non-streaming export of
+long-duration, high-resolution video**.
+
+Because encoding and muxing are fully decoupled:
+
+* Encoding cost scales with resolution, bitrate, and codec complexity
+* Muxing cost remains near-constant regardless of duration
+* Container correctness does not degrade over time
+* Export does not require real-time constraints
+
+In practice, this means:
+
+* Hour-scale videos can be assembled reliably in-browser
+* High-resolution exports (e.g. 1080p and above) are feasible
+* Long timelines do not introduce timing drift or container instability
+* Export behaves like a compilation step, not a live process
+
+This is **not** a streaming pipeline.
+It is an offline media compiler.
+
+This distinction is critical.
+
+Most browser media APIs are optimized for:
+* recording
+* live playback
+* real-time constraints
+
+NativeMuxer is optimized for:
+* completeness
+* determinism
+* non-linear assembly
+* post-hoc export
+
+This makes it suitable as a foundation for browser-based
+non-linear editors, automated editing systems, and media transformation tools
+that need correctness and scalability rather than real-time guarantees.
 
 ---
 

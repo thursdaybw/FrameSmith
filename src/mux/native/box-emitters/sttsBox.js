@@ -1,7 +1,8 @@
 /**
  * STTS — Decoding Time To Sample Box
  * ---------------------------------
- * This box defines how long each media sample lasts in decoding time.
+ *
+ * This box defines how long each media sample lasts in *decoding time*.
  *
  * Conceptually, STTS is a run-length encoded table:
  *
@@ -15,96 +16,140 @@
  * - It does NOT care about frame reordering or B-frames.
  * - It does NOT encode timestamps directly.
  *
- * Framesmith simplification:
- * --------------------------
- * Framesmith emits a *constant-frame-rate* video stream with:
- * - no B-frames
- * - fixed duration per sample
+ * NativeMuxer semantics:
+ * ----------------------
  *
- * Therefore, STTS always contains exactly one entry:
+ * NativeMuxer derives STTS entries directly from semantic sample durations.
  *
- *   entry_count  = 1
- *   sample_count = total number of samples
- *   sample_delta = duration of each sample (in timescale ticks)
+ * This means:
+ * - Constant-duration input produces a single STTS entry
+ * - Variable-duration input produces multiple STTS entries
  *
- * This is valid MP4 and matches ffmpeg output for CFR video.
+ * No averaging, quantization, or policy is applied here.
  *
- * Structure:
- * ----------
- *   entry_count   (uint32)
- *   sample_count  (uint32)
- *   sample_delta  (uint32)
+ * This emitter is a *pure serializer*.
+ * It assumes all grouping and validation has already occurred upstream.
+ *
+ * Structure (version 0):
+ * ---------------------
+ *
+ *   entry_count (uint32)
+ *   for each entry:
+ *     sample_count (uint32)
+ *     sample_delta (uint32)
  *
  * This is a FullBox:
  * - version = 0
  * - flags   = 0
  *
- * @param {number} sampleCount
- *   Total number of samples in the track.
+ * @param {Object} params
+ * @param {Array<{ sampleCount: number, sampleDelta: number }>} params.entries
+ *   Run-length encoded decoding-time entries.
  *
- * @param {number} sampleDuration
- *   Duration of each sample, expressed in the media timescale.
+ *   Each entry means:
+ *     “For the next sampleCount samples,
+ *      each sample has duration sampleDelta
+ *      expressed in media timescale units.”
  */
-export function emitSttsBox({ sampleCount, sampleDuration }) {
-
-    if (typeof sampleCount === "undefined" ||
-        typeof sampleDuration === "undefined") {
-        throw new Error(
-            "emitSttsBox: expected parameter object { sampleCount, sampleDuration }"
-        );
-    }
+export function emitSttsBox({ entries }) {
 
     // ---------------------------------------------------------------------
     // Defensive validation — Category B (shape + sanity only)
     // ---------------------------------------------------------------------
+    //
+    // Semantic correctness (grouping, totals, ordering) is enforced upstream.
+    // The emitter validates only that it can serialize safely.
+    //
 
-    if (!Number.isInteger(sampleCount) || sampleCount < 0) {
+    if (!Array.isArray(entries)) {
         throw new Error(
-            "emitSttsBox: sampleCount must be a non-negative integer"
+            "emitSttsBox: expected parameter object { entries }"
         );
     }
 
-    if (!Number.isInteger(sampleDuration) || sampleDuration < 0) {
-        throw new Error(
-            "emitSttsBox: sampleDuration must be a non-negative integer"
-        );
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+
+        if (!Number.isInteger(entry.sampleCount) || entry.sampleCount < 0) {
+            throw new Error(
+                "emitSttsBox: sampleCount must be a non-negative integer"
+            );
+        }
+
+        if (!Number.isInteger(entry.sampleDelta) || entry.sampleDelta < 0) {
+            throw new Error(
+                "emitSttsBox: sampleDelta must be a non-negative integer"
+            );
+        }
     }
+
+    // ---------------------------------------------------------------------
+    // STTS box body construction
+    // ---------------------------------------------------------------------
+    //
+    // We build the body explicitly, in order, to make the
+    // run-length encoding structure obvious and auditable.
+    //
+
+    const body = [];
+
+    /**
+     * entry_count (uint32)
+     * --------------------
+     * Number of (sample_count, sample_delta) entries.
+     *
+     * Constant-duration streams produce:
+     *   entry_count = 1
+     *
+     * Variable-duration streams produce:
+     *   entry_count > 1
+     */
+    body.push({ int: entries.length });
+
+    /**
+     * entries (sample_count, sample_delta) pairs
+     * -------------------------------------------
+     *
+     * Each pair describes a run of samples with
+     * identical decoding duration.
+     *
+     * The sum of all sample_count values MUST equal
+     * the total number of samples in the track.
+     *
+     * This invariant is guaranteed by the adapter.
+     */
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+
+        /**
+         * sample_count (uint32)
+         * ---------------------
+         * Number of consecutive samples sharing
+         * the same decoding duration.
+         */
+        body.push({
+            int: entry.sampleCount
+        });
+
+        /**
+         * sample_delta (uint32)
+         * ---------------------
+         * Decoding duration of each sample in this run,
+         * expressed in media timescale units.
+         */
+        body.push({
+            int: entry.sampleDelta
+        });
+    }
+
+    // ---------------------------------------------------------------------
+    // STTS box node
+    // ---------------------------------------------------------------------
 
     return {
         type: "stts",
         version: 0,
         flags: 0,
-
-        body: [
-            /**
-             * entry_count (uint32)
-             * --------------------
-             * Number of (sample_count, sample_delta) entries.
-             *
-             * Framesmith emits a single entry because all samples
-             * have the same duration.
-             */
-            { int: 1 },
-
-            /**
-             * sample_count (uint32)
-             * ---------------------
-             * Number of consecutive samples that share the same duration.
-             *
-             * In Framesmith, this is the total number of samples.
-             */
-            { int: sampleCount },
-
-            /**
-             * sample_delta (uint32)
-             * ---------------------
-             * Duration of each sample, expressed in timescale ticks.
-             *
-             * Example:
-             *   timescale = 90000
-             *   sample_delta = 3000  → 30 fps
-             */
-            { int: sampleDuration }
-        ]
+        body
     };
 }

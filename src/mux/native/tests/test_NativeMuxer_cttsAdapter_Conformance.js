@@ -34,7 +34,10 @@ export async function testNativeMuxer_CttsAdapter_Conformance_ffmpeg() {
     // debug
     const refParsed = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/ctts"
+        "moov/trak/mdia/minf/stbl/ctts",
+        {
+            trackType: "video"
+        }
     );
 
     const refFields = refParsed.readFields();
@@ -57,7 +60,10 @@ export async function testNativeMuxer_CttsAdapter_Conformance_ffmpeg() {
     // ---------------------------------------------------------
     const refBytes = extractBoxByPathFromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/ctts"
+        "moov/trak/mdia/minf/stbl/ctts",
+        {
+            trackType: "video"
+        }
     );
 
     for (let i = 0; i < refBytes.length; i++) {

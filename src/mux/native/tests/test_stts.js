@@ -12,9 +12,14 @@ export async function testStts_Structure() {
     const count = 47;
 
     const node = emitSttsBox({
-        sampleCount: count,
-        sampleDuration: delta
+        entries: [
+            {
+                sampleCount: count,
+                sampleDelta: delta
+            }
+        ]
     });
+
     const stts = serializeBoxTree(node);
 
     // ---------------------------------------------------------
@@ -97,7 +102,8 @@ export async function testStts_Conformance() {
     // -------------------------------------------------------------
     const ref = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stts"
+        "moov/trak/mdia/minf/stbl/stts",
+        { trackType: "video" }
     );
 
     const refFields = ref.readFields();
@@ -115,7 +121,8 @@ export async function testStts_Conformance() {
     // -------------------------------------------------------------
     const out = getGoldenTruthBox.fromBox(
         outSttsBytes,
-        "moov/trak/mdia/minf/stbl/stts"
+        "moov/trak/mdia/minf/stbl/stts",
+        { trackType: "video" }
     ).readFields();
 
     // -------------------------------------------------------------

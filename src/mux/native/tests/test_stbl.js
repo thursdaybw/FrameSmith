@@ -9,7 +9,7 @@ import { emitStscBox } from "../box-emitters/stscBox.js";
 import { emitStszBox } from "../box-emitters/stszBox.js";
 import { emitStcoBox } from "../box-emitters/stcoBox.js";
 
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 
 import {
     extractBoxByPathFromMp4,
@@ -80,6 +80,57 @@ export async function testStbl_Structure() {
     console.log("PASS: STBL structural correctness");
 }
 
+export async function testStbl_GoldenTruthExtractor_Structure_Audio() {
+
+    console.log("=== testStbl_GoldenTruthExtractor_Structure_Audio ===");
+
+    // ---------------------------------------------------------
+    // 1. Load AUDIO oracle MP4
+    // ---------------------------------------------------------
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // ---------------------------------------------------------
+    // 2. Extract STBL via golden truth extractor
+    // ---------------------------------------------------------
+    const truth = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/mdia/minf/stbl",
+        { trackType: "audio" }
+    );
+
+    assertExists("golden truth STBL (audio)", truth);
+
+    // ---------------------------------------------------------
+    // 3. Structural traversal must succeed
+    // ---------------------------------------------------------
+    const fields = truth.readFields();
+    const params = truth.getBuilderInput();
+
+    assertExists("stbl.raw", fields.raw);
+
+    // ---------------------------------------------------------
+    // 4. Required STBL children (audio) — STRUCTURAL ONLY
+    // ---------------------------------------------------------
+    assertExists("stsd (key present)", "stsd" in params);
+    assertExists("stts (key present)", "stts" in params);
+    assertExists("stsc (key present)", "stsc" in params);
+    assertExists("stsz (key present)", "stsz" in params);
+    assertExists("stco (key present)", "stco" in params);
+
+    // ---------------------------------------------------------
+    // 5. Audio-specific children
+    // ---------------------------------------------------------
+    assertExists("sbgp (key present)", "sbgp" in params);
+
+    // sgpd intentionally not rebuilt yet, but traversal must not explode
+    // Presence is optional at this stage
+
+    console.log(
+        "PASS: STBL golden truth extractor structurally valid for audio"
+    );
+}
+
 export async function testStbl_LockedLayoutEquivalence_ffmpeg() {
 
     console.log("=== testStbl_LockedLayoutEquivalence_ffmpeg ===");
@@ -95,7 +146,8 @@ export async function testStbl_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const refStbl = extractBoxByPathFromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl"
+        "moov/trak/mdia/minf/stbl",
+        { trackType: "video" }
     );
 
     assertExists("reference STBL", refStbl);
@@ -105,7 +157,8 @@ export async function testStbl_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const truth = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl"
+        "moov/trak/mdia/minf/stbl",
+        { trackType: "video" }
     );
 
     const refFields = truth.readFields();
@@ -121,8 +174,8 @@ export async function testStbl_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     // 5. Child-level byte-for-byte equivalence
     // ---------------------------------------------------------
-    const refContainer = asContainer(refStbl);
-    const outContainer = asContainer(out);
+    const refContainer = asIsoBoxContainer(refStbl);
+    const outContainer = asIsoBoxContainer(out);
 
     const refMeta = refContainer.enumerateChildren();
 
@@ -156,6 +209,89 @@ export async function testStbl_LockedLayoutEquivalence_ffmpeg() {
     }
 
     console.log("PASS: STBL matches ffmpeg byte-for-byte");
+}
+
+export async function testStbl_LockedLayoutEquivalence_ffmpeg_Audio() {
+
+    console.log("=== testStbl_LockedLayoutEquivalence_ffmpeg_Audio ===");
+
+    console.warn(
+        "SKIP: STBL audio locked-layout equivalence requires mp4a STSD support"
+    );
+    return;
+
+    // ---------------------------------------------------------
+    // 1. Load AUDIO oracle MP4
+    // ---------------------------------------------------------
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // ---------------------------------------------------------
+    // 2. Extract reference STBL (audio track)
+    // ---------------------------------------------------------
+    const refStbl = getGoldenTruthBox
+        .fromMp4(
+            mp4,
+            "moov/trak/mdia/minf/stbl",
+            { trackType: "audio" }
+        )
+        .readFields()
+        .raw;
+
+    assertExists("reference STBL (audio)", refStbl);
+
+    // ---------------------------------------------------------
+    // 3. Read golden truth STBL build params
+    // ---------------------------------------------------------
+    const truth = getGoldenTruthBox.fromMp4(
+        mp4,
+        "moov/trak/mdia/minf/stbl",
+        { trackType: "audio" }
+    );
+
+    const params = truth.getBuilderInput();
+
+    // ---------------------------------------------------------
+    // 4. Rebuild STBL from golden truth
+    // ---------------------------------------------------------
+    const out = serializeBoxTree(
+        emitStblBox(params)
+    );
+
+    // ---------------------------------------------------------
+    // 5. Child-level byte-for-byte equivalence
+    // ---------------------------------------------------------
+    const refContainer = asIsoBoxContainer(refStbl);
+    const outContainer = asIsoBoxContainer(out);
+
+    const refChildren = refContainer.enumerateChildren();
+
+    for (const { type } of refChildren) {
+
+        const refChildBytes =
+            extractChildBoxFromContainer(refStbl, type);
+
+        const outChildBytes =
+            extractChildBoxFromContainer(out, type);
+
+        assertEqual(
+            `stbl.${type}.size`,
+            outChildBytes.length,
+            refChildBytes.length
+        );
+
+        for (let i = 0; i < refChildBytes.length; i++) {
+            assertEqualHex(
+                `stbl.${type}.byte[${i}]`,
+                outChildBytes[i],
+                refChildBytes[i]
+            );
+        }
+    }
+
+    console.log(
+        "PASS: STBL (audio) matches ffmpeg byte-for-byte"
+    );
 }
 
 /**

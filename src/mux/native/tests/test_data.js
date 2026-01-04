@@ -277,7 +277,7 @@ function extractFirstIlstItem(ilstBytes) {
 
 /**
  * Extracts a child MP4 box from a raw box payload
- * without using asContainer.
+ * without using asIsoBoxContainer.
  *
  * Used for ilst item atoms only.
  */

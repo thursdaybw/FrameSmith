@@ -4,18 +4,15 @@
  *
  * Purpose
  * -------
- * Collapse semantic sample durations into the *restricted*
- * STTS emitter contract.
- *
- * Supported shape (current):
- * - Constant sample duration
- * - Single STTS entry
+ * Collapse semantic sample durations into STTS run-length entries.
  *
  * This adapter:
  * - derives meaning
- * - enforces constraints
+ * - preserves real-world timing variance
+ * - performs no policy decisions
  * - does NOT emit bytes
- * - does NOT infer policy
+ *
+ * Output shape matches STTS semantics directly.
  */
 export function adaptSttsFromSamples({ samples }) {
     if (!Array.isArray(samples)) {
@@ -25,30 +22,46 @@ export function adaptSttsFromSamples({ samples }) {
     }
 
     if (samples.length === 0) {
-        return {
-            sampleCount: 0,
-            sampleDuration: 0
-        };
+        return { entries: [] };
     }
 
-    const firstDuration = samples[0].duration;
+    const entries = [];
 
-    if (!Number.isInteger(firstDuration) || firstDuration < 0) {
+    let currentDelta = samples[0].duration;
+    let currentCount = 1;
+
+    if (!Number.isInteger(currentDelta) || currentDelta < 0) {
         throw new Error(
             "adaptSttsFromSamples: invalid sample duration"
         );
     }
 
     for (let i = 1; i < samples.length; i++) {
-        if (samples[i].duration !== firstDuration) {
+        const delta = samples[i].duration;
+
+        if (!Number.isInteger(delta) || delta < 0) {
             throw new Error(
-                "adaptSttsFromSamples: variable-duration samples are not supported by the STTS emitter"
+                "adaptSttsFromSamples: invalid sample duration"
             );
+        }
+
+        if (delta === currentDelta) {
+            currentCount++;
+        } else {
+            entries.push({
+                sampleCount: currentCount,
+                sampleDelta: currentDelta
+            });
+
+            currentDelta = delta;
+            currentCount = 1;
         }
     }
 
-    return {
-        sampleCount: samples.length,
-        sampleDuration: firstDuration
-    };
+    entries.push({
+        sampleCount: currentCount,
+        sampleDelta: currentDelta
+    });
+
+    return { entries };
 }

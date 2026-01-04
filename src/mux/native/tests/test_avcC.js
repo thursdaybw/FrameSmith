@@ -10,6 +10,9 @@ import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
  *
  * The avcC box is fundamentally different from most other MP4 boxes.
  *
+ * avcC belongs to a small class of codec-owned configuration boxes (e.g. esds)
+ * that are opaque to the MP4 container.
+ *
  * It is NOT a table.
  * It is NOT derived from samples.
  * It is NOT interpreted by the muxer.
@@ -239,7 +242,10 @@ export async function testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg() {
     const truth = getGoldenTruthBox.fromMp4(
         mp4,
         "moov/trak/mdia/minf/stbl/stsd",
-        { sampleEntry: "avc1" }
+        {
+            sampleEntry: "avc1",
+            trackType: "video"
+        }
     );
 
     const refFields = truth.readFields();

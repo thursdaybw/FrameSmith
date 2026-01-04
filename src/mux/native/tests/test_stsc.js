@@ -103,7 +103,8 @@ export async function testStsc_Conformance() {
     // -------------------------------------------------------------
     const ref = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stsc"
+        "moov/trak/mdia/minf/stbl/stsc",
+        { trackType: "video" }
     );
 
     const refFields = ref.readFields();

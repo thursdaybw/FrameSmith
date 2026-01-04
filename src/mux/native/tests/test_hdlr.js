@@ -71,7 +71,8 @@ export async function testHdlr_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const truth = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/hdlr"
+        "moov/trak/mdia/hdlr",
+        { trackType: "video" }
     );
 
     const refFields = truth.readFields();

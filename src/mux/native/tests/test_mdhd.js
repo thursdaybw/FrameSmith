@@ -131,7 +131,8 @@ export async function testMdhd_Conformance() {
     // -------------------------------------------------------------
     const ref = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/mdhd"
+        "moov/trak/mdia/mdhd",
+        { trackType: "video" }
     );
 
     const refFields = ref.readFields();
@@ -149,7 +150,8 @@ export async function testMdhd_Conformance() {
     // -------------------------------------------------------------
     const outFields = getGoldenTruthBox.fromBox(
         outBytes,
-        "moov/trak/mdia/mdhd"
+        "moov/trak/mdia/mdhd",
+        { trackType: "video" }
     ).readFields();
 
     // -------------------------------------------------------------

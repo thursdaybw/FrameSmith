@@ -109,9 +109,13 @@
  *     - byte-for-byte match against ffmpeg
  *       when all layout decisions are injected
  *
+ *
  * This separation keeps tests honest and localized.
+ * NOTE: params may include raw leaf boxes (e.g. sbgp) that are spliced
+ * directly into STBL without semantic rebuilding.
  */
 export function emitStblBox(children) {
+
     // ---------------------------------------------------------
     // Contract validation
     // ---------------------------------------------------------

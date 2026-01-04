@@ -34,7 +34,10 @@ export async function test_avcC_policy_locked_layout_container_complete() {
     const truth = getGoldenTruthBox.fromMp4(
         mp4,
         "moov/trak/mdia/minf/stbl/stsd",
-        { sampleEntry: "avc1" }
+        {
+            sampleEntry: "avc1",
+            trackType: "video"
+        }
     );
 
     const oracleParams = truth.getBuilderInput();
@@ -75,7 +78,10 @@ export async function test_avcC_policy_locked_layout_semantic_high_profile() {
     const truth = getGoldenTruthBox.fromMp4(
         mp4,
         "moov/trak/mdia/minf/stbl/stsd",
-        { sampleEntry: "avc1" }
+        {
+            sampleEntry: "avc1",
+            trackType: "video"
+        }
     );
 
     const oracleParams = truth.getBuilderInput();

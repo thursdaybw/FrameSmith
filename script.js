@@ -20,19 +20,30 @@ import { Mp4BoxMuxer} from "./src/mux/Mp4BoxMuxer.js";
 
 document.addEventListener("DOMContentLoaded", () => {
 
-  const renderPlan = createRenderPlan();
-  const exportBtn = document.getElementById("export");
+    const renderPlan = createRenderPlan();
 
-  const logoImg = new Image();
-  logoImg.src = "./logo.png"; // replace with your file
+    const logoImg = new Image();
+    logoImg.src = "./logo.png";
 
-  const video = document.getElementById("v");
-  const canvas = document.getElementById("c");
-  const context = canvas.getContext("2d");
+    /* ADD THIS BLOCK HERE — ONCE */
+    const LOGO_X = 0.03;   // 3% from left
+    const LOGO_Y = 0.03;   // 3% from top
+    const LOGO_W = 0.30;   // 30% of frame width
+    const LOGO_H = null;   // TEMP — square logo
 
-  // captions hard-coded temporary
-  // TEMPORARY: synthetic caption list (until Whisper import)
-      /*
+    renderPlan.elements.push(
+        createImageNode(logoImg, LOGO_X, LOGO_Y, LOGO_W, LOGO_H)
+    );
+
+    const exportBtn = document.getElementById("export");
+
+    const video = document.getElementById("v");
+    const canvas = document.getElementById("c");
+    const context = canvas.getContext("2d");
+
+    // captions hard-coded temporary
+    // TEMPORARY: synthetic caption list (until Whisper import)
+    /*
   const captions = [
     {
       start: 0.0,
@@ -78,7 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ]
       }
   ];    
-*/
+  */
 
     const captions = [
         {
@@ -106,63 +117,63 @@ document.addEventListener("DOMContentLoaded", () => {
     ];
 
 
-  document.getElementById("run").onclick = async () => {
-    await video.play().catch(console.error);
+    document.getElementById("run").onclick = async () => {
+        await video.play().catch(console.error);
 
-    await new Promise(resolve => {
-      if (video.readyState >= 1) return resolve();
-      video.onloadedmetadata = resolve;
-    });
+        await new Promise(resolve => {
+            if (video.readyState >= 1) return resolve();
+            video.onloadedmetadata = resolve;
+        });
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
 
-    // Now that video metadata is loaded, scale the logo correctly
-    const targetWidth = canvas.width * 0.30;  // 30% of video width
-    const aspect = logoImg.naturalHeight / logoImg.naturalWidth;
-    const targetHeight = targetWidth * aspect;
+        // Now that video metadata is loaded, scale the logo correctly
+        const targetWidth = canvas.width * 0.30;  // 30% of video width
+        const aspect = logoImg.naturalHeight / logoImg.naturalWidth;
+        const targetHeight = targetWidth * aspect;
 
-    renderPlan.elements.push(
-      createImageNode(logoImg, 20, 20, targetWidth, targetHeight)
-    );
+        console.log(
+            "PREVIEW renderPlan elements AFTER logo push:",
+            renderPlan.elements
+        );
 
+        const track = video.captureStream().getVideoTracks()[0];
+        const processor = new MediaStreamTrackProcessor({ track });
+        const reader = processor.readable.getReader();
 
-    const track = video.captureStream().getVideoTracks()[0];
-    const processor = new MediaStreamTrackProcessor({ track });
-    const reader = processor.readable.getReader();
+        // Audio track setup for export
+        const audioTrack = video.captureStream().getAudioTracks()[0];
+        if (audioTrack) {
+            console.log("audioTrack:", audioTrack);
+            console.log("audio settings:", audioTrack.getSettings());
+            console.log("audio constraints:", audioTrack.getConstraints());
+        }
 
-    // Audio track setup for export
-    const audioTrack = video.captureStream().getAudioTracks()[0];
-    if (audioTrack) {
-        console.log("audioTrack:", audioTrack);
-        console.log("audio settings:", audioTrack.getSettings());
-        console.log("audio constraints:", audioTrack.getConstraints());
-    }
+        async function playbackRenderLoop() {
+            const { value: frame, done } = await reader.read();
+            if (done || !frame) return;
 
-      async function playbackRenderLoop() {
-          const { value: frame, done } = await reader.read();
-          if (done || !frame) return;
+            // Compose full frame (video + overlays + captions)
+            renderFrame({
+                videoFrame: frame,
+                renderPlan,
+                captions,
+                context,
+                canvas,
+                t: video.currentTime
+            });
 
-          // Compose full frame (video + overlays + captions)
-          renderFrame({
-              videoFrame: frame,
-              renderPlan,
-              captions,
-              context,
-              canvas,
-              t: video.currentTime
-          });
+            // Encode the composed frame
+            const timestamp = Math.floor(video.currentTime * 1_000_000); // microseconds
 
-          // Encode the composed frame
-          const timestamp = Math.floor(video.currentTime * 1_000_000); // microseconds
+            frame.close();
 
-          frame.close();
+            requestAnimationFrame(playbackRenderLoop);
+        }
 
-          requestAnimationFrame(playbackRenderLoop);
-      }
-
-    playbackRenderLoop();
-  };
+        playbackRenderLoop();
+    };
 
     // -------------------------------------------------------------
     // EXPORT BUTTON — lazy initialization of ExportEngine
@@ -183,9 +194,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Create muxer (NEW)
         const muxer = new Mp4BoxMuxer({
-            videoTrackInfo: demuxer.getVideoTrackInfo(),
-            audioTrackInfo: demuxer.getAudioTrackInfo()
+            tracks: [] // TEMP: legacy mp4box path disabled
         });
+
+        console.log(
+            "SCRIPT before ExportEngine, renderPlan elements:",
+            renderPlan.elements
+        );
 
         // Create export engine
         const exportEngine = new ExportEngine({
@@ -197,18 +212,30 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         console.log("onclick D");
+
+        // Ensure logo image is loaded before export rendering begins
+        if (logoImg && !logoImg.complete) {
+            await new Promise((resolve, reject) => {
+                logoImg.onload = () => resolve();
+                logoImg.onerror = reject;
+            });
+        }
+
         // Load samples from demuxer
         await exportEngine.load();
 
         // Run export
         console.log("onclick E");
+
         await exportEngine.export();   // run decode → composite → encode
         console.log("onclick F");
-        const blob = exportEngine.getFinalBlob();
+
+        const blob = await exportEngine.getFinalBlob();
         console.log("onclick G");
+
         console.log("blob size =", blob.size);
-        //downloadBlob(blob, "framesmith.mp4");
-        downloadBlob(blob, "framesmith.h264");
+
+        downloadBlob(blob, "framesmith.mp4");
 
     };
 

@@ -4,7 +4,7 @@ import {
     findFourCC
 } from "./reference/BoxExtractor.js";
 
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 import {
     readUint32,
     readFourCC
@@ -39,7 +39,7 @@ export async function testUdta_Inspection_ffmpeg() {
 
     console.log("udta size:", readUint32(udta, 0));
 
-    const udtaContainer = asContainer(udta);
+    const udtaContainer = asIsoBoxContainer(udta);
     const children = udtaContainer.enumerateChildren();
 
     console.log("udta child boxes:");
@@ -67,7 +67,7 @@ export async function testMeta_Inspection_ffmpeg() {
         (meta[9] << 16) | (meta[10] << 8) | meta[11]
     );
 
-    const metaContainer = asContainer(meta);
+    const metaContainer = asIsoBoxContainer(meta);
     const children = metaContainer.enumerateChildren();
 
     console.log("meta child boxes:");

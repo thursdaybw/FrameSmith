@@ -204,7 +204,9 @@ export async function testStsz_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const refParsed = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stsz"
+        "moov/trak/mdia/minf/stbl/stsz",
+        { trackType: "video" }
+        
     );
 
     const refFields = refParsed.readFields();

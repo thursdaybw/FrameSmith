@@ -128,7 +128,11 @@ export async function testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg()
     const truth = getGoldenTruthBox.fromMp4(
         buf,
         "moov/trak/mdia/minf/stbl/stsd",
-        { sampleEntry: "avc1", child: "pasp" }
+        {
+            sampleEntry: "avc1",
+            child: "pasp",
+            trackType: "video"
+        }
     );
 
     const refFields = truth.readFields();

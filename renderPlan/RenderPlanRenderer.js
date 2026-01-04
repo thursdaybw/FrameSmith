@@ -28,33 +28,48 @@ export function renderFrame({
   canvas,
   t
 }) {
+
   // 1. Draw video frame
   if (videoFrame) {
     context.drawImage(videoFrame, 0, 0, canvas.width, canvas.height);
   }
 
   // 2. Draw overlay nodes
-  if (renderPlan && renderPlan.elements) {
-    for (const node of renderPlan.elements) {
-      if (node.type === "image") {
-        const { image, x, y, width, height } = node.props;
+    if (renderPlan && renderPlan.elements) {
+        for (const node of renderPlan.elements) {
+            if (node.type === "image") {
+                const { image, x, y, width, height } = node.props;
 
-        // --- Phase A Temporary Overlay Pulse Animation ---
-        const pulse = 0.05 * Math.sin(t * 4);
-        const scale = 1 + pulse;
+                // --- Phase A Temporary Overlay Pulse Animation ---
+                const pulse = 0.05 * Math.sin(t * 4);
+                const scale = 1 + pulse;
 
-        const drawW = width * scale;
-        const drawH = height * scale;
+                // base pixel size
+                const baseW = width * canvas.width;
 
-        const offsetX = x - (drawW - width) / 2;
-        const offsetY = y - (drawH - height) / 2;
+                let baseH;
+                if (height != null) {
+                    baseH = height * canvas.height;
+                } else {
+                    const aspect = image.naturalHeight / image.naturalWidth;
+                    baseH = baseW * aspect;
+                }
 
-        context.drawImage(image, offsetX, offsetY, drawW, drawH);
-      }
+                // apply pulse in pixel space
+                const drawW = baseW * scale;
+                const drawH = baseH * scale;
+
+                // center-scale around original position
+                const px = (x * canvas.width) - (drawW - baseW) / 2;
+                const py = (y * canvas.height) - (drawH - baseH) / 2;
+
+                context.drawImage(image, px, py, drawW, drawH);
+
+            }
+        }
     }
-  }
 
-  // 3. Draw captions (delegated)
-  drawCaptionForTime(t, context, canvas, captions, "default");
+    // 3. Draw captions (delegated)
+    drawCaptionForTime(t, context, canvas, captions, "default");
 }
 

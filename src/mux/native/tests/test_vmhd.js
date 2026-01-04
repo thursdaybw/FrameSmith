@@ -104,7 +104,8 @@ export async function testVmhd_LockedLayoutEquivalence_ffmpeg() {
     // ------------------------------------------------------------
     const truth = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/vmhd"
+        "moov/trak/mdia/minf/vmhd",
+        { trackType: "video" }
     );
 
     const refFields = truth.readFields();

@@ -23,15 +23,22 @@ function readFields(box) {
 function getBuilderInput(box) {
     const parsed = readFields(box);
 
-    if (parsed.entryCount !== 1) {
-        throw new Error(
-            `STTS: expected single entry, got ${parsed.entryCount}`
-        );
-    }
-
+    /**
+     * Builder input for STTS must reflect the true
+     * run-length encoded structure of the table.
+     *
+     * Even constant-frame-rate video is represented
+     * as a single-entry STTS table.
+     *
+     * Variable-duration video produces multiple entries.
+     *
+     * The emitter accepts this shape directly.
+     */
     return {
-        sampleCount: parsed.entries[0].sampleCount,
-        sampleDuration: parsed.entries[0].sampleDelta
+        entries: parsed.entries.map(entry => ({
+            sampleCount: entry.sampleCount,
+            sampleDelta: entry.sampleDelta
+        }))
     };
 }
 

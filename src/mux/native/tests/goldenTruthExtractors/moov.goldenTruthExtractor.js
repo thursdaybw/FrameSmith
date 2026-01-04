@@ -4,7 +4,7 @@ import { emitMvhdBox } from "../../box-emitters/mvhdBox.js";
 import { emitTrakBox } from "../../box-emitters/trakBox.js";
 import { emitUdtaBox } from "../../box-emitters/udtaBox.js";
 
-import { asContainer } from "../../box-model/Box.js";
+import { asIsoBoxContainer } from "../../box-model/Box.js";
 
 function readMoovBoxFieldsFromBoxBytes(boxBytes) {
     return {
@@ -14,7 +14,7 @@ function readMoovBoxFieldsFromBoxBytes(boxBytes) {
 
 function getMoovEmitterInputFromBoxBytes(moovBoxBytes) {
 
-    const container = asContainer(moovBoxBytes);
+    const container = asIsoBoxContainer(moovBoxBytes);
     const children  = container.enumerateChildren();
 
     // --------------------------------------------------

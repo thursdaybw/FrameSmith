@@ -56,3 +56,19 @@ export function readFourCC(bytes, offset) {
         bytes[offset + 3]
     );
 }
+
+export function readUint32BE(bytes, offset) {
+    return (
+        (bytes[offset]     << 24) |
+        (bytes[offset + 1] << 16) |
+        (bytes[offset + 2] << 8)  |
+        (bytes[offset + 3])
+    ) >>> 0;
+}
+
+export function readUint16BE(bytes, offset) {
+    return (
+        (bytes[offset]     << 8) |
+        (bytes[offset + 1])
+    ) >>> 0;
+}

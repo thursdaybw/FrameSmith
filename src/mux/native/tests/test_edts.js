@@ -11,7 +11,7 @@ import {
     assertEqualHex,
     assertExists
 } from "./assertions.js";
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 
 import { readUint32, readInt32 } from "../bytes/mp4ByteReader.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
@@ -66,7 +66,10 @@ export async function testEdts_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const refEdts = extractBoxByPathFromMp4(
         goldenMp4,
-        "moov/trak/edts"
+        "moov/trak/edts",
+        {
+            trackType: "video"
+        }
     );
 
     assertExists("reference edts", refEdts);
@@ -76,7 +79,10 @@ export async function testEdts_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const truth = getGoldenTruthBox.fromMp4(
         goldenMp4,
-        "moov/trak/edts"
+        "moov/trak/edts",
+        {
+            trackType: "video"
+        }
     );
 
     const params = truth.getBuilderInput();
@@ -91,8 +97,8 @@ export async function testEdts_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     // 5. Child-by-child byte equivalence
     // ---------------------------------------------------------
-    const refContainer = asContainer(refEdts);
-    const outContainer = asContainer(outEdts);
+    const refContainer = asIsoBoxContainer(refEdts);
+    const outContainer = asIsoBoxContainer(outEdts);
 
     const refMeta = refContainer.enumerateChildren();
 

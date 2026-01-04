@@ -1,7 +1,14 @@
 import {
     extractBoxByPathFromMp4,
-    extractSampleEntryFromMp4
+    extractSampleEntryFromMp4,
+    extractSampleEntry,
+    getSampleEntryHeaderSize
 } from "../reference/BoxExtractor.js";
+
+import { asIsoBoxContainer } from "../../box-model/Box.js";
+import { extractBoxByPathFromBox } from "../reference/BoxExtractor.js";
+import { readFourCC } from "../../bytes/mp4ByteReader.js";
+
 
 import { registerSttsGoldenTruthExtractor } from "./stts.goldenTruthExtractor.js";
 import { registerStscGoldenTruthExtractor } from "./stsc.goldenTruthExtractor.js";
@@ -36,6 +43,7 @@ import { registerMetaGoldenTruthExtractor } from "./meta.goldenTruthExtractor.js
 import { registerUdtaGoldenTruthExtractor } from "./udta.goldenTruthExtractor.js";
 import { registerMoovGoldenTruthExtractor } from "./moov.goldenTruthExtractor.js";
 import { registerFreeGoldenTruthExtractor } from "./free.goldenTruthExtractor.js";
+import { registerEsdsGoldenTruthExtractor } from "./esds.goldenTruthExtractor.js";
 
 // -----------------------------------------------------------------------------
 // Parser wiring (CHANGE HERE)
@@ -75,7 +83,7 @@ const PARSER_WIRING = [
     ["moov/trak/mdia/minf/stbl/stsd/avc1/avcC", registerAvcCGoldenTruthExtractor],
     ["moov/trak/mdia/minf/stbl/stsd/avc1/btrt", registerBtrtGoldenTruthExtractor],
     ["moov/trak/mdia/minf/stbl/stsd/avc1/pasp", registerPaspGoldenTruthExtractor],
-
+    ["moov/trak/mdia/minf/stbl/stsd/mp4a/esds", registerEsdsGoldenTruthExtractor], 
 ];
 
 // -----------------------------------------------------------------------------
@@ -122,6 +130,28 @@ for (const [path, installer] of PARSER_WIRING) {
 export const getGoldenTruthBox = {
 
     fromMp4(mp4Bytes, path, options = {}) {
+
+        if (path.startsWith("moov/trak") && !options.trackType) {
+            throw new Error(
+                "This path goes through moov/trak, but I don't know which track you want. " +
+                "Pass options.trackType as 'video' or 'audio'."
+            );
+        }
+
+        if (options.sampleEntry && options.trackType) {
+            if (options.sampleEntry === "avc1" && options.trackType !== "video") {
+                throw new Error(
+                    "avc1 is a video sample entry. Use options.trackType 'video'."
+                );
+            }
+
+            if (options.sampleEntry === "mp4a" && options.trackType !== "audio") {
+                throw new Error(
+                    "mp4a is an audio sample entry. Use options.trackType 'audio'."
+                );
+            }
+        }
+
         const parserKey = options.sampleEntry
             ? options.child
             ? `${path}/${options.sampleEntry}/${options.child}`
@@ -135,22 +165,136 @@ export const getGoldenTruthBox = {
 
         let bytes;
 
+        if (
+            path.startsWith("moov/trak") &&
+            options.trackType === undefined
+        ) {
+            throw new Error(
+               "You passed a path that includes moov/trak. " +
+               "You need to specify which track you want using options.trackType. " +
+               "Use 'video' or 'audio'."
+            );
+        }
+
         // ------------------------------------------------------------
-        // 1. Locate base box bytes
+        // 1. Locate base box bytes (trak-aware)
         // ------------------------------------------------------------
-        if (options.sampleEntry) {
-            bytes = extractSampleEntryFromMp4(
+        if (path.startsWith("moov/trak") && options.trackType) {
+
+            // 1. Extract *all* trak boxes
+            const moov = extractBoxByPathFromMp4(mp4Bytes, "moov");
+            if (!moov) {
+                throw new Error("moov box not found");
+            }
+
+            const moovContainer = asIsoBoxContainer(moov);
+            const children = moovContainer.enumerateChildren();
+
+            const trakChildren = children.filter(c => c.type === "trak");
+
+            let matchingTrak = null;
+
+            let wantedHandler;
+
+            if (options.trackType === "video") {
+                wantedHandler = "vide";
+            } else if (options.trackType === "audio") {
+                wantedHandler = "soun";
+            } else {
+                throw new Error(
+                    "trackType must be 'video' or 'audio'"
+                );
+            }
+
+            for (const child of trakChildren) {
+                const trakBytes = moov.slice(
+                    child.offset,
+                    child.offset + child.size
+                );
+
+                const hdlr =
+                    extractBoxByPathFromBox(trakBytes, "mdia/hdlr");
+
+                if (!hdlr) {
+                    console.log("[esds][trak] hdlr not found");
+                    continue;
+                }
+
+                const handlerType = readFourCC(hdlr, 16);
+
+                console.log(
+                    "[esds][trak] found trak with handler:",
+                    handlerType
+                );
+
+                if (handlerType === wantedHandler) {
+                    console.log(
+                        "[esds][trak] SELECTED trak:",
+                        handlerType
+                    );
+                    matchingTrak = trakBytes;
+                    break;
+                }
+            }
+
+            if (!matchingTrak) {
+                throw new Error(
+                    `No trak found with handler '${options.trackType}'`
+                );
+            }
+
+            // Strip leading "moov/trak" and continue inside this trak
+            const remainingPath =
+                path.replace(/^moov\/trak\/?/, "");
+
+            bytes = remainingPath
+                ? extractBoxByPathFromBox(matchingTrak, remainingPath)
+                : matchingTrak;
+
+            // At this point, bytes === stsd
+            // If a SampleEntry is requested, extract it FROM THIS stsd
+            if (options.sampleEntry) {
+                bytes = extractSampleEntry(
+                    bytes,                // stsd bytes scoped to the selected trak
+                    options.sampleEntry   // "mp4a"
+                );
+            }
+
+            const entryCount =
+                (bytes[12] << 24) |
+                (bytes[13] << 16) |
+                (bytes[14] << 8)  |
+                bytes[15];
+
+            console.log(
+                "[esds][stsd] entryCount:",
+                entryCount
+            );
+
+            if (!bytes) {
+                throw new Error(
+                    `Box not found at path '${path}' for track '${options.trackType}'`
+                );
+            }
+
+        } else if (options.sampleEntry) {
+
+            bytes =  extractSampleEntryFromMp4(
                 mp4Bytes,
                 path,
                 options.sampleEntry
             );
+
             if (!bytes) {
                 throw new Error(
                     `SampleEntry '${options.sampleEntry}' not found at '${path}'`
                 );
             }
+
         } else {
+
             bytes = extractBoxByPathFromMp4(mp4Bytes, path);
+
             if (!bytes) {
                 throw new Error(`Box not found at path '${path}'`);
             }
@@ -160,14 +304,19 @@ export const getGoldenTruthBox = {
         // 2. Optional child extraction
         // ------------------------------------------------------------
         if (options.child) {
-            let offset = 8; // child boxes start after header
 
-            // VisualSampleEntry has a fixed 78-byte preamble
+            let offset = 8;
+
             if (options.sampleEntry) {
-                offset = 8 + 78;
+                const headerSize = getSampleEntryHeaderSize(options.sampleEntry);
+                offset = 8 + headerSize;
             }
 
             let found = null;
+
+            console.log(
+                "[esds][mp4a] scanning child boxes"
+            );
 
             while (offset + 8 <= bytes.length) {
                 const size =
@@ -183,6 +332,13 @@ export const getGoldenTruthBox = {
                         bytes[offset + 6],
                         bytes[offset + 7]
                     );
+
+                console.log(
+                    "[esds][mp4a] child:",
+                    type,
+                    "size:",
+                    size
+                );
 
                 if (type === options.child) {
                     found = bytes.slice(offset, offset + size);
@@ -232,3 +388,15 @@ export const getGoldenTruthBox = {
         };
     }
 };
+
+function normalizeTrackType(trackType) {
+    switch (trackType) {
+        case "video": return "vide";
+        case "audio": return "soun";
+        default:
+            throw new Error(
+                `Unknown track type '${trackType}'. ` +
+                "Use 'video' or 'audio'."
+            );
+    }
+}

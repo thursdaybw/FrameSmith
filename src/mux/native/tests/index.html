@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <body>
+<button id="run-inspection">Run Inspection Tests</button>
 <button id="run-unit">Run Unit Tests</button>
 <button id="run-boundary">Run Boundary Tests</button>
 <button id="run-integration">Run Integration Tests</button>
@@ -34,7 +35,9 @@ import {
 import { testStco_Structure, testStco_LockedLayoutEquivalence_ffmpeg } from "./test_stco.js";
 import {
     testStbl_Structure, 
+    testStbl_GoldenTruthExtractor_Structure_Audio,
     testStbl_LockedLayoutEquivalence_ffmpeg,
+    testStbl_LockedLayoutEquivalence_ffmpeg_Audio,
     testStbl_Structure_ConditionalChildren,
     testStbl_ConditionalChildren_TODO
 } from "./test_stbl.js";
@@ -53,6 +56,9 @@ import { testUdta_Structure, testUdta_LockedLayoutEquivalence_ffmpeg } from "./t
 import { testMoov_Structure, testMoov_LockedLayoutEquivalence_ffmpeg } from "./test_moov.js";
 import { testFree_Structure, testFree_LockedLayoutEquivalence_ffmpeg } from "./test_free.js";
 
+import { testSbgp_Structure, testSbgp_LockedLayoutEquivalence_ffmpeg } from "./test_sbgp.js";
+import { testSgpd_Structure, testSgpd_LockedLayoutEquivalence_ffmpeg } from "./test_sgpd.js";
+
 import { testDeriveChunkModel_OneSamplePerChunk } from "./test_NativeMuxer_chunkModel.js";
 import { testNativeMuxer_DeriveStscEntries_SingleChunkPattern } from "./test_NativeMuxer_stscDerivation.js";
 import { testNativeMuxer_DeriveStcoOffsets_Simple } from "./test_NativeMuxer_stcoDerivation.js";
@@ -63,7 +69,7 @@ import {
     testNativeMuxer_DeriveStssSampleNumbers_NoKeyInfo
 } from "./test_NativeMuxer_stssDerivation.js"
 
-import { testNativeMuxer_AdaptSttsFromSamples_CFR, testNativeMuxer_AdaptSttsFromSamples_VariableDurationFails } from "./test_NativeMuxer_sttsAdapter.js";
+import { testNativeMuxer_AdaptSttsFromSamples_CFR, testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups } from "./test_NativeMuxer_sttsAdapter.js";
 import { testNativeMuxer_SttsAdapter_Conformance_ffmpeg } from "./test_NativeMuxer_sttsAdapter_Conformance.js"
 
 import { testNativeMuxer_DeriveStszSizesFromPayloads } from "./test_NativeMuxer_deriveStszSizesFromPayloads.js";
@@ -131,18 +137,80 @@ import {
     test_adaptCodecConfigurationToStsdParams
 } from "./adapters/test_adaptCodecConfigurationToStsdParams.js";
 
+import { inspectBoxTreeDiff_AV_vs_Visual } 
+    from "./inspection/inspect_AV_vs_Visual_BoxDiff.js";
 
-async function runUnitTests() {
+import { test_Inspection_Stsd_Semantics } 
+    from "./inspection/test_Inspection_Stsd_Semantics.js";
+
+import { 
+    testEsds_Structure,
+    testEsds_GoldenTruthExtractor,
+    testEsds_LockedLayoutEquivalence_ffmpeg
+} 
+from "./test_esds.js";
 
 
 /**
- * PASS 0 — REFERENCE / ORACLE (TEST-ONLY, NOT NATIVE MUXER)
-
+ * INSPECTION TESTS
+ *
+ * These tests validate our understanding of real-world MP4s.
+ * They are NOT NativeMuxer correctness tests.
+ *
+ * Failures here indicate:
+ *   - incorrect assumptions
+ *   - incomplete mental models
+ *   - gaps in spec interpretation
+ *
+ * They must never gate NativeMuxer progress.
+ */
+async function runInspectionTests() {
+   await inspectBoxTreeDiff_AV_vs_Visual();
+   return
+   await test_Inspection_Stsd_Semantics();
    await inspect_GoldenMp4_PtsDtsOrder();
    await testUdta_Inspection_ffmpeg();
    await testMeta_Inspection_ffmpeg();
    await testMetaHdlr_Inspection_ffmpeg();
    await testMetaIlst_Inspection_ffmpeg();
+}
+
+async function runUnitTests() {
+
+/*
+    await testEsds_Structure();
+    await testEsds_GoldenTruthExtractor();
+    await testEsds_LockedLayoutEquivalence_ffmpeg();
+    await testStbl_Structure();
+    await testStbl_GoldenTruthExtractor_Structure_Audio();
+    await testStbl_LockedLayoutEquivalence_ffmpeg();
+    await testStbl_LockedLayoutEquivalence_ffmpeg_Audio();
+    await testStbl_Structure_ConditionalChildren();
+return;
+
+    
+    await testSbgp_Structure();
+    await testSbgp_LockedLayoutEquivalence_ffmpeg();
+    await testSgpd_Structure();
+    await testSgpd_LockedLayoutEquivalence_ffmpeg();
+    return;
+
+*/
+
+/*
+     await test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic();
+     return;
+
+    await testNativeMuxer_AdaptSttsFromSamples_CFR();
+    await testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups();
+    await testNativeMuxer_SttsAdapter_Conformance_ffmpeg();
+    return;
+
+     */
+
+/**
+ * PASS 0 — REFERENCE / ORACLE (TEST-ONLY, NOT NATIVE MUXER)
+
    await testSerializer();
  */
 
@@ -508,7 +576,9 @@ async function runUnitTests() {
     // faithfully represents real-world MP4 structure.
     //
     await testStbl_Structure();
+    await testStbl_GoldenTruthExtractor_Structure_Audio();
     await testStbl_LockedLayoutEquivalence_ffmpeg();
+    await testStbl_LockedLayoutEquivalence_ffmpeg_Audio();
     await testStbl_Structure_ConditionalChildren();
     await testStbl_ConditionalChildren_TODO();
 
@@ -554,7 +624,12 @@ async function runUnitTests() {
 
     await testFree_Structure();
     await testFree_LockedLayoutEquivalence_ffmpeg();
-
+/*
+    await testSbgp_Structure();
+    await testSbgp_LockedLayoutEquivalence_ffmpeg();
+    await testSgpd_Structure();
+    await testSgpd_LockedLayoutEquivalence_ffmpeg();
+*/
     /**
      * ===============================================================
      * PHASE: SAMPLE EXTRACTION (REFERENCE → MEANING)
@@ -783,7 +858,7 @@ async function runUnitTests() {
      */
 
     await testNativeMuxer_AdaptSttsFromSamples_CFR();
-    await testNativeMuxer_AdaptSttsFromSamples_VariableDurationFails();
+    await testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups();
     await testNativeMuxer_SttsAdapter_Conformance_ffmpeg();
 
     await testNativeMuxer_CttsAdapter_Conformance_ffmpeg();
@@ -1599,6 +1674,15 @@ async function runBoundaryTests() {
 
 async function runIntegrationTests() {
 }
+
+document.getElementById("run-inspection").onclick = async () => {
+    try {
+        await runInspectionTests();
+        console.log("%cInspection tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
 
 document.getElementById("run-unit").onclick = async () => {
     try {

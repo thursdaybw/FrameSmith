@@ -4,6 +4,32 @@ import { readUint16, readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
 import { assertEqual, assertEqualHex } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
+/**
+ * avcC — Opaque Codec Configuration Box
+ * ====================================
+ *
+ * This test suite enforces the contract defined by:
+ *
+ *   emitAvcCBox (see stsdBox/avcCBox.js)
+ *
+ * avcC is a codec-owned configuration box whose payload
+ * is opaque to the MP4 container.
+ *
+ * Test focus:
+ * -----------
+ * - byte-for-byte payload preservation
+ * - correct box framing
+ * - zero semantic interference
+ *
+ * These tests do NOT validate codec semantics.
+ * They prove that the muxer does not corrupt
+ * data it does not own.
+ *
+ * Related boxes:
+ * --------------
+ * - esds (audio)
+ */
+
 export async function testAvc1_Structure() {
     console.log("=== testAvc1_Structure ===");
 
@@ -171,7 +197,10 @@ export async function testAvc1_Structure() {
     // -------------------------------------------------------------
     const parsed = getGoldenTruthBox.fromBox(
         avc1,
-        "moov/trak/mdia/minf/stbl/stsd/avc1"
+        "moov/trak/mdia/minf/stbl/stsd/avc1",
+        {
+            trackType: "video"
+        }
     );
 
     const fields = parsed.readFields();
@@ -216,7 +245,10 @@ export async function testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg()
     const refParsed = getGoldenTruthBox.fromMp4(
         mp4,
         "moov/trak/mdia/minf/stbl/stsd",
-        { sampleEntry: "avc1" }
+        {
+            sampleEntry: "avc1",
+            trackType: "video"
+        }
     );
 
     const refFields = refParsed.readFields();
@@ -234,7 +266,10 @@ export async function testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg()
     // -------------------------------------------------------------
     const outParsed = getGoldenTruthBox.fromBox(
         outBytes,
-        "moov/trak/mdia/minf/stbl/stsd/avc1"
+        "moov/trak/mdia/minf/stbl/stsd/avc1",
+        {
+            trackType: "video"
+        }
     );
 
     const outFields = outParsed.readFields();

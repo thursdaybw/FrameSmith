@@ -222,7 +222,8 @@ export async function testStco_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const refParsed = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stco"
+        "moov/trak/mdia/minf/stbl/stco",
+        { trackType: "video" }
     );
 
     const refFields = refParsed.readFields();

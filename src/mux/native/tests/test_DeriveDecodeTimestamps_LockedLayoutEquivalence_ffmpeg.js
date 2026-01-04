@@ -47,7 +47,10 @@ export async function test_DeriveDecodeTimestamps_LockedLayoutEquivalence_ffmpeg
         getGoldenTruthBox
             .fromMp4(
                 mp4,
-                "moov/trak/mdia/minf/stbl/ctts"
+                "moov/trak/mdia/minf/stbl/ctts",
+                {
+                    trackType: "video"
+                }
             )
             .readFields();
 

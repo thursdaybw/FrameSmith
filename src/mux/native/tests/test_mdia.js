@@ -12,7 +12,7 @@ import {
     assertEqual
 } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 
 /**
  * MDIA — Structural Correctness (Phase A)
@@ -104,7 +104,10 @@ export async function testMdia_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const refMdia = extractBoxByPathFromMp4(
         mp4,
-        "moov/trak/mdia"
+        "moov/trak/mdia",
+        {
+            trackType: "video"
+        }
     );
 
     assertExists("reference mdia", refMdia);
@@ -114,7 +117,10 @@ export async function testMdia_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const truth = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia"
+        "moov/trak/mdia",
+        {
+            trackType: "video"
+        }
     );
 
     const params = truth.getBuilderInput();
@@ -129,8 +135,8 @@ export async function testMdia_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     // 5. Child-level byte equivalence
     // ---------------------------------------------------------
-    const refContainer = asContainer(refMdia);
-    const outContainer = asContainer(out);
+    const refContainer = asIsoBoxContainer(refMdia);
+    const outContainer = asIsoBoxContainer(out);
 
     const refMeta = refContainer.enumerateChildren();
 

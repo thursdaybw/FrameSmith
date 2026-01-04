@@ -71,7 +71,7 @@ import { readFourCC } from "../bytes/mp4ByteReader.js";
  *
  * Public API
  * ----------
- *   asContainer({ type, bytes })
+ *   asIsoBoxContainer({ type, bytes })
  *
  * This is the *only* supported way to traverse child boxes.
  *
@@ -87,7 +87,7 @@ import { readFourCC } from "../bytes/mp4ByteReader.js";
  * Design Patterns in Use
  * ---------------------
  * - Factory Function
- *   `asContainer` binds raw bytes to traversal behavior without
+ *   `asIsoBoxContainer` binds raw bytes to traversal behavior without
  *   inheritance or class hierarchies.
  *
  * - Strategy Pattern
@@ -125,17 +125,17 @@ import { readFourCC } from "../bytes/mp4ByteReader.js";
  * Returns a container abstraction that knows how
  * to enumerate its children correctly.
  */
-export function asContainer(bytes) {
+export function asIsoBoxContainer(bytes) {
 
     if (!(bytes instanceof Uint8Array)) {
         throw new Error(
-            "asContainer: expected Uint8Array, received " +
+            "asIsoBoxContainer: expected Uint8Array, received " +
             Object.prototype.toString.call(bytes)
         );
     }
 
     if (!bytes || bytes.length < 8) {
-        throw new Error("asContainer: invalid byte buffer");
+        throw new Error("asIsoBoxContainer: invalid byte buffer");
     }
 
     // File container: no MP4 box header at start
@@ -166,14 +166,14 @@ export function asContainer(bytes) {
     }
 
     throw new Error(
-        `asContainer: cannot determine child offset for box '${type}'`
+        `asIsoBoxContainer: cannot determine child offset for box '${type}'`
     );
 }
 
 /**
  * Binds raw bytes to traversal behavior.
  *
- * This function creates the *container abstraction* returned by asContainer.
+ * This function creates the *container abstraction* returned by asIsoBoxContainer.
  *
  * Responsibilities:
  * - capture the correct child offset
@@ -212,7 +212,7 @@ function makeContainer({ bytes, childOffset, type }) {
  * Purpose:
  * - Distinguish a top-level MP4 file from a boxed payload
  *
- * This enables asContainer to treat the full file as a
+ * This enables asIsoBoxContainer to treat the full file as a
  * container whose children begin at offset 0.
  */
 function looksLikeBox(bytes) {

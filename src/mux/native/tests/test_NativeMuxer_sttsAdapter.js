@@ -15,40 +15,54 @@ export function testNativeMuxer_AdaptSttsFromSamples_CFR() {
 
     const result = adaptSttsFromSamples({ samples });
 
-    assertEqual("sampleCount", result.sampleCount, 3);
-    assertEqual("sampleDuration", result.sampleDuration, 512);
+    assertEqual("entry count", result.entries.length, 1);
+
+    assertEqual(
+        "entry 0 sampleCount",
+        result.entries[0].sampleCount,
+        3
+    );
+
+    assertEqual(
+        "entry 0 sampleDelta",
+        result.entries[0].sampleDelta,
+        512
+    );
 
     console.log(
         "PASS: STTS adapter derives constant-duration input"
     );
 }
 
-export function testNativeMuxer_AdaptSttsFromSamples_VariableDurationFails() {
+export function testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups() {
 
     console.log(
-        "=== testNativeMuxer_AdaptSttsFromSamples_VariableDurationFails ==="
+        "=== testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups ==="
     );
 
     const samples = [
-        { duration: 512 },
-        { duration: 256 }
+        { duration: 100 },
+        { duration: 100 },
+        { duration: 101 },
+        { duration: 101 },
+        { duration: 101 },
+        { duration: 100 }
     ];
 
-    let threw = false;
+    const result = adaptSttsFromSamples({ samples });
 
-    try {
-        adaptSttsFromSamples({ samples });
-    } catch (err) {
-        threw = true;
-    }
+    assertEqual("entry count", result.entries.length, 3);
 
-    assertEqual(
-        "adapter rejects VFR samples",
-        threw,
-        true
-    );
+    assertEqual("entry 0 count", result.entries[0].sampleCount, 2);
+    assertEqual("entry 0 delta", result.entries[0].sampleDelta, 100);
+
+    assertEqual("entry 1 count", result.entries[1].sampleCount, 3);
+    assertEqual("entry 1 delta", result.entries[1].sampleDelta, 101);
+
+    assertEqual("entry 2 count", result.entries[2].sampleCount, 1);
+    assertEqual("entry 2 delta", result.entries[2].sampleDelta, 100);
 
     console.log(
-        "PASS: STTS adapter rejects unsupported variable durations"
+        "PASS: STTS adapter groups variable-duration samples"
     );
 }

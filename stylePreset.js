@@ -24,7 +24,8 @@
 export const stylePreset = {
   default: {
     fontFamily: "Arial",
-    fontSize: 40,
+    // fontSize is NORMALIZED (fraction of canvas height, e.g. 0.06 = 6%)
+    fontSize: 0.06,
     fill: "#ffffff",
     stroke: "#000000",
     maxWidthMultiplier: 0.8,

@@ -1,5 +1,5 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 
 import {
     readUint32,
@@ -43,7 +43,7 @@ export function testMeta_Structure() {
         0
     );
 
-    const container = asContainer(bytes);
+    const container = asIsoBoxContainer(bytes);
     const children = container.enumerateChildren();
 
     assertEqual("meta.child.count", children.length, 2);

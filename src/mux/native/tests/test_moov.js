@@ -1,5 +1,5 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 
 import {
     readUint32,
@@ -73,7 +73,7 @@ export function testMoov_Structure() {
     // -----------------------------------------------------
     // Child discovery (structure only)
     // -----------------------------------------------------
-    const container = asContainer(bytes);
+    const container = asIsoBoxContainer(bytes);
     const children  = container.enumerateChildren();
 
     assertEqual("moov.child.count", children.length, 3);
@@ -134,8 +134,8 @@ export async function testMoov_LockedLayoutEquivalence_ffmpeg() {
     // -----------------------------------------------------
     // Child discovery (TYPE + OFFSET ONLY)
     // -----------------------------------------------------
-    const refContainer = asContainer(refMoov);
-    const outContainer = asContainer(out);
+    const refContainer = asIsoBoxContainer(refMoov);
+    const outContainer = asIsoBoxContainer(out);
 
     const refChildren = refContainer.enumerateChildren();
     const outChildren = outContainer.enumerateChildren();

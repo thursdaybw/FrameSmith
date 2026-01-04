@@ -66,3 +66,13 @@ it is a policy.
 If removing it still produces a valid MP4, it is a policy.
 
 If it exists to match another tool’s output, it is a policy.
+
+### esds (Audio)
+
+Framesmith does not currently apply container policies to esds.
+
+Although some tools normalize esds descriptor graphs, doing so requires
+parsing ISO/IEC 14496-1 descriptor structures and is therefore considered
+codec adaptation, not container policy.
+
+Any future esds handling must live outside the policy layer.

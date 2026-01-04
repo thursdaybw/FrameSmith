@@ -14,7 +14,7 @@ import {
     assertEqualHex,
 } from "./assertions.js";
 
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 /**
@@ -107,7 +107,10 @@ export async function testTrak_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const refTrak = extractBoxByPathFromMp4(
         goldenMp4,
-        "moov/trak"
+        "moov/trak",
+        {
+            trackType: "video"
+        }
     );
     assertExists("reference trak", refTrak);
 
@@ -116,7 +119,10 @@ export async function testTrak_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const truth = getGoldenTruthBox.fromMp4(
         goldenMp4,
-        "moov/trak"
+        "moov/trak",
+        {
+            trackType: "video"
+        }
     );
 
     const params = truth.getBuilderInput();
@@ -128,8 +134,8 @@ export async function testTrak_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     // 4. Discover children (semantic layer)
     // ---------------------------------------------------------
-    const refContainer = asContainer(refTrak);
-    const outContainer = asContainer(outTrak);
+    const refContainer = asIsoBoxContainer(refTrak);
+    const outContainer = asIsoBoxContainer(outTrak);
 
     const refMeta = refContainer.enumerateChildren();
     const outMeta = outContainer.enumerateChildren();

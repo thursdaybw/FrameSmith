@@ -151,7 +151,10 @@ export async function runGoldenMp4TestClient({ mp4Bytes }) {
         getGoldenTruthBox
             .fromMp4(
                 mp4Bytes,
-                "moov/trak/mdia/minf/stbl/stsd"
+                "moov/trak/mdia/minf/stbl/stsd",
+                {
+                    trackType: "video",
+                }
             )
             .getBuilderInput();
 
@@ -213,7 +216,10 @@ export async function runGoldenMp4TestClient({ mp4Bytes }) {
         getGoldenTruthBox
             .fromMp4(
                 mp4Bytes,
-                "moov/trak/tkhd"
+                "moov/trak/tkhd",
+                {
+                    trackType: "video",
+                }
             )
             .getBuilderInput();
 
@@ -221,7 +227,10 @@ export async function runGoldenMp4TestClient({ mp4Bytes }) {
         getGoldenTruthBox
             .fromMp4(
                 mp4Bytes,
-                "moov/trak/mdia/mdhd"
+                "moov/trak/mdia/mdhd",
+                {
+                    trackType: "video",
+                }
             )
             .getBuilderInput();
 

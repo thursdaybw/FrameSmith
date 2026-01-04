@@ -19,7 +19,7 @@ import { emitTrakBox } from "../box-emitters/trakBox.js";
 import { ChunkingStrategies } from "../derivers/strategies/chunkingStrategies.js";
 import { assertEqualHex } from "./assertions.js";
 
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 import { readUint32 } from "../bytes/mp4ByteReader.js";
 
 export async function testNativeMuxer_StcoConformance_ffmpeg() {
@@ -187,7 +187,7 @@ function describeStcoByte(index, entryCount) {
 }
 
 function inspectGoldenMp4Layout(mp4) {
-    const container = asContainer(mp4);
+    const container = asIsoBoxContainer(mp4);
     const children  = container.enumerateChildren();
 
     console.log("---- GOLDEN MP4 LAYOUT ----");

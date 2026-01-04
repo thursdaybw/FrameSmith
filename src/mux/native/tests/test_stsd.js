@@ -1,9 +1,9 @@
-import { emitStsdBox } from "../box-emitters/stsdBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { readUint16, readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 import { assertEqual, assertExists } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { emitStsdBox } from "../box-emitters/stsdBox.js";
 
 export async function testStsd_Structure() {
 
@@ -135,7 +135,10 @@ export async function testStsd_GoldenTruthExtractor() {
 
     const parsed = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stsd"
+        "moov/trak/mdia/minf/stbl/stsd",
+        {
+            trackType: "video"
+        }
     );
 
     const fields = parsed.readFields();
@@ -163,7 +166,10 @@ export async function testStsd_LockedLayoutEquivalence_ffmpeg() {
 
     const parsed = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stsd"
+        "moov/trak/mdia/minf/stbl/stsd",
+        {
+            trackType: "video"
+        }
     );
 
     const buildParams = parsed.getBuilderInput();
@@ -174,7 +180,10 @@ export async function testStsd_LockedLayoutEquivalence_ffmpeg() {
 
     const refBytes = extractBoxByPathFromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stsd"
+        "moov/trak/mdia/minf/stbl/stsd",
+        {
+            trackType: "video"
+        }
     );
 
     console.log(

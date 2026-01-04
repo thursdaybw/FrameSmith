@@ -270,6 +270,40 @@ Rules
 
 ---
 
+### 4.6.1 SampleEntry Boundary Rule
+
+`stsd` is a structural boundary where normal ISO box traversal rules
+temporarily change.
+
+Rules:
+
+* `stsd` contains a table of **SampleEntry records**
+* SampleEntries (`avc1`, `mp4a`, etc.) are **not generic ISO container boxes**
+* Child boxes inside a SampleEntry (e.g. `avcC`, `esds`, `pasp`, `btrt`)
+  must be interpreted **relative to the enclosing SampleEntry**, not as
+  normal `children` of `stsd`
+
+Implications:
+
+* Traversal code must explicitly enter a SampleEntry context
+* Traversal code must explicitly exit SampleEntry context
+* SampleEntry traversal must not be inferred from box type strings
+* SampleEntry child traversal must never leak into normal container logic
+
+SampleEntry interpretation is **codec- and track-type specific**.
+
+Examples:
+
+* `avc1` is valid only in `video` tracks
+* `mp4a` is valid only in `audio` tracks
+* `esds` under `avc1` is invalid
+* `avcC` under `mp4a` is invalid
+
+Violations of these rules must result in explicit errors, not silent failure
+or fallback behavior.
+
+---
+
 ### 4.7 Physical Layout Resolution Layer
 
 **Purpose**  
@@ -580,6 +614,47 @@ This rule applies to:
 
 ---
 
+### 7.1 Track-Scoped Traversal (Multi-Trak Rule)
+
+MP4 files may contain multiple `trak` boxes representing different media types
+(e.g. video, audio).
+
+Traversal that enters a `trak` container **must be explicit about which track
+is being targeted**.
+
+Rules:
+
+* Traversal may not assume a single `trak`
+* Traversal may not default to the "first" track
+* Traversal must not infer track intent from downstream boxes
+
+When traversal logic requires a specific track, the caller must explicitly
+specify the desired handler type:
+
+* `video` for video tracks
+* `audio` for audio tracks
+
+If a traversal path does **not** include `trak`, no track selector is required.
+
+Examples:
+
+* Valid paths without track selection:
+  * `moov`
+  * `ftyp`
+  * `mdat`
+  * `udta`
+
+* Valid paths with explicit track selection:
+  * `moov|trak[options.trackType = 'video']|mdia|minf|stbl`
+  * `moov|trak[options.trackType = 'audio']|mdia|minf|stbl`
+
+Attempting to traverse a `trak` without specifying the intended handler
+is a structural error.
+
+This rule exists to make ambiguous traversal states unrepresentable.
+
+---
+
 ## 8. Tests as Contracts
 
 Tests are not validation helpers.
@@ -625,6 +700,19 @@ Errors are thrown when:
 * Serialization cannot be proven correct
 
 Silent correction is forbidden.
+
+Incompatible structural combinations are treated as errors.
+
+Examples include (non-exhaustive):
+
+* `avc1` SampleEntry under an audio (`audio`) track
+* `mp4a` SampleEntry under a video (`video`) track
+* Audio-only boxes queried from video tracks
+* Video-only boxes queried from audio tracks
+
+These errors are **structural misuse**, not missing feature support.
+
+NativeMuxer prefers explicit failure over permissive guessing.
 
 ---
 
@@ -711,3 +799,30 @@ If a conflict exists between this document and executable tests,
 the tests represent newer truth.
 
 This document must be updated to reflect that truth.
+
+---
+
+### Future Consideration: Path Selectors for MP4 Traversal
+
+During audio track integration, a recurring source of complexity emerged around traversal boundaries, particularly where `trak`, `stsd`, and SampleEntry semantics intersect.
+
+A possible future direction is to evolve the current string-based box paths into a **selector-style syntax** that makes structural intent explicit rather than inferred.
+
+For example:
+
+```
+moov > trak[soun] > mdia > minf > stbl > stsd > sample(mp4a) > box(esds)
+```
+
+This approach would allow the selector itself to express:
+
+* Which track is being targeted (e.g. `vide`, `soun`)
+* When traversal enters a SampleEntry table
+* When traversal returns to normal ISO box semantics
+
+The motivation is not to generalize MP4 parsing, but to make ambiguous states unrepresentable and reduce implicit structural guessing inside traversal code.
+
+This idea is exploratory and intentionally deferred. The current implementation remains path-based, with explicit track selection
+and explicit SampleEntry boundaries enforced by the traversal API.
+This concept may inform future refactors once the muxer and demuxer architecture has stabilized.
+

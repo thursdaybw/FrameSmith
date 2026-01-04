@@ -1,4 +1,4 @@
-import { deriveStszSizesFromPayloads}  from "../derivers/deriveStszSizesFromPayloads.js";
+import { adaptStszSizesFromPayloads }  from "../adapters/adaptStszSizesFromPayloads.js";
 
 import { assertEqual } from "./assertions.js";
 
@@ -16,7 +16,7 @@ export function testNativeMuxer_DeriveStszSizesFromPayloads() {
         new Uint8Array(5)
     ];
 
-    const result = deriveStszSizesFromPayloads({
+    const result = adaptStszSizesFromPayloads({
         accessUnits,
         accessUnitPayloads
     });

@@ -1,4 +1,4 @@
-import { asContainer } from "../../box-model/Box.js";
+import { asIsoBoxContainer } from "../../box-model/Box.js";
 import { getGoldenTruthBox } from "./index.js";
 import { emitMetaBox } from "../../box-emitters/metaBox.js";
 
@@ -7,7 +7,7 @@ function readUdtaBoxFieldsFromBoxBytes(box) {
 }
 
 function getUdtaBuilderInputFromBoxBytes(box) {
-    const container = asContainer(box);
+    const container = asIsoBoxContainer(box);
     const children = [];
 
     for (const child of container.enumerateChildren()) {

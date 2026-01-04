@@ -119,7 +119,10 @@ export async function testCtts_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const parsed = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/ctts"
+        "moov/trak/mdia/minf/stbl/ctts",
+        {
+            trackType: "video"
+        }
     );
 
     const refFields = parsed.readFields();

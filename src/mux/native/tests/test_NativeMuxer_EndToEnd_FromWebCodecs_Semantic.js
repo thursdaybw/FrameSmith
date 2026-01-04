@@ -3,7 +3,7 @@ import {
     assertEqual
 } from "./assertions.js";
 
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 
 import {
@@ -12,7 +12,7 @@ import {
 
 import {
     createMp4FromInputs
-} from "./test_NativeMuxer_EndToEnd_FromMp4BuildInput.js";
+} from "../compiler/createMp4FromInputs.js";
 
 /**
  * ============================================================================
@@ -37,16 +37,48 @@ import {
 export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
     console.log("=== test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic ===");
 
+    const t0 = performance.now();
+
+    // ---------------------------------------------------------
+    // Phase 1 — WebCodecs encode + adaptation
+    // ---------------------------------------------------------
+    console.log("[PHASE 1] Starting WebCodecs test client…");
+
+    const tEncodeStart = performance.now();
     const mp4BuildInput =
         await runWebCodecsTestClient();
+    const tEncodeEnd = performance.now();
 
+    console.log("[PHASE 1] WebCodecs client complete", {
+        accessUnits: mp4BuildInput.semanticCore.accessUnits.length,
+        payloads: mp4BuildInput.payloads.accessUnitPayloads.length,
+        encodeMs: Math.round(tEncodeEnd - tEncodeStart)
+    });
+
+    // Give the browser a breath before heavy sync work
+    await Promise.resolve();
+
+    // ---------------------------------------------------------
+    // Phase 2 — MP4 compilation
+    // ---------------------------------------------------------
+    console.log("[PHASE 2] Starting MP4 compilation…");
+
+    const tCompileStart = performance.now();
     const outBytes =
         createMp4FromInputs(mp4BuildInput);
+    const tCompileEnd = performance.now();
+
+    console.log("[PHASE 2] MP4 compilation complete", {
+        bytes: outBytes.length,
+        compileMs: Math.round(tCompileEnd - tCompileStart)
+    });
 
     // ---------------------------------------------------------
-    // Root container sanity
+    // Phase 3 — Structural validation
     // ---------------------------------------------------------
-    const root = asContainer(outBytes);
+    console.log("[PHASE 3] Validating MP4 structure…");
+
+    const root = asIsoBoxContainer(outBytes);
     assertExists("root container", root);
 
     const topLevel =
@@ -57,9 +89,6 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
     assertEqual("top-level[2]", topLevel[2], "mdat");
     assertEqual("top-level[3]", topLevel[3], "moov");
 
-    // ---------------------------------------------------------
-    // Required structural boxes
-    // ---------------------------------------------------------
     assertExists(
         "moov",
         extractBoxByPathFromMp4(outBytes, "moov")
@@ -83,9 +112,6 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
         )
     );
 
-    // ---------------------------------------------------------
-    // Sample table sanity
-    // ---------------------------------------------------------
     assertExists(
         "stsd",
         extractBoxByPathFromMp4(
@@ -118,9 +144,6 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
         )
     );
 
-    // ---------------------------------------------------------
-    // MDAT sanity (must contain payload)
-    // ---------------------------------------------------------
     const mdat =
         extractBoxByPathFromMp4(outBytes, "mdat");
 
@@ -131,15 +154,18 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
     );
 
     // ---------------------------------------------------------
-    // Optional: download for human verification
+    // Phase 4 — Optional download
     // ---------------------------------------------------------
     if (window.DEBUG_DOWNLOAD_MP4 === true) {
+        console.log("[PHASE 4] Downloading MP4 for inspection…");
         downloadMp4(outBytes, "webcodecs-native-muxer.mp4");
     }
 
-    console.log(
-        "PASS: WebCodecs semantic MP4 produced and structurally valid"
-    );
+    const tEnd = performance.now();
+
+    console.log("PASS: WebCodecs semantic MP4 produced and structurally valid", {
+        totalMs: Math.round(tEnd - t0)
+    });
 }
 
 // -------------------------------------------------------------

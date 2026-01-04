@@ -117,7 +117,10 @@ export async function testStss_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const ref = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stss"
+        "moov/trak/mdia/minf/stbl/stss",
+        {
+            trackType: "video"
+        }
     );
 
     const refFields = ref.readFields();

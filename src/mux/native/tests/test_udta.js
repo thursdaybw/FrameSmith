@@ -11,7 +11,7 @@ import {
     assertEqualHex,
 } from "./assertions.js";
 
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 /**
@@ -51,7 +51,7 @@ export function testUdta_Structure() {
     // -----------------------------------------------------
     // 3. Structural assertions
     // -----------------------------------------------------
-    const container = asContainer(udta);
+    const container = asIsoBoxContainer(udta);
     const children = container.enumerateChildren();
 
     assertEqual("udta.child.count", children.length, 1);
@@ -99,7 +99,7 @@ export async function testUdta_LockedLayoutEquivalence_ffmpeg() {
     // -----------------------------------------------------
     // 3. Discover reference children
     // -----------------------------------------------------
-    const refContainer = asContainer(refUdta);
+    const refContainer = asIsoBoxContainer(refUdta);
     const refChildrenMeta = refContainer.enumerateChildren();
     const refTypes = refChildrenMeta.map(c => c.type);
 
@@ -120,7 +120,7 @@ export async function testUdta_LockedLayoutEquivalence_ffmpeg() {
     // -----------------------------------------------------
     // 5. Discover output children
     // -----------------------------------------------------
-    const outContainer = asContainer(outUdta);
+    const outContainer = asIsoBoxContainer(outUdta);
     const outChildrenMeta = outContainer.enumerateChildren();
     const outTypes = outChildrenMeta.map(c => c.type);
 

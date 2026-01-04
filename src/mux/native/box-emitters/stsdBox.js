@@ -70,6 +70,11 @@ import { emitAvc1Box } from "./stsdBox/avc1Box.js";
  *
  * ---
  *
+ * Unlike avcC, esds is never container-completed.
+ * Framesmith treats esds as an opaque, codec-owned descriptor graph.
+ *
+ * ---
+ *
  * Phase A contract:
  * -----------------
  * This builder returns a **pure JSON node** describing the STSD box.

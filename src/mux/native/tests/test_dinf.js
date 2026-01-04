@@ -108,7 +108,10 @@ export async function testDinf_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     const truth = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/dinf"
+        "moov/trak/mdia/minf/dinf",
+        {
+            trackType: "video"
+        }
     );
 
     const refFields = truth.readFields();

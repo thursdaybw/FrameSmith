@@ -33,7 +33,7 @@ import { commitMoovWithResolvedLayout } from "../commit/commitMoovWithResolvedLa
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { ChunkingStrategies } from "../derivers/strategies/chunkingStrategies.js";
 import { describeMp4Byte } from "./reference/Mp4ByteContext.js";
-import { asContainer } from "../box-model/Box.js";
+import { asIsoBoxContainer } from "../box-model/Box.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 /**
@@ -57,48 +57,115 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
     // ---------------------------------------------------------
     const trackSemanticInput = {
         codec: getGoldenTruthBox
-            .fromMp4(goldenMp4, "moov/trak/mdia/minf/stbl/stsd")
-            .getBuilderInput(),
+        .fromMp4(
+            goldenMp4,
+            "moov/trak/mdia/minf/stbl/stsd",
+            {
+                trackType: "video"
+            }
+        )
+        .getBuilderInput(),
 
         timing: {
             stts: getGoldenTruthBox
-                .fromMp4(goldenMp4, "moov/trak/mdia/minf/stbl/stts")
-                .getBuilderInput(),
+                .fromMp4(
+                    goldenMp4,
+                    "moov/trak/mdia/minf/stbl/stts",
+
+                    {
+                        trackType: "video"
+                    }
+                )
+            .getBuilderInput(),
             ctts: getGoldenTruthBox
-                .fromMp4(goldenMp4, "moov/trak/mdia/minf/stbl/ctts")
-                .getBuilderInput(),
+            .fromMp4(
+                goldenMp4,
+                "moov/trak/mdia/minf/stbl/ctts",
+                {
+                    trackType: "video"
+                }
+            )
+            .getBuilderInput(),
             stss: getGoldenTruthBox
-                .fromMp4(goldenMp4, "moov/trak/mdia/minf/stbl/stss")
-                .getBuilderInput()
+            .fromMp4(
+                goldenMp4,
+                "moov/trak/mdia/minf/stbl/stss",
+                {
+                    trackType: "video"
+                }
+            )
+            .getBuilderInput()
         },
 
         sizes: getGoldenTruthBox
-            .fromMp4(goldenMp4, "moov/trak/mdia/minf/stbl/stsz")
-            .getBuilderInput(),
+        .fromMp4(
+            goldenMp4,
+            "moov/trak/mdia/minf/stbl/stsz",
+            {
+                trackType: "video"
+            }
+        )
+        .getBuilderInput(),
 
         chunking: getGoldenTruthBox
-            .fromMp4(goldenMp4, "moov/trak/mdia/minf/stbl/stsc")
-            .getBuilderInput(),
+        .fromMp4(
+            goldenMp4,
+            "moov/trak/mdia/minf/stbl/stsc",
+            {
+                trackType: "video"
+            }
+        )
+        .getBuilderInput(),
 
         tkhd: getGoldenTruthBox
-            .fromMp4(goldenMp4, "moov/trak/tkhd")
-            .getBuilderInput(),
+        .fromMp4(
+            goldenMp4,
+            "moov/trak/tkhd",
+            {
+                trackType: "video"
+            }
+        )
+        .getBuilderInput(),
 
         mdhd: getGoldenTruthBox
-            .fromMp4(goldenMp4, "moov/trak/mdia/mdhd")
-            .getBuilderInput(),
+        .fromMp4(
+            goldenMp4,
+            "moov/trak/mdia/mdhd",
+            {
+                trackType: "video"
+            }
+        )
+        .getBuilderInput(),
 
         hdlr: getGoldenTruthBox
-            .fromMp4(goldenMp4, "moov/trak/mdia/hdlr")
-            .getBuilderInput(),
+        .fromMp4(
+            goldenMp4,
+            "moov/trak/mdia/hdlr",
+            {
+                trackType: "video"
+            }
+        )
+        .getBuilderInput(),
 
         vmhd: getGoldenTruthBox
-            .fromMp4(goldenMp4, "moov/trak/mdia/minf/vmhd")
-            .getBuilderInput(),
+        .fromMp4(
+            goldenMp4,
+            "moov/trak/mdia/minf/vmhd",
+            {
+                trackType: "video"
+            }
+        )
+        .getBuilderInput(),
 
         dinf: getGoldenTruthBox
-            .fromMp4(goldenMp4, "moov/trak/mdia/minf/dinf")
-            .getBuilderInput()
+        .fromMp4(
+            goldenMp4,
+            "moov/trak/mdia/minf/dinf",
+            {
+                trackType: "video"
+            }
+        )
+        .getBuilderInput()
     };
 
     // ---------------------------------------------------------
@@ -154,8 +221,14 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
 
     const edts = emitEdtsBox(
         getGoldenTruthBox
-            .fromMp4(goldenMp4, "moov/trak/edts")
-            .getBuilderInput()
+        .fromMp4(
+            goldenMp4,
+            "moov/trak/edts",
+            {
+                trackType: "video"
+            }
+        )
+        .getBuilderInput()
     );
 
     const trak = emitTrakBox({
@@ -167,14 +240,16 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
     const moov = emitMoovBox({
         mvhd: emitMvhdBox(
             getGoldenTruthBox
-                .fromMp4(goldenMp4, "moov/mvhd")
-                .getBuilderInput()
+            .fromMp4(
+                goldenMp4, "moov/mvhd")
+            .getBuilderInput()
         ),
         traks: [trak],
         udta: emitUdtaBox(
             getGoldenTruthBox
-                .fromMp4(goldenMp4, "moov/udta")
-                .getBuilderInput()
+            .fromMp4(
+                goldenMp4, "moov/udta")
+            .getBuilderInput()
         )
     });
 
@@ -222,8 +297,8 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
     // ---------------------------------------------------------
     // 7. Top-level structural parity (hard gate)
     // ---------------------------------------------------------
-    const goldenTop = asContainer(goldenMp4).enumerateChildren();
-    const outTop    = asContainer(outBytes).enumerateChildren();
+    const goldenTop = asIsoBoxContainer(goldenMp4).enumerateChildren();
+    const outTop    = asIsoBoxContainer(outBytes).enumerateChildren();
 
     if (goldenTop.length !== outTop.length) {
         throw new Error(

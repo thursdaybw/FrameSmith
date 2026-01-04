@@ -20,72 +20,73 @@ import { resolveActiveStyle } from "./activeStyle.js";
 
 // NEW helper: compute *layout* style (static)
 function computeLayoutStyle(segment, word, presetName) {
-  const allOverrides = [
-    ...(segment.override || []),
-    ...(word.override || [])
-  ];
+    const allOverrides = [
+        ...(segment.override || []),
+        ...(word.override || [])
+    ];
 
-  return resolveStyle(presetName, allOverrides);
+    return resolveStyle(presetName, allOverrides);
 }
 
 // Compute *animated* drawing style
 function computeDrawStyle(layoutStyle, segment, word, t) {
-  const allAnimations = [
-    ...(segment.animate || []),
-    ...(word.animate || [])
-  ];
+    const allAnimations = [
+        ...(segment.animate || []),
+        ...(word.animate || [])
+    ];
 
-  // Apply animations to the layout style.
-  return applyAnimations(layoutStyle, t, allAnimations);
+    // Apply animations to the layout style.
+    return applyAnimations(layoutStyle, t, allAnimations);
 }
 
 function chooseLayoutStyle(segment, presetName) {
-  const segmentOverrides = segment.override || [];
+    const segmentOverrides = segment.override || [];
 
-  if (segment.words.length > 0) {
-    const firstWord = segment.words[0];
-    const wordOverrides = firstWord.override || [];
+    if (segment.words.length > 0) {
+        const firstWord = segment.words[0];
+        const wordOverrides = firstWord.override || [];
 
-    return resolveStyle(presetName, [
-      ...segmentOverrides,
-      ...wordOverrides
-    ]);
-  }
+        return resolveStyle(presetName, [
+            ...segmentOverrides,
+            ...wordOverrides
+        ]);
+    }
 
-  return resolveStyle(presetName);
+    return resolveStyle(presetName);
 }
 
 export function drawCaptionForTime(t, ctx, canvas, captions, presetName = "default") {
-  const seg = captions.find(c => t >= c.start && t < c.end);
-  if (!seg) return;
+    const seg = captions.find(c => t >= c.start && t < c.end);
+    if (!seg) return;
 
-  // Optional dev safety check
-  if (typeof validateCaption === "function") {
-    validateCaption(seg);
-  }
+    // Optional dev safety check
+    if (typeof validateCaption === "function") {
+        validateCaption(seg);
+    }
 
-  // Which word is highlighted?
-  const highlightIdx = seg.words.findIndex(w => t >= w.start && t < w.end);
+    // Which word is highlighted?
+    const highlightIdx = seg.words.findIndex(w => t >= w.start && t < w.end);
 
-  // IMPORTANT: For layout, we use base styles ONLY.
-  // Build an array of layoutStyles to freeze geometry.
-  const layoutStyles = seg.words.map(word =>
-    computeLayoutStyle(seg, word, presetName)
-  );
+    // IMPORTANT: For layout, we use base styles ONLY.
+    // Build an array of layoutStyles to freeze geometry.
+    const layoutStyles = seg.words.map(word =>
+        computeLayoutStyle(seg, word, presetName)
+    );
 
-  // This ensures wrapWordsIntoLines uses stable measurements.
-  const layoutStyle = chooseLayoutStyle(seg, presetName);
-  ctx.font = `${layoutStyle.fontSize}px ${layoutStyle.fontFamily}`;
+    // This ensures wrapWordsIntoLines uses stable measurements.
+    const layoutStyle = chooseLayoutStyle(seg, presetName);
+    const layoutFontPx = layoutStyle.fontSize * canvas.height;
+    ctx.font = `${layoutFontPx}px ${layoutStyle.fontFamily}`;
 
-  /**
-   * Layout uses ONLY the static layoutStyle.
-   *
-   * WHY:
-   *   - Layout must remain stable, unaffected by animations.
-   *   - Geometry must originate from style presets, not renderer guesses.
-   *   - Allows future LayoutEngine and RenderPlan to cleanly replace this step.
-   */
-  const lines = wrapWordsIntoLines(ctx, seg.words, canvas.width, layoutStyle);
+    /**
+     * Layout uses ONLY the static layoutStyle.
+     *
+     * WHY:
+     *   - Layout must remain stable, unaffected by animations.
+     *   - Geometry must originate from style presets, not renderer guesses.
+     *   - Allows future LayoutEngine and RenderPlan to cleanly replace this step.
+     */
+    const lines = wrapWordsIntoLines(ctx, seg.words, canvas.width, layoutStyle);
 
     /**
      * RENDERPLAN SEAM (Phase Zero)
@@ -103,25 +104,27 @@ export function drawCaptionForTime(t, ctx, canvas, captions, presetName = "defau
      *   - bounding boxes
      *   - timeline-based compositing
      */
-  // Now draw, word by word, with animated transforms
-  for (const line of lines) {
-    for (const item of line.items) {
-      const { word, x, y, wordIndex } = item;
+    // Now draw, word by word, with animated transforms
+    for (const line of lines) {
+        for (const item of line.items) {
+            const { word, x, y, wordIndex } = item;
 
-      const layoutStyle = layoutStyles[wordIndex];
-      const drawStyle = computeDrawStyle(layoutStyle, seg, word, t);
+            const layoutStyle = layoutStyles[wordIndex];
+            const drawStyle = computeDrawStyle(layoutStyle, seg, word, t);
 
-      ctx.font = `${drawStyle.fontSize}px ${drawStyle.fontFamily}`;
-      ctx.textAlign = "left";
+            const drawFontPx = drawStyle.fontSize * canvas.height;
+            ctx.font = `${drawFontPx}px ${drawStyle.fontFamily}`;
 
-      const isActive = (word === seg.words[highlightIdx]);
-      const finalStyle = resolveActiveStyle(drawStyle, isActive);
+            ctx.textAlign = "left";
 
-      ctx.fillStyle = finalStyle.fill;
+            const isActive = (word === seg.words[highlightIdx]);
+            const finalStyle = resolveActiveStyle(drawStyle, isActive);
+
+            ctx.fillStyle = finalStyle.fill;
 
 
-      ctx.fillText(word.text, x, y);
+            ctx.fillText(word.text, x, y);
+        }
     }
-  }
 }
 
