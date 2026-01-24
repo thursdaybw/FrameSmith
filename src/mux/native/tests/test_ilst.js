@@ -1,25 +1,11 @@
-import { emitIlstBox } from "../box-emitters/ilstBox.js";
-import { emitIlstItemBox } from "../box-emitters/ilstItemBox.js";
-import { emitDataBox } from "../box-emitters/dataBox.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-
-import {
-    extractBoxByPathFromMp4
-} from "./reference/BoxExtractor.js";
-
 import {
     assertEqual,
     assertEqualHex,
     assertExists
 } from "./assertions.js";
-
-import {
-    readUint32,
-    readFourCC
-} from "../bytes/mp4ByteReader.js";
-
-import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
-import { extractIlstItemByKeyFromMp4 } from "./reference/BoxExtractor.js";
 
 /**
  * ILST — Structural Correctness (Phase A)
@@ -27,44 +13,43 @@ import { extractIlstItemByKeyFromMp4 } from "./reference/BoxExtractor.js";
  *
  * Validates architectural intent of the ilst container.
  *
- * This test asserts:
- *   - ilst is a container box
- *   - children are ilst item atoms
- *   - ordering is preserved
+ * Assertions:
+ * - ilst is a container box
+ * - children are ilst item atoms
+ * - ordering is preserved
  *
- * This test does NOT:
- *   - inspect ffmpeg output
- *   - validate byte layout
+ * Notes:
+ * - No serializer involvement
+ * - No direct emitter calls
+ * - Registry entry points only
  */
 export function testIlst_Structure() {
 
-    console.log("=== testIlst_Structure ===");
+    const intent = {
+        items: [
+            {
+                type: "@too",
+                data: {
+                    version: 0,
+                    flags: 1,
+                    dataType: 1,
+                    locale: 0,
+                    payload: new Uint8Array([0x01, 0x02, 0x03])
+                }
+            }
+        ]
+    };
+
+    const node =
+        EmitterRegistry.assemble(
+            "moov/udta/meta/ilst",
+            intent
+        );
 
     // ---------------------------------------------------------
-    // 1. Build one deterministic ilst item
+    // Structural assertions
     // ---------------------------------------------------------
-    const data = emitDataBox({
-        version:  0,
-        flags:    1,
-        dataType: 1,
-        locale:   0,
-        payload:  new Uint8Array([0x01, 0x02, 0x03])
-    });
 
-    const item = emitIlstItemBox({
-        type: "@too",
-        data
-    });
-    // ---------------------------------------------------------
-    // 2. Build ILST
-    // ---------------------------------------------------------
-    const node = emitIlstBox({
-        items: [ item ]
-    });
-
-    // ---------------------------------------------------------
-    // 3. Structural assertions (JSON-level)
-    // ---------------------------------------------------------
     assertEqual("ilst.type", node.type, "ilst");
 
     assertExists("ilst.children", node.children);
@@ -75,76 +60,67 @@ export function testIlst_Structure() {
         node.children[0].type,
         "@too"
     );
-
-    // ---------------------------------------------------------
-    // 4. Serializer acceptance gate
-    // ---------------------------------------------------------
-    const out = serializeBoxTree(node);
-    assertExists("serialized ilst", out);
-
-    console.log("PASS: ILST structural correctness");
 }
 
 /**
  * ILST — Locked Layout Equivalence (ffmpeg)
  * ----------------------------------------
  *
- * Validates that ilst serializes byte-for-byte
- * identically to ffmpeg when built from the same meaning.
+ * Validates byte-for-byte equivalence against ffmpeg output
+ * when rebuilt from semantic golden truth.
  *
- * RULE:
- * - All children must be built semantically
+ * Rules:
  * - No raw byte passthrough
- * - Byte-for-byte is a safety net only
+ * - No direct extractBoxByPathFromMp4 usage
+ * - Semantic dispatcher only
  */
 export async function testIlst_LockedLayoutEquivalence_ffmpeg() {
 
-    console.log("=== testIlst_LockedLayoutEquivalence_ffmpeg ===");
+    // ---------------------------------------------------------
+    // Load golden MP4
+    // ---------------------------------------------------------
 
-    // ---------------------------------------------------------
-    // 1. Load golden MP4
-    // ---------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Extract reference ilst
+    // Resolve ilst via semantic dispatcher
     // ---------------------------------------------------------
-    const refIlst = extractBoxByPathFromMp4(
-        mp4,
-        "moov/udta/meta/ilst"
-    );
-    assertExists("reference ilst", refIlst);
+
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/udta/meta/ilst"
+        );
+
+    const refReport = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
+
+    const refRaw = refReport.raw;
 
     // ---------------------------------------------------------
-    // 3. Golden truth → direct builder input (STRAIGHT PIPE)
+    // Rebuild ilst via registry + serializer
     // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromBox(
-        refIlst,
-        "moov/udta/meta/ilst"
-    );
 
-    const params = truth.getBuilderInput();
-
-    // ---------------------------------------------------------
-    // 4. Rebuild ILST exclusively from golden truth
-    // ---------------------------------------------------------
-    const outIlst = serializeBoxTree(
-        emitIlstBox(params)
-    );
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.assemble(
+                "moov/udta/meta/ilst",
+                params
+            )
+        );
 
     // ---------------------------------------------------------
-    // 5. Byte-for-byte equivalence
+    // Byte-for-byte equivalence
     // ---------------------------------------------------------
-    assertEqual("ilst.size", outIlst.length, refIlst.length);
 
-    for (let i = 0; i < refIlst.length; i++) {
+    assertEqual("ilst.size", out.length, refRaw.length);
+
+    for (let i = 0; i < refRaw.length; i++) {
         assertEqualHex(
             `ilst.byte[${i}]`,
-            outIlst[i],
-            refIlst[i]
+            out[i],
+            refRaw[i]
         );
     }
-
-    console.log("PASS: ILST locked-layout equivalence with ffmpeg");
 }

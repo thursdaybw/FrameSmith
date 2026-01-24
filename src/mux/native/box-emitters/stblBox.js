@@ -91,69 +91,19 @@
  *
  * Those responsibilities belong to the NativeMuxer
  * and final assembly phase.
- *
- * ---
- *
- * Testing strategy:
- * -----------------
- * STBL is validated in three layers:
- *
- *   Phase A: Structural correctness
- *     - required children present
- *     - correct ordering
- *
- *   Phase B: Semantic equivalence
- *     - children interpreted identically to reference MP4s
- *
- *   Phase C: Locked-layout equivalence
- *     - byte-for-byte match against ffmpeg
- *       when all layout decisions are injected
- *
- *
- * This separation keeps tests honest and localized.
- * NOTE: params may include raw leaf boxes (e.g. sbgp) that are spliced
- * directly into STBL without semantic rebuilding.
  */
-export function emitStblBox(children) {
+function emitStblBox(children) {
 
     // ---------------------------------------------------------
     // Contract validation
     // ---------------------------------------------------------
-    //
-    // STBL is a structural container.
-    // All required child boxes must already exist.
-    //
-    // This builder does NOT:
-    //   - create defaults
-    //   - invent missing boxes
-    //   - reorder dynamically
-    //
-    // If a required child is missing, that is a calling error.
-    //
     if (typeof children !== "object" || children === null) {
         throw new Error(
-            "emitStblBox: expected a parameter object"
+            "emitStblBox: expected parameter object"
         );
     }
 
-    /**
-     * Required STBL children.
-     *
-     * These boxes collectively define:
-     *   - sample identity
-     *   - timing
-     *   - chunking
-     *   - storage location
-     *
-     * Removing any of them makes playback undefined.
-     */
-    const required = [
-        "stsd",
-        "stts",
-        "stsc",
-        "stsz",
-        "stco"
-    ];
+    const required = ["stsd", "stts", "stsc", "stsz", "stco"];
 
     for (const name of required) {
         if (!(name in children)) {
@@ -170,13 +120,6 @@ export function emitStblBox(children) {
             );
         }
 
-        /**
-         * Defensive check:
-         * The child node must declare the correct box type.
-         *
-         * This prevents accidental cross-wiring during refactors
-         * (e.g. passing an stts node where stsz was expected).
-         */
         if (node.type !== name) {
             throw new Error(
                 `emitStblBox: '${name}' box has incorrect type '${node.type}'`
@@ -184,60 +127,66 @@ export function emitStblBox(children) {
         }
     }
 
-    const optional = ["stss", "ctts"];
-
-    for (const name of optional) {
-        if (name in children) {
-            const node = children[name];
+    // Optional children validation
+    for (const optional of ["stss", "ctts", "sgpd", "sbgp"]) {
+        if (optional in children) {
+            const node = children[optional];
 
             if (typeof node !== "object" || node === null) {
                 throw new Error(
-                    `emitStblBox: '${name}' must be a box node if provided`
+                    `emitStblBox: '${optional}' must be a box node`
                 );
             }
 
-            if (node.type !== name) {
+            if (node.type !== optional) {
                 throw new Error(
-                    `emitStblBox: '${name}' box has incorrect type '${node.type}'`
+                    `emitStblBox: '${optional}' box has incorrect type '${node.type}'`
                 );
             }
         }
     }
 
-    const ordered = [
-        children.stsd,
-        children.stts
-    ];
-
-    if (children.stss) ordered.push(children.stss);
-    if (children.ctts) ordered.push(children.ctts);
-
-    ordered.push(
-        children.stsc,
-        children.stsz,
-        children.stco
-    );
 
     // ---------------------------------------------------------
-    // Container assembly
+    // Canonical child ordering (ffmpeg-observed)
     // ---------------------------------------------------------
-    //
-    // STBL has no body of its own.
-    // Its meaning is entirely defined by child order.
-    //
+    const orderedChildren = [];
+
+    orderedChildren.push(children.stsd);
+    orderedChildren.push(children.stts);
+
+    // Video timing tables
+    if (children.stss) {
+        orderedChildren.push(children.stss);
+    }
+
+    if (children.ctts) {
+        orderedChildren.push(children.ctts);
+    }
+
+    // Core sample tables
+    orderedChildren.push(children.stsc);
+    orderedChildren.push(children.stsz);
+    orderedChildren.push(children.stco);
+
+    // Sample grouping tables (audio)
+    if (children.sgpd) {
+        orderedChildren.push(children.sgpd);
+    }
+
+    if (children.sbgp) {
+        orderedChildren.push(children.sbgp);
+    }
+
     return {
-        /**
-         * Box type
-         */
         type: "stbl",
-
-        /**
-         * Child boxes in canonical playback order.
-         *
-         * This order matches ffmpeg output and common decoder expectations.
-         */
-        children: ordered
-
+        children: orderedChildren
     };
+}
 
+export function registerStblEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl",
+        emitStblBox
+    );
 }

@@ -8,14 +8,15 @@ import { deriveChunkModel } from "../derivers/deriveChunkModel.js";
 import { assembleMdatPayloadFromChunks } from "../assembleMdatPayloadFromChunks.js";
 import { resolvePhysicalLayout } from "../resolvePhysicalLayout.js";
 
-import { emitStcoBox } from "../box-emitters/stcoBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 
+/*
+import { emitStcoBox } from "../box-emitters/stcoBox.js";
 import { emitFtypBox } from "../box-emitters/ftypBox.js";
 import { emitMoovBox } from "../box-emitters/moovBox.js";
 import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
 import { emitTrakBox } from "../box-emitters/trakBox.js";
-
+*/
 import { ChunkingStrategies } from "../derivers/strategies/chunkingStrategies.js";
 import { assertEqualHex } from "./assertions.js";
 
@@ -23,10 +24,6 @@ import { asIsoBoxContainer } from "../box-model/Box.js";
 import { readUint32 } from "../bytes/mp4ByteReader.js";
 
 export async function testNativeMuxer_StcoConformance_ffmpeg() {
-
-    console.log(
-        "=== testNativeMuxer_StcoConformance_ffmpeg ==="
-    );
 
     // ---------------------------------------------------------
     // 1. Load golden MP4 (ffmpeg oracle)

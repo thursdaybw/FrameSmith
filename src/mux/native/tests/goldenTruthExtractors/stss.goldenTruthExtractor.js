@@ -1,7 +1,5 @@
-import { readUint32 } from "../../bytes/mp4ByteReader.js";
-
 /**
- * STSS — Sync Sample Box
+ * stss — Sync Sample Box (Golden Truth Extractor)
  * ---------------------
  *
  * Declares which samples are random access points (keyframes).
@@ -13,52 +11,80 @@ import { readUint32 } from "../../bytes/mp4ByteReader.js";
  *
  * IMPORTANT:
  * ----------
- * This parser does NOT infer that behavior.
+ * This extractor does NOT infer that behavior.
  * If stss exists, it is treated as authoritative.
  *
  * No traversal.
  * No policy.
  * No normalization.
+ *
+ * Layout (ISO/IEC 14496-12):
+ *
+ *   uint32 entry_count
+ *   uint32[entry_count] sample_numbers
+ *
+ * Contract:
+ * ---------
+ * - readBoxReport() exposes LOSSLESS on-disk structure
+ * - No inference
+ * - No collapsing of fields
  */
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import { readBoxHeaderFromBytes } from "../../box-schema/boxLayoutReaders.js";
+import { getPayloadOffsetForPath } from "../../box-schema/boxSchemas.js";
+import { readUint32ArrayFromOffset } from "../../box-schema/boxLayoutReaders.js";
 
-function readStssBoxFieldsFromBoxBytes(box) {
+function readBoxReport(box) {
     if (!(box instanceof Uint8Array)) {
-        throw new Error(
-            "stss.readFields: expected Uint8Array"
-        );
+        throw new Error("stss.readBoxReport: expected Uint8Array");
     }
 
-    const entryCount = readUint32(box, 12);
+    const path = "moov/trak/mdia/minf/stbl/stss";
 
-    const samples = [];
-    let offset = 16;
+    const header = readBoxHeaderFromBytes(box, path);
+    const payloadOffset = getPayloadOffsetForPath(path);
 
-    for (let i = 0; i < entryCount; i++) {
-        samples.push(
-            readUint32(box, offset)
-        );
-        offset += 4;
-    }
+    const entryCount = readUint32(box, payloadOffset);
+
+    const sampleNumbers = readUint32ArrayFromOffset({
+        box,
+        payloadOffset,
+        count: entryCount
+    });
 
     return {
-        entryCount,
-        samples,
-        raw: box
+        raw: box,
+
+        box: {
+            type: "stss",
+            header,
+            fields: {
+                entryCount,
+                sampleNumbers
+            }
+        },
+
+        derived: {}
     };
 }
 
-function getStssBuildParamsFromBoxBytes(box) {
-    const parsed = readStssBoxFieldsFromBoxBytes(box);
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
 
-    // Framesmith Phase A:
-    // Preserve exactly what ffmpeg declared.
-    // No inference, no expansion.
+function getEmitterInput(box) {
+    const read = readBoxReport(box);
+
     return {
-        sampleNumbers: parsed.samples.slice()
+        sampleNumbers: read.box.fields.sampleNumbers.slice()
     };
 }
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerStssGoldenTruthExtractor(register) {
-    register.readFields(readStssBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getStssBuildParamsFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

@@ -1,70 +1,31 @@
 import { normalizeAccessUnitsInPlace } from "../normalization/access-units/index.js";
 import { deriveStructuralStateInPlace } from "./deriveStructuralStateInPlace.js";
-
-import { applyAvcCContainerPolicy }
-    from "../policies/applyAvcCContainerPolicy.js";
-
-import { applyBtrtContainerPolicy }
-    from "../policies/applyBtrtContainerPolicy.js";
-
-import { applyTrackHandlerPolicy }
-    from "../policies/applyTrackHandlerPolicy.js";
-
-import { applyMovieTimingPolicy }
-    from "../policies/applyMovieTimingPolicy.js";
-
-import { applyEditListPolicy }
-    from "../policies/applyEditListPolicy.js";
-
-import { applyTrackHeaderPolicy }
-    from "../policies/applyTrackHeaderPolicy.js";
-
-import { applyCompressorNamePolicy }
-    from "../policies/applyCompressorNamePolicy.js";
-
-import { applyUdtaPolicy }
-    from "../policies/applyUdtaPolicy.js";
-
+import { applyAvcCContainerPolicy } from "../policies/applyAvcCContainerPolicy.js";
+import { applyBtrtContainerPolicy } from "../policies/applyBtrtContainerPolicy.js";
+import { applyPaspContainerPolicy } from "../policies/applyPaspContainerPolicy.js";
+import { applyTrackHandlerPolicy } from "../policies/applyTrackHandlerPolicy.js";
+import { applyMovieTimingPolicy } from "../policies/applyMovieTimingPolicy.js";
+import { applyEditListPolicy } from "../policies/applyEditListPolicy.js";
+import { applyTrackHeaderPolicy } from "../policies/applyTrackHeaderPolicy.js";
+import { applyCompressorNamePolicy } from "../policies/applyCompressorNamePolicy.js";
+import { applyUdtaPolicy } from "../policies/applyUdtaPolicy.js";
 import { adaptSttsFromSamples } from "../adapters/adaptSttsFromSamples.js";
-
 import { adaptStszSizesFromPayloads } from "../adapters/adaptStszSizesFromPayloads.js";
-
 import { adaptCttsFromSamples } from "../adapters/adaptCttsFromSamples.js";
-
 import { adaptStscEntriesToEmitterParams } from "../adapters/adaptStscEntriesToEmitterParams.js";
-
 import { adaptCodecConfigurationToStsdParams } from "../adapters/adaptCodecConfigurationToStsdParams.js";
-
+import { adaptAudioCodecConfigurationToStsdParams } from "../adapters/adaptAudioCodecConfigurationToStsdParams.js";
 import { assembleMdatPayloadFromChunks } from "../assembleMdatPayloadFromChunks.js";
-
-import { emitStcoBox } from "../box-emitters/stcoBox.js";
-
-import { emitStsdBox } from "../box-emitters/stsdBox.js";
-import { emitFtypBox } from "../box-emitters/ftypBox.js";
-import { emitMoovBox } from "../box-emitters/moovBox.js";
-import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
-import { emitTrakBox } from "../box-emitters/trakBox.js";
-import { emitMdiaBox } from "../box-emitters/mdiaBox.js";
-import { emitMinfBox } from "../box-emitters/minfBox.js";
-import { emitStblBox } from "../box-emitters/stblBox.js";
-import { emitVmhdBox } from "../box-emitters/vmhdBox.js";
-import { emitDinfBox } from "../box-emitters/dinfBox.js";
-import { emitDrefBox } from "../box-emitters/drefBox.js";
-import { emitMdhdBox } from "../box-emitters/mdhdBox.js";
-import { emitHdlrBox } from "../box-emitters/hdlrBox.js";
-import { emitTkhdBox } from "../box-emitters/tkhdBox.js";
-import { emitSttsBox } from "../box-emitters/sttsBox.js";
-import { emitCttsBox } from "../box-emitters/cttsBox.js";
-import { emitStscBox } from "../box-emitters/stscBox.js";
-import { emitStszBox } from "../box-emitters/stszBox.js";
-import { emitUdtaBox } from "../box-emitters/udtaBox.js";
-import { emitStssBox } from "../box-emitters/stssBox.js";
-import { emitEdtsBox } from "../box-emitters/edtsBox.js";
-import { emitElstBox } from "../box-emitters/elstBox.js";
-
 import { resolvePhysicalLayout } from "../resolvePhysicalLayout.js";
 import { commitMoovWithResolvedLayout } from "../commit/commitMoovWithResolvedLayout.js";
 import { emitMp4FileFromResolvedParts } from "../emitMp4FileFromResolvedParts.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { parseAudioSpecificConfigFromEsds } from "../codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
+import { deriveSyncSampleNumbers } from "../derivers/deriveSyncSampleNumbers.js";
+import { applySyncRepresentationPolicy } from "../policies/applySyncRepresentationPolicy.js";
+
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+import { getGoldenTruthBox } from "../tests/goldenTruthExtractors/index.js";
 
 // INTERNAL: compiler implementation detail — use createMp4FromInputs() instead
 /**
@@ -168,12 +129,6 @@ import { emitMp4FileFromResolvedParts } from "../emitMp4FileFromResolvedParts.js
  */
 export function compileMp4({ mp4CompilerState }) {
 
-
-    console.log(
-        "DEBUG compiler semanticHints:",
-        mp4CompilerState.semanticHints
-    );
-
     /**
      *   Tier 1 — Semantic Media Facts (Normalization)
      *
@@ -239,109 +194,317 @@ export function compileMp4({ mp4CompilerState }) {
      * this normalization MUST be revisited.
      *
      */
-    normalizeAccessUnitsInPlace({
-        accessUnits: mp4CompilerState.semanticCore.accessUnits
-    });
+    for (const track of mp4CompilerState.tracks) {
 
+        track.semanticTrackFamily = deriveSemanticTrackFamily(track);
+        track.trackDuration = getSumOfAccessUnitDurations(track.semanticCore.accessUnits);
+        mp4CompilerState.highestTrackId = 1;
+
+        normalizeAccessUnitsInPlace({
+            accessUnits: track.semanticCore.accessUnits,
+            codec: track.semanticCore.codec.codec,
+            trackDuration: track.trackDuration
+        });
+
+    }
 
     // =====================================================================
     // Tier 2 — Structural Derivation (strategy + derivation)
     // =====================================================================
-
     deriveStructuralStateInPlace(mp4CompilerState);
+
+    // ---------------------------------------------------------
+    // Derive sync sample numbers (semantic fact)
+    // ---------------------------------------------------------
+    for (const track of mp4CompilerState.tracks) {
+        track.derivedSyncSampleNumbers = deriveSyncSampleNumbers({ samples: track.semanticCore.accessUnits });
+    }
 
     // =====================================================================
     // Tier 4 — Container Policies (declared early for adapter consumption)
     // =====================================================================
-
-    const compressorNamePolicy =
-        applyCompressorNamePolicy({
+    const compressorNamePolicy = applyCompressorNamePolicy({
             compressorName:
             mp4CompilerState.buildHints?.compressorName
         });
 
+    /**
+     * buildHints: {
+     *     sttsPolicy: "canonical" | "oracle-faithful"
+     * }
+     */
+    const sttsPolicy = mp4CompilerState.buildHints?.sttsPolicy ?? "canonical";
+
     // =====================================================================
     // Tier 3 — Adaptation (semantic → emitter parameters)
     // =====================================================================
+    for (const track of mp4CompilerState.tracks) {
 
-    // -- Time-to-sample
-    const sttsParams = adaptSttsFromSamples({
-        samples: mp4CompilerState.semanticCore.accessUnits
-    });
+        // -- Time-to-sample
+        track.sttsParams = adaptSttsFromSamples({
+            samples: track.semanticCore.accessUnits,
+            sttsPolicy
+        });
 
-    // -- Sample sizes
-    const stszParams = adaptStszSizesFromPayloads({
-        accessUnits: mp4CompilerState.semanticCore.accessUnits,
-        accessUnitPayloads: mp4CompilerState.payloads.accessUnitPayloads
-    });
 
-    // -- Composition offsets
-    const cttsParams = adaptCttsFromSamples({
-        samples: mp4CompilerState.semanticCore.accessUnits
-    });
+        // -- Sample sizes
+        track.stszParams = adaptStszSizesFromPayloads({
+            accessUnits: track.semanticCore.accessUnits,
+            accessUnitPayloads: track.payloads.accessUnitPayloads
+        });
 
-    const hasNonZeroCompositionOffset =
-        cttsParams.entries.some(e => e.offset !== 0);
+        // -- Composition offsets
+        track.cttsParams = adaptCttsFromSamples({
+            samples: track.semanticCore.accessUnits
+        });
 
-    // -- Chunk mapping
-    const stscParams =
-        adaptStscEntriesToEmitterParams(mp4CompilerState.stscEntries);
+        track.hasNonZeroCompositionOffset = track.cttsParams.entries.some(e => e.offset !== 0);
 
-    // -- Codec / sample description (raw, pre-policy)
-    const rawStsdParams = adaptCodecConfigurationToStsdParams(
-        {
-            codec:          mp4CompilerState.semanticCore.codec.codec,
-            compressorName: compressorNamePolicy,
-            avcC:           mp4CompilerState.semanticCore.codec.avcC,
-            width:          mp4CompilerState.buildParameters.codedWidth,
-            height:         mp4CompilerState.buildParameters.codedHeight
+        // -- Chunk mapping
+        
+        track.stscParams = adaptStscEntriesToEmitterParams(track.stscEntries);
+
+        // -- Sample description (codec-family dispatch)
+        if (track.semanticCore.codec.codec.startsWith("avc1")) {
+
+            track.rawStsdParams = adaptCodecConfigurationToStsdParams({
+                    codec:          track.semanticCore.codec.codec,
+                    compressorName: compressorNamePolicy,
+                    avcC:           track.semanticCore.codec.avcC,
+                    width:          track.buildParameters.codedWidth,
+                    height:         track.buildParameters.codedHeight
+                });
+
+
+        } else if (track.semanticCore.codec.codec === "opus") {
+
+            const {
+                channelCount,
+                sampleRate
+            } = track.buildParameters;
+
+            if (!Number.isInteger(channelCount) ||
+                !Number.isInteger(sampleRate)) {
+                throw new Error(
+                    "compileMp4: opus buildParameters must supply channelCount and sampleRate"
+                );
+            }
+
+
+            track.rawStsdParams = {
+                codec: "mp4a",
+                esds: track.semanticCore.codec.esds,
+                channelCount,
+                sampleRate
+            };
+
+        } else if (track.semanticCore.codec.codec.startsWith("mp4a")) {
+
+            // ---------------------------------------------------------
+            // Audio shape resolution (semantic-first, container-fallback)
+            // ---------------------------------------------------------
+
+            let channelCount;
+            let sampleRate;
+
+            // Primary source: AudioSpecificConfig (if present)
+            const asc =
+                parseAudioSpecificConfigFromEsds({
+                    esds: track.semanticCore.codec.esds
+                });
+
+            if (asc !== null) {
+
+                const {
+                    samplingFrequencyIndex,
+                    channelConfiguration
+                } = asc;
+
+                const samplingFrequencyTable = [
+                    96000, 88200, 64000, 48000,
+                    44100, 32000, 24000, 22050,
+                    16000, 12000, 11025, 8000,
+                    7350
+                ];
+
+                sampleRate =
+                    samplingFrequencyTable[samplingFrequencyIndex];
+
+                channelCount =
+                    channelConfiguration;
+
+            } else {
+
+                // Fallback: buildParameters (oracle + WebCodecs symmetry)
+                channelCount =
+                    track.buildParameters.channelCount;
+
+                sampleRate =
+                    track.buildParameters.sampleRate;
+
+            }
+
+            if (!Number.isInteger(channelCount) ||
+                !Number.isInteger(sampleRate)) {
+                throw new Error(
+                    "compileMp4: unable to resolve audio channelCount/sampleRate"
+                );
+            }
+
+
+            track.rawStsdParams = {
+                codec: "mp4a",
+                esds: track.semanticCore.codec.esds,
+                channelCount,
+                sampleRate
+                // sampleSize is NOT semantic and is intentionally omitted here
+            };
+
         }
-    );
+
+        else {
+            throw new Error(
+                `Unsupported codec for stsd adaptation: ${track.semanticCore.codec.codec}`
+            );
+        }
+
+    }
 
     // =====================================================================
     // Tier 4 — Container Policies (explicit, named decisions)
     // =====================================================================
 
+    for (const track of mp4CompilerState.tracks) {
 
-    let avcCProfileIndication;
+        const rawStsdParams = track.rawStsdParams;
 
-    if (mp4CompilerState.semanticCore.codec.avcCCompleteness === "semantic") {
-        avcCProfileIndication = rawStsdParams.avcC[1];
+        // ---------------------------------------------------------
+        // Sync sample representation policy (stss vs none)
+        // ---------------------------------------------------------
+        if (track.semanticTrackFamily == 'video') console.log('Derived sync sample numbers', track.derivedSyncSampleNumbers.sampleNumbers);
+        track.syncRepresentation = applySyncRepresentationPolicy({
+                derivedSyncSampleNumbers: track.derivedSyncSampleNumbers,
+                buildHints: track.buildHints
+            });
+
+        if (track.semanticTrackFamily == 'video') console.log('track.syncRepresentation', track.syncRepresentation);
+
+        if (rawStsdParams.codec === "avc1") {
+
+            let avcCProfileIndication;
+
+            if (track.semanticCore.codec.avcCCompleteness === "semantic") {
+                avcCProfileIndication = rawStsdParams.avcC[1];
+            }
+
+            // avcC (video) MAY be container-completed via policy
+            // Therefore:
+            // - avcC may pass through applyAvcCContainerPolicy
+            track.stsdParams = {
+                codec: rawStsdParams.codec,
+                width: rawStsdParams.width,
+                height: rawStsdParams.height,
+                compressorName: rawStsdParams.compressorName,
+
+                // Optional container compatibility boxes
+                pasp: applyPaspContainerPolicy({
+                    pasp: track.buildHints?.pasp
+                }),
+
+                // Optional policy: btrt
+                // - sourced ONLY from buildHints
+                // - validated and passed through verbatim
+                // - omitted if not supplied
+                btrt: applyBtrtContainerPolicy({
+                    btrt: track.buildHints?.btrt
+                }),
+
+                // Mandatory policy: AVC Container compatibility (High profile extension)
+                avcC: applyAvcCContainerPolicy({
+                    avcC: rawStsdParams.avcC,
+                    avcCCompleteness:
+                    track.semanticCore.codec.avcCCompleteness,
+                    profileIndication: avcCProfileIndication
+                })
+            };
+
+        } else if (rawStsdParams.codec === "mp4a") {
+
+            track.stsdParams = {
+                codec: rawStsdParams.codec,
+
+                // Container-level defaults for mp4a SampleEntry
+                // These are NOT semantic and are NOT derivable from WebCodecs
+                channelCount: rawStsdParams.channelCount,
+                sampleRate:   rawStsdParams.sampleRate,
+                sampleSize:   16, // MP4 container default (explicit policy)
+
+                // Opaque codec configuration (must remain byte-for-byte)
+                esds: rawStsdParams.esds,
+
+                // Optional policy: btrt
+                // - sourced ONLY from buildHints
+                // - validated and passed through verbatim
+                // - omitted if not supplied
+                btrt: applyBtrtContainerPolicy({
+                    btrt: track.buildHints?.btrt
+                }),
+
+            };
+
+        } else if (rawStsdParams.codec === "opus") {
+
+            // ---------------------------------------------------------
+            // Opus (WebCodecs) → mp4a SampleEntry adaptation
+            // ---------------------------------------------------------
+            //
+            // WebCodecs exposes Opus as a codec string, but MP4
+            // container representation uses an mp4a SampleEntry
+            // with opaque ESDS payload.
+            //
+            // This is a REPRESENTATIONAL adaptation, not a semantic one.
+            //
+
+            track.stsdParams = {
+                codec: "mp4a",
+
+                // Container-level defaults (explicit policy)
+                channelCount: rawStsdParams.channelCount,
+                sampleRate:   rawStsdParams.sampleRate,
+                sampleSize:   16,
+
+                // Opaque codec configuration (verbatim from WebCodecs)
+                esds: rawStsdParams.esds
+            };
+        } else {
+            throw new Error(
+                `Unsupported codec in Tier 4: ${rawStsdParams.codec}`
+            );
+        }
     }
 
-    //
-    // NOTE on codec-owned configuration boxes:
-    //
-    // avcC (video) MAY be container-completed via policy
-    // esds (audio) MUST be treated as opaque
-    //
-    // esds contains a descriptor graph defined by ISO/IEC 14496-1.
-    // Any mutation would require descriptor parsing and length recomputation,
-    // which is outside container policy scope.
-    //
-    // Therefore:
-    // - avcC may pass through applyAvcCContainerPolicy
-    // - esds must be preserved byte-for-byte
-    const stsdParams = {
-        codec: rawStsdParams.codec,
-        width: rawStsdParams.width,
-        height: rawStsdParams.height,
-        compressorName: rawStsdParams.compressorName,
+    // ---------------------------------------------------------
+    // Movie timing policy (container-level)
+    // ---------------------------------------------------------
+    const movieDuration = getDurationOfLongestTrack(mp4CompilerState.tracks);
 
-        // Optional policy: btrt
-        // - sourced ONLY from buildHints
-        // - validated and passed through verbatim
-        // - omitted if not supplied
-        btrt: applyBtrtContainerPolicy({
-            btrt: mp4CompilerState.buildHints?.btrt
-        }),
+    // Just choose an arbitrary track to supply the timescale, whichever doesn't matter.
+    const trackTimescale = mp4CompilerState.tracks[0].buildParameters.trackTimescale;
 
-        // Mandatory policy: AVC Container compatibility (High profile extension)
-        avcC: applyAvcCContainerPolicy({
-            avcC: rawStsdParams.avcC,
-            avcCCompleteness: mp4CompilerState.semanticCore.codec.avcCCompleteness,
-            profileIndication: avcCProfileIndication
-        })
+    const mvhdTiming = applyMovieTimingPolicy({
+        movieDurationInTrackTimescale: movieDuration, 
+        trackTimescale, 
+        trackId: mp4CompilerState.highestTrackId,
+        movieTimescale: mp4CompilerState.semanticHints?.movieTimescale
+    });
+
+    // ---------------------------------------------------------
+    // Movie Header (mvhd)
+    // ---------------------------------------------------------
+    const mvhdIntent = {
+        timescale:   mvhdTiming.timescale,
+        duration:    mvhdTiming.duration,
+        nextTrackId: mvhdTiming.nextTrackId
     };
 
     // =====================================================================
@@ -349,158 +512,242 @@ export function compileMp4({ mp4CompilerState }) {
     // =====================================================================
 
     // ---------------------------------------------------------
-    // MDAT (media payload)
+    // MDAT (media payload) — per-track assembly
     // ---------------------------------------------------------
-    const {
-        payload: mdatPayload,
-        chunkOffsets
-    } = assembleMdatPayloadFromChunks({
-        accessUnitGroups: mp4CompilerState.chunks,
-        accessUnitPayloads: mp4CompilerState.payloads.accessUnitPayloads
-    });
 
-    // ---------------------------------------------------------
-    // Sample Table (stbl)
-    // ---------------------------------------------------------
-    const placeholderStco = emitStcoBox({
-        chunkOffsets: new Array(mp4CompilerState.chunks.length).fill(0)
-    });
+    const trackMdatParts = [];
 
-    const stblChildren = {
-        stsd: emitStsdBox(stsdParams),
-        stts: emitSttsBox(sttsParams),
-        stsc: emitStscBox(stscParams),
-        stsz: emitStszBox(stszParams),
-        stco: placeholderStco
-    };
+    for (const track of mp4CompilerState.tracks) {
 
-    if (mp4CompilerState.stssSampleNumbers.length > 0) {
-        stblChildren.stss =
-            emitStssBox({ sampleNumbers: mp4CompilerState.stssSampleNumbers });
+        const {
+            payload,
+            chunkOffsets
+        } = assembleMdatPayloadFromChunks({
+            accessUnitGroups: track.chunks,
+            accessUnitPayloads: track.payloads.accessUnitPayloads
+        });
+
+        track.chunkOffsets = chunkOffsets;
+
+        trackMdatParts.push({
+            payload,
+            chunkOffsets,
+            track
+        });
     }
 
-    if (hasNonZeroCompositionOffset) {
-        stblChildren.ctts = emitCttsBox(cttsParams);
-    }
-
-    const stbl = emitStblBox(stblChildren);
-
     // ---------------------------------------------------------
-    // Media boxes (mdia / minf)
+    // MDAT (container-level concatenation)
     // ---------------------------------------------------------
-    const dinf = emitDinfBox({
-        dref: emitDrefBox()
-    });
 
-    const minf = emitMinfBox({
-        vmhd: emitVmhdBox(),
-        dinf,
-        stbl
-    });
-
-    const mdhd = emitMdhdBox({
-        timescale: mp4CompilerState.buildParameters.trackTimescale,
-        duration: mp4CompilerState.trackDuration
-    });
-
-    const hdlr = emitHdlrBox(
-        applyTrackHandlerPolicy({
-            trackType: "video"
-        })
+    const mdatPayload = concatUint8Arrays(
+        trackMdatParts.map(p => p.payload)
     );
 
-    const mdia = emitMdiaBox({
-        mdhd,
-        hdlr,
-        minf
-    });
-
     // ---------------------------------------------------------
-    // Movie timing policy (container-level)
-    // ---------------------------------------------------------
-    const mvhdTiming = applyMovieTimingPolicy({
-        trackDuration: mp4CompilerState.trackDuration,
-        trackTimescale: mp4CompilerState.buildParameters.trackTimescale,
-        trackId: 1,
-        movieTimescale: mp4CompilerState.semanticHints?.movieTimescale
-    });
-
-    // ---------------------------------------------------------
-    // Movie Header (mvhd)
-    // ---------------------------------------------------------
-    const mvhd = emitMvhdBox(mvhdTiming);
-
-    // ---------------------------------------------------------
-    // Track Header policy (container-level)
-    // ---------------------------------------------------------
-    const tkhdPolicy = applyTrackHeaderPolicy({
-        mdhdTimescale: mp4CompilerState.buildParameters.trackTimescale,
-        mdhdDuration:  mp4CompilerState.trackDuration,
-        mvhdTimescale: mvhdTiming.timescale
-    });
-
-    const editListParams = applyEditListPolicy({
-        trackDuration: mp4CompilerState.trackDuration,
-        trackTimescale: mp4CompilerState.buildParameters.trackTimescale,
-        movieTimescale: mvhdTiming.timescale,
-        mediaStartTime: mp4CompilerState.semanticCore.accessUnits[0].pts
-    });
-
-    const edts = emitEdtsBox({
-        elst: emitElstBox(editListParams.elst)
-    });
-
-    // ---------------------------------------------------------
-    // Track and movie boxes
+    // Sample Tables (stbl) — per track
     // ---------------------------------------------------------
 
+    for (const part of trackMdatParts) {
+        part.track.stblIntent = buildStblIntentFromTrack(part.track);
+    }
+
     // ---------------------------------------------------------
-    // Track Header (tkhd)
+    // Media boxes (mdia / minf / trak) — per track
+    // ---------------------------------------------------------
+
+    const traks = [];
+    for (let i = 0; i < mp4CompilerState.tracks.length; i++) {
+
+        const track = mp4CompilerState.tracks[i];
+
+        const dinfIntent = {
+            dref: {}
+        };
+
+        const minfIntent = {
+            mediaHeader: {
+                type: track.semanticTrackFamily === "audio" ? "smhd" : "vmhd"
+            },
+            dinf: dinfIntent,
+            stbl: track.stblIntent
+        };
+
+        const mdhdIntent = {
+            timescale: track.buildParameters.trackTimescale,
+            duration:  track.trackDuration
+        };
+
+        let handlerType;
+
+        if (track.semanticTrackFamily === "audio") {
+            handlerType = "soun";
+        } else {
+            handlerType = "vide";
+        }
+
+        const mdiaIntent = {
+            mdhd: mdhdIntent,
+
+            hdlr: {
+                handlerType,
+                nameBytes: resolveHdlrNameBytes(
+                    track.semanticHints?.hdlr,
+                    track.semanticTrackFamily
+                )
+            },
+
+            minf: minfIntent
+        };
+
+        // ---------------------------------------------------------
+        // Track and movie boxes
+        // ---------------------------------------------------------
+
+        // ---------------------------------------------------------
+        // Track Header (tkhd)
+        // ---------------------------------------------------------
+        //
+        // Track ID assignment
+        // -------------------
+        //
+        // MP4 requires each track to have a positive integer track ID.
+        // Under the current compiler constraints:
+        //
+        //   - exactly ONE track is supported
+        //   - multi-track (e.g. audio) support is not yet implemented
+        //   - no track ordering or numbering policy exists yet
+        //
+        // Therefore, the only valid and honest value is:
+        //
+        //   trackId = 1
+        //
+        // This is a CONTAINER-LEVEL decision, not a semantic media fact.
+        //
+        // When multi-track support is introduced, this value MUST be
+        // replaced by an explicit Track ID Policy that assigns stable,
+        // deterministic IDs across tracks.
+        //
+
+        // ---------------------------------------------------------
+        // Track Header policy (container-level)
+        // ---------------------------------------------------------
+       
+        track.trakIntent = {
+            tkhd: {
+                trackId: mp4CompilerState.highestTrackId,
+                mdhdTimescale: track.buildParameters.trackTimescale,
+                mdhdDuration:  track.trackDuration,
+                width:
+                track.semanticTrackFamily === "video"
+                ? track.buildParameters.codedWidth
+                : 0,
+
+                height:
+                track.semanticTrackFamily === "video"
+                ? track.buildParameters.codedHeight
+                : 0
+            },
+
+            edts: {
+                elst: null
+            },
+
+            mdia: mdiaIntent
+        };
+        mp4CompilerState.highestTrackId++;
+
+        traks.push(track.trakIntent);
+    }
+
+    let udtaIntent = null;
+
+    if (mp4CompilerState.buildHints?.udta !== undefined) {
+
+        // Structured udta already supplied — trust it verbatim
+        udtaIntent = mp4CompilerState.buildHints.udta;
+
+    } else {
+
+        // Otherwise, derive udta via policy
+        udtaIntent = applyUdtaPolicy({
+            opaqueUdta: mp4CompilerState.buildHints?.udtaBytes,
+            encoderIdentity: mp4CompilerState.buildHints?.encoderIdentity
+        });
+
+    }
+
+    // ---------------------------------------------------------
+    // Track Header Policy (moov-scoped, TEMPORARY PLACEMENT)
     // ---------------------------------------------------------
     //
-    // Track ID assignment
-    // -------------------
+    // NOTE:
+    // This policy depends on mvhdTimescale and mdhd-derived values.
+    // It belongs at the moov boundary.
     //
-    // MP4 requires each track to have a positive integer track ID.
-    // Under the current compiler constraints:
+    // The moov assembler is not yet registry-driven, so this
+    // policy is applied here as a staging step.
+    // This MUST move when emitMoovBox is replaced by
+    // EmitterRegistry.assemble("moov", ...)
     //
-    //   - exactly ONE track is supported
-    //   - multi-track (e.g. audio) support is not yet implemented
-    //   - no track ordering or numbering policy exists yet
-    //
-    // Therefore, the only valid and honest value is:
-    //
-    //   trackId = 1
-    //
-    // This is a CONTAINER-LEVEL decision, not a semantic media fact.
-    //
-    // When multi-track support is introduced, this value MUST be
-    // replaced by an explicit Track ID Policy that assigns stable,
-    // deterministic IDs across tracks.
-    //
+
+    for (const trak of traks) {
+
+        const tkhd = trak.tkhd;
+        const mdhd = trak.mdia?.mdhd;
+
+        if (!tkhd || !mdhd) {
+            throw new Error(
+                "compileMp4: tkhd/mdhd required before applyTrackHeaderPolicy"
+            );
+        }
+
+        const headerPolicy =
+            applyTrackHeaderPolicy({
+                mdhdTimescale: mdhd.timescale,
+                mdhdDuration:  mdhd.duration,
+                mvhdTimescale: mvhdTiming.timescale
+            });
+
+        Object.assign(tkhd, headerPolicy);
+    }
 
     // ---------------------------------------------------------
-    // Track Header policy (container-level)
+    // Edit List Policy (moov-scoped, TEMPORARY PLACEMENT)
     // ---------------------------------------------------------
-    const tkhd = emitTkhdBox({
-        trackId: 1,
-        duration: tkhdPolicy.duration,
-        width: mp4CompilerState.buildParameters.codedWidth,
-        height: mp4CompilerState.buildParameters.codedHeight,
-        widthFraction: tkhdPolicy.widthFraction,
-        heightFraction: tkhdPolicy.heightFraction
-    });
+    //
+    // NOTE:
+    // Edit lists map TRACK time → MOVIE time.
+    // Therefore this policy MUST run after applyMovieTimingPolicy
+    // and after mvhd.timescale is authoritative.
+    //
 
-    const trak = emitTrakBox({
-        tkhd,
-        edts,
-        mdia
-    });
+    for (const trak of traks) {
 
-    const udtaNode = applyUdtaPolicy({
-        opaqueUdta: mp4CompilerState.buildHints?.udtaBytes,
-        encoderIdentity: mp4CompilerState.buildHints?.encoderIdentity
-    });
+        const mdhd = trak.mdia?.mdhd;
+        const edts = trak.edts;
+
+        if (!mdhd || !edts) {
+            throw new Error(
+                "compileMp4: mdhd/edts required before applyEditListPolicy"
+            );
+        }
+
+        const editList =
+            applyEditListPolicy({
+                trackDuration: mdhd.duration,
+                trackTimescale: mdhd.timescale,
+                movieTimescale: mvhdIntent.timescale,
+                mediaStartTime:
+                trak.mdia.minf.stbl.stts
+                ? trak.mdia.minf.stbl.stts.entries[0].sampleDelta
+                : trak.mdia.mdhd.duration === 0
+                ? 0
+                : trak.mdia.mdhd.duration // defensive fallback
+            });
+
+        edts.elst = editList.elst;
+    }
 
     // ---------------------------------------------------------
     // Movie Header (mvhd)
@@ -524,43 +771,76 @@ export function compileMp4({ mp4CompilerState }) {
     // When multi-track support is added, this MUST be replaced
     // by an explicit Track ID allocation policy.
     //
-    const moov = emitMoovBox({
-        mvhd,
-        traks: [trak],
-        udta: udtaNode 
-    });
-
-    // DEBUG: inspect moov box structure before serialization
-    console.log("=== DEBUG: moov box structure ===");
-    console.log("moov.type:", moov.type);
-    console.log(
-        "moov.children:",
-        moov.children.map(child => child.type)
+    const moov = EmitterRegistry.assemble(
+        "moov",
+        {
+            mvhd: mvhdIntent,
+            traks,
+            // IMPORTANT:
+            // only pass udta through assembler if it is semantic
+            udta:
+            udtaIntent && udtaIntent.children
+            ? udtaIntent
+            : null
+        }
     );
 
-    const moovUdta = moov.children.find(child => child.type === "udta");
+    // ---------------------------------------------------------
+    // Inline opaque udta passthrough (compiler responsibility)
+    // ---------------------------------------------------------
+    if (udtaIntent && udtaIntent.bytes instanceof Uint8Array) {
 
-    if (!moovUdta) {
-        console.log("DEBUG: moov has NO udta child");
-    } else {
-        console.log("DEBUG: moov.udta found");
-        console.log("  udta.__opaque:", moovUdta.__opaque === true);
-        console.log(
-            "  udta.children:",
-            Array.isArray(moovUdta.children)
-            ? moovUdta.children.map(c => c.type)
-            : moovUdta.children
+        // Remove any assembler-emitted udta (defensive)
+        moov.children = moov.children.filter(
+            child => child.type !== "udta"
         );
+
+        // Inject opaque udta verbatim
+        moov.children.push({
+            type: "udta",
+            bytes: udtaIntent.bytes
+        });
     }
-    console.log("=== END DEBUG ===");
 
-    // END DEBUG
 
-    const ftyp = emitFtypBox({
-        majorBrand: "isom",
-        minorVersion: 512,
-        compatibleBrands: ["isom", "iso2", "avc1", "mp41"]
-    });
+    const ftyp = EmitterRegistry.emit(
+        "ftyp",
+        {
+            majorBrand: "isom",
+            minorVersion: 512,
+            compatibleBrands: ["isom", "iso2", "avc1", "mp41"]
+        }
+    );
+
+    // ---------------------------------------------------------
+    // Resolve MDAT-relative chunk offsets (layout-aware)
+    // ---------------------------------------------------------
+
+    const allChunkOffsets = [];
+
+    let mdatPayloadCursor = 0;
+
+    for (const part of trackMdatParts) {
+
+        // part.chunkOffsets are relative to the start of this track's payload
+        for (const localOffset of part.chunkOffsets) {
+            allChunkOffsets.push(mdatPayloadCursor + localOffset);
+        }
+
+        // Advance cursor by this track's physical payload size
+        mdatPayloadCursor += part.payload.length;
+    }
+
+    const moovBytesPreLayout = serializeBoxTree(moov);
+
+    const stscBoxReport =  
+        getGoldenTruthBox
+        .getSemanticBoxDataFromBox({
+            boxBytes: moovBytesPreLayout,
+            sourceRegistryKey: "moov",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stsc"
+        })
+        .readBoxReport()
 
     // ---------------------------------------------------------
     // Physical layout + final file assembly
@@ -569,18 +849,257 @@ export function compileMp4({ mp4CompilerState }) {
         ftypNode: ftyp,
         moovNode: moov,
         mdatPayload,
-        chunkOffsets
+
+        chunkOffsets: allChunkOffsets
     });
+
+    const perTrackStcoOffsets = [];
+
+    let cursor = 0;
+
+    for (const part of trackMdatParts) {
+
+        const chunkCount = part.chunkOffsets.length;
+
+        const resolvedOffsets = layout.stcoOffsets.slice(cursor, cursor + chunkCount);
+
+        if (resolvedOffsets.length !== chunkCount) {
+            throw new Error("compileMp4: STCO slice mismatch");
+        }
+
+        perTrackStcoOffsets.push({
+            track: part.track,
+            stcoOffsets: resolvedOffsets
+        });
+
+        cursor += chunkCount;
+    }
 
     const committedMoov = commitMoovWithResolvedLayout({
         originalMoovNode: moov,
-        stcoOffsets: layout.stcoOffsets
+        perTrackStcoOffsets
     });
 
-    return emitMp4FileFromResolvedParts({
+    const bytes = emitMp4FileFromResolvedParts({
         ftypNode: ftyp,
         committedMoovNode: committedMoov,
         mdatPayload,
         fileBoxOrder: layout.fileBoxOrder
     });
+
+    const finalizedStscBoxReport =  
+        getGoldenTruthBox
+        .getSemanticBoxDataFromBox({
+            boxBytes: bytes,
+            sourceRegistryKey: "$mp4",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stsc"
+        })
+        .readBoxReport()
+
+    return {
+        bytes: bytes,
+        __debug: {
+            committedMoovIntent: committedMoov
+        }
+    };
+
+}
+
+function concatUint8Arrays(arrays) {
+
+    let totalLength = 0;
+
+    for (const arr of arrays) {
+        totalLength += arr.length;
+    }
+
+    const out = new Uint8Array(totalLength);
+
+    let offset = 0;
+    for (const arr of arrays) {
+        out.set(arr, offset);
+        offset += arr.length;
+    }
+
+    return out;
+}
+
+function buildStblIntentFromTrack(track) {
+
+    let sampleEntryNode;
+
+    // ---------------------------------------------------------
+    // Sample Entry routing (codec-family dispatch)
+    // ---------------------------------------------------------
+    if (track.stsdParams.codec === "avc1") {
+
+        const { codec, ...avc1Params } = track.stsdParams;
+
+        sampleEntryNode = EmitterRegistry.assemble(
+            "moov/trak/mdia/minf/stbl/stsd|avc1",
+            avc1Params
+        );
+
+    } else if (track.stsdParams.codec === "mp4a") {
+
+        const { codec, ...mp4aParams } = track.stsdParams;
+
+        sampleEntryNode = EmitterRegistry.assemble(
+            "moov/trak/mdia/minf/stbl/stsd|mp4a",
+            mp4aParams
+        );
+
+    } else {
+        throw new Error(
+            `Unsupported codec for STSD sample entry: ${track.stsdParams.codec}`
+        );
+    }
+
+    // ---------------------------------------------------------
+    // Canonical STBL intent
+    // ---------------------------------------------------------
+    const stblIntent = {
+        stsd: {
+            sampleEntries: [ sampleEntryNode ]
+        },
+        stts: track.sttsParams,
+        stsc: track.stscParams,
+        stsz: track.stszParams,
+        stco: {
+            chunkOffsets: new Array(track.chunks.length).fill(0)
+        },
+    };
+
+    console.log(
+        "[buildStblIntentFromTrack] base STBL intent",
+        {
+            hasStts: !!stblIntent.stts,
+            hasStsc: !!stblIntent.stsc,
+            hasStsz: !!stblIntent.stsz
+        }
+    );
+
+    if ( track.hasNonZeroCompositionOffset) {
+        stblIntent.ctts = track.cttsParams;
+    }
+
+    // ---------------------------------------------------------
+    // Sync sample representation (policy-decided)
+    // ---------------------------------------------------------
+    if (track.syncRepresentation) {
+
+        if (track.syncRepresentation.kind === "stss") {
+
+            console.log(
+                "[buildStblIntentFromTrack] adding STSS",
+                {
+                    count: track.syncRepresentation.sampleNumbers.length
+                }
+            );
+
+            stblIntent.stss = {
+                sampleNumbers: track.syncRepresentation.sampleNumbers
+            };
+        }
+
+        else if (track.syncRepresentation.kind === "sgpd/sbgp") {
+            
+            stblIntent.sgpd =  track.syncRepresentation.sgpdData;
+            stblIntent.sbgp =  track.syncRepresentation.sbgpData;
+
+        }
+
+        // kind === "none" → emit nothing
+    }
+
+    console.log(
+        "[buildStblIntentFromTrack] final STBL keys",
+        Object.keys(stblIntent)
+    );
+
+    return stblIntent;
+
+}
+
+function deriveSemanticTrackFamily(track) {
+
+    const codec = track.semanticCore.codec.codec;
+
+    if (codec.startsWith("mp4a") || codec === "opus") {
+        return "audio";
+    }
+
+    return "video";
+}
+
+export function getSumOfAccessUnitDurations(accessUnits) {
+
+        if (!accessUnits) {
+            throw new Error( "deriveTrackDurations: accessUnits is required");
+        }
+        if (!Array.isArray(accessUnits)) {
+            throw new Error( "deriveTrackDurations: accessUnits must be an array");
+        }
+
+        if (accessUnits.length === 0) {
+            return 0;
+        }
+
+        let totalDuration = 0;
+
+        for (const accessUnit of accessUnits) {
+
+            if (!Number.isInteger(accessUnit.duration)) {
+                throw new Error("deriveTrackDurations: accessUnit.duration must be an integer");
+            }
+
+            totalDuration += accessUnit.duration;
+        }
+
+        return totalDuration;
+}
+
+function getDurationOfLongestTrack(tracks) {
+
+    if (!Array.isArray(tracks)) {
+        throw new Error("deriveMovieDurationFromTracks: tracks must be an array");
+    }
+
+    if (tracks.length === 0) {
+        return 0;
+    }
+
+    let maximumDuration = 0;
+
+    for (const track of tracks) {
+
+        if (!Number.isInteger(track.trackDuration)) {
+            throw new Error(
+                "deriveMovieDurationFromTracks: track.trackDuration must be an integer"
+            );
+        }
+
+        if (track.trackDuration > maximumDuration) {
+            maximumDuration = track.trackDuration;
+        }
+    }
+
+    return maximumDuration;
+}
+
+function resolveHdlrNameBytes(hdlrIntent, trackFamily) {
+
+    if (hdlrIntent && hdlrIntent.nameBytes instanceof Uint8Array) {
+        return hdlrIntent.nameBytes;
+    }
+
+    if (hdlrIntent && typeof hdlrIntent.name === "string") {
+        return new TextEncoder().encode(hdlrIntent.name + "\0");
+    }
+
+    if (trackFamily === "audio") {
+        return new TextEncoder().encode("SoundHandler\0");
+    }
+
+    return new TextEncoder().encode("VideoHandler\0");
 }

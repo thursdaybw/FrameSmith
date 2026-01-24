@@ -2,16 +2,24 @@ import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAc
 import { deriveChunkModel } from "../derivers/deriveChunkModel.js";
 import { deriveStscEntries } from "../derivers/deriveStscEntries.js";
 import { adaptStscEntriesToEmitterParams } from "../adapters/adaptStscEntriesToEmitterParams.js";
-import { emitStscBox } from "../box-emitters/stscBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
+import {
+    findBoxesByPathFromMp4,
+} from "./reference/BoxExtractor.js";
 import { assertEqualHex, assertEqual } from "./assertions.js";
 import { ChunkingStrategies } from "../derivers/strategies/chunkingStrategies.js";
+
 
 export async function testNativeMuxer_StscDerivation_Conformance_ffmpeg() {
 
     console.log(
         "=== testNativeMuxer_StscDerivation_Conformance_ffmpeg ==="
+    );
+
+    console.warn(
+        "⚠️ TODO: This test currently validates STSC derivation against the VIDEO oracle only.\n" +
+        "It must be upgraded to run against the AUDIO oracle (trak[1]) once audio derivation\n" +
+        "is exercised end-to-end in NativeMuxer."
     );
 
     // ---------------------------------------------------------
@@ -57,12 +65,20 @@ export async function testNativeMuxer_StscDerivation_Conformance_ffmpeg() {
     );
 
     // ---------------------------------------------------------
-    // 7. Extract reference STSC from golden MP4
+    // 7. Extract reference STSC from golden MP4 (single-track)
     // ---------------------------------------------------------
-    const refBytes = extractBoxByPathFromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl/stsc"
-    );
+    const traks = findBoxesByPathFromMp4(mp4, "moov/trak");
+
+    assertEqual("trak.count", traks.length, 1);
+
+    const stscBoxes = findTraversalNodesByPathFromBoxBytes(
+            traks[0],
+            "mdia/minf/stbl/stsc"
+        );
+
+    assertEqual("stsc.box.count", stscBoxes.length, 1);
+
+    const refBytes = stscBoxes[0];
 
     // ---------------------------------------------------------
     // 8. Byte-for-byte equivalence

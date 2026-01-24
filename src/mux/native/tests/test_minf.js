@@ -1,140 +1,254 @@
-import { emitMinfBox } from "../box-emitters/minfBox.js";
-import { emitDinfBox } from "../box-emitters/dinfBox.js";
-import { emitStblBox } from "../box-emitters/stblBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { extractChildBoxFromContainer } from "./reference/BoxExtractor.js";
+
+import { asIsoBoxContainer } from "../box-model/Box.js";
+
 import {
-    assertExists,
+    extractChildBoxFromContainer
+} from "./reference/BoxExtractor.js";
+
+import {
     assertEqual,
     assertEqualHex,
+    assertExists
 } from "./assertions.js";
-import { emitVmhdBox } from "../box-emitters/vmhdBox.js";
+
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
-/**
- * MINF — Structural Correctness (Phase A)
- * --------------------------------------
- *
- * Validates the structural intent of the Media Information Box.
- *
- * This test does NOT:
- *   - infer media type
- *   - test semantics
- *   - test serialization equivalence
- *
- * It asserts only what MINF is responsible for:
- *   - container presence
- *   - required children
- *   - correct ordering
- */
-export async function testMinf_Structure() {
+export async function testMinf_BuilderInput_Video() {
 
-    console.log("=== testMinf_Structure ===");
-
-    // ---------------------------------------------------------
-    // 1. Explicit children (policy injected by test)
-    // ---------------------------------------------------------
-    const vmhd = { type: "vmhd", body: [] };
-    const dinf = { type: "dinf", body: [] };
-    const stbl = { type: "stbl", body: [] };
-
-    // ---------------------------------------------------------
-    // 2. Build MINF
-    // ---------------------------------------------------------
-    const node = emitMinfBox({
-        vmhd,
-        dinf,
-        stbl
-    });
-
-    const minf = serializeBoxTree(node);
-
-    // ---------------------------------------------------------
-    // 3. Structural assertions
-    // ---------------------------------------------------------
-    assertExists("vmhd", extractChildBoxFromContainer(minf, "vmhd"));
-    assertExists("dinf", extractChildBoxFromContainer(minf, "dinf"));
-    assertExists("stbl", extractChildBoxFromContainer(minf, "stbl"));
-
-    // ---------------------------------------------------------
-    // 4. Ordering assertions
-    // ---------------------------------------------------------
-    const childTypes = node.children.map(c => c.type);
-
-    assertEqual(
-        "minf.childCount",
-        childTypes.length,
-        3
-    );
-
-    assertEqual(
-        "minf.childOrder",
-        childTypes.join(","),
-        "vmhd,dinf,stbl"
-    );
-
-    console.log("PASS: MINF structural correctness");
-}
-
-/**
- * MINF — Locked Layout Equivalence (ffmpeg)
- * ----------------------------------------
- *
- * Validates that MINF serializes identically to ffmpeg
- * when provided with the same resolved child boxes.
- *
- * All layout and policy decisions are injected.
- */
-export async function testMinf_LockedLayoutEquivalence_ffmpeg() {
-
-    console.log("=== testMinf_LockedLayoutEquivalence_ffmpeg ===");
-
-    // ---------------------------------------------------------
-    // 1. Load golden MP4
-    // ---------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    // ---------------------------------------------------------
-    // 2. Read golden truth MINF
-    // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/minf",
-        {
-            trackType: "video"
-        }
-    );
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]/mdia/minf"
+        );
 
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput();
+    const input = truth.getEmitterInput();
 
-    // ---------------------------------------------------------
-    // 3. Rebuild MINF exclusively from golden truth
-    // ---------------------------------------------------------
-    const outBytes = serializeBoxTree(
-        emitMinfBox(params)
-    );
-
-    // ---------------------------------------------------------
-    // 4. Byte-for-byte equivalence
-    // ---------------------------------------------------------
-    const refRaw = refFields.raw;
+    assertExists("builder input", input);
+    assertExists("mediaHeader", input.mediaHeader);
+    assertExists("dinf", input.dinf);
+    assertExists("stbl", input.stbl);
 
     assertEqual(
-        "minf.size",
-        outBytes.length,
-        refRaw.length
+        "video mediaHeader is vmhd",
+        input.mediaHeader.type,
+        "vmhd"
     );
 
-    for (let i = 0; i < refRaw.length; i++) {
-        assertEqualHex(
-            `minf.byte[${i}]`,
-            outBytes[i],
-            refRaw[i]
+}
+
+export async function testMinf_BuilderInput_Audio() {
+
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[1]/mdia/minf"
+        );
+
+    const input = truth.getEmitterInput();
+
+    assertExists("builder input", input);
+    assertExists("mediaHeader", input.mediaHeader);
+    assertExists("dinf", input.dinf);
+    assertExists("stbl", input.stbl);
+
+    assertEqual(
+        "audio mediaHeader is smhd",
+        input.mediaHeader.type,
+        "smhd"
+    );
+
+}
+
+export async function testMinf_LockedLayoutEquivalence_ffmpeg_Video() {
+
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    const refMinf =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia/minf"
+            )
+            .readBoxReport()
+            .raw;
+
+    assertExists("reference minf", refMinf);
+
+    const params =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia/minf"
+            )
+            .getEmitterInput();
+
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.assemble(
+                "moov/trak/mdia/minf",
+                params
+            )
+        );
+
+    const refContainer =
+        asIsoBoxContainer(
+            refMinf,
+            "moov/trak/mdia/minf"
+        );
+
+    const outContainer =
+        asIsoBoxContainer(
+            out,
+            "moov/trak/mdia/minf"
+        );
+
+    const refChildren = refContainer.enumerateChildren();
+    const outChildren = outContainer.enumerateChildren();
+
+    assertEqual(
+        "minf.childCount",
+        outChildren.length,
+        refChildren.length
+    );
+
+    for (let i = 0; i < refChildren.length; i++) {
+
+        const refChild = refChildren[i];
+        const outChild = outChildren[i];
+
+        assertEqual(
+            `minf.child[${i}].type`,
+            outChild.type,
+            refChild.type
+        );
+
+        const refBytes =
+            refMinf.slice(
+                refChild.offset,
+                refChild.offset + refChild.size
+            );
+
+        const outBytes =
+            out.slice(
+                outChild.offset,
+                outChild.offset + outChild.size
+            );
+
+        for (let j = 0; j < refBytes.length; j++) {
+            assertEqualHex(
+                `minf.${refChild.type}.byte[${j}]`,
+                outBytes[j],
+                refBytes[j]
+            );
+        }
+
+        assertEqual(
+            `minf.${refChild.type}.size`,
+            outBytes.length,
+            refBytes.length
         );
     }
+}
 
-    console.log("PASS: MINF locked-layout equivalence with ffmpeg");
+
+export async function testMinf_LockedLayoutEquivalence_ffmpeg_Audio() {
+
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    const refMinf =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[1]/mdia/minf"
+            )
+            .readBoxReport()
+            .raw;
+
+    assertExists("reference minf (audio)", refMinf);
+
+    const params =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[1]/mdia/minf"
+            )
+            .getEmitterInput();
+
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.assemble(
+                "moov/trak/mdia/minf",
+                params
+            )
+        );
+
+    const refContainer =
+        asIsoBoxContainer(
+            refMinf,
+            "moov/trak/mdia/minf"
+        );
+
+    const outContainer =
+        asIsoBoxContainer(
+            out,
+            "moov/trak/mdia/minf"
+        );
+
+    const refChildren = refContainer.enumerateChildren();
+    const outChildren = outContainer.enumerateChildren();
+
+    assertEqual(
+        "minf.childCount",
+        outChildren.length,
+        refChildren.length
+    );
+
+    for (let i = 0; i < refChildren.length; i++) {
+
+        const refChild = refChildren[i];
+        const outChild = outChildren[i];
+
+        assertEqual(
+            `minf.child[${i}].type`,
+            outChild.type,
+            refChild.type
+        );
+
+        const refBytes =
+            refMinf.slice(
+                refChild.offset,
+                refChild.offset + refChild.size
+            );
+
+        const outBytes =
+            out.slice(
+                outChild.offset,
+                outChild.offset + outChild.size
+            );
+
+        for (let j = 0; j < refBytes.length; j++) {
+            assertEqualHex(
+                `minf.${refChild.type}.byte[${j}]`,
+                outBytes[j],
+                refBytes[j]
+            );
+        }
+
+        assertEqual(
+            `minf.${refChild.type}.size`,
+            outBytes.length,
+            refBytes.length
+        );
+    }
 }

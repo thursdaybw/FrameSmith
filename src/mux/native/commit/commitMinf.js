@@ -1,5 +1,3 @@
-import { emitMinfBox } from "../box-emitters/minfBox.js";
-
 /**
  * Commit STBL into MINF.
  *
@@ -15,10 +13,17 @@ import { emitMinfBox } from "../box-emitters/minfBox.js";
  * - no layout decisions
  * - no child mutation
  */
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+import { getGoldenTruthBox } from "../tests/goldenTruthExtractors/index.js";
+
 export function commitMinf({
     originalMinfNode,
     committedStblNode
 }) {
+    // ---------------------------------------------------------
+    // Validation
+    // ---------------------------------------------------------
     if (!originalMinfNode) {
         throw new Error("commitMinf: originalMinfNode is required");
     }
@@ -35,24 +40,40 @@ export function commitMinf({
         throw new Error("commitMinf: committedStblNode must be an stbl box");
     }
 
-    const children = originalMinfNode.children;
+    // ---------------------------------------------------------
+    // Recover canonical MINF intent from bytes
+    // ---------------------------------------------------------
+    const originalMinfBytes = serializeBoxTree(originalMinfNode);
 
-    if (!Array.isArray(children)) {
-        throw new Error("commitMinf: originalMinfNode.children must be an array");
-    }
+    const originalMinfIntent =
+        getGoldenTruthBox
+            .getSemanticBoxDataFromBox({
+                boxBytes: originalMinfBytes,
+                sourceRegistryKey: "moov/trak/mdia/minf",
+                targetBoxPath: "moov/trak/mdia/minf"
+            })
+            .getEmitterInput();
 
-    const vmhd = children.find(c => c.type === "vmhd");
-    const smhd = children.find(c => c.type === "smhd");
-    const dinf = children.find(c => c.type === "dinf");
+    // ---------------------------------------------------------
+    // Replace STBL only (structural surgery point)
+    // ---------------------------------------------------------
+    const committedMinfIntent = {
+        ...originalMinfIntent,
+        stbl:
+            getGoldenTruthBox
+                .getSemanticBoxDataFromBox({
+                    boxBytes: serializeBoxTree(committedStblNode),
+                    sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+                    targetBoxPath: "moov/trak/mdia/minf/stbl"
+                })
+                .getEmitterInput()
+    };
 
-    if (!dinf) {
-        throw new Error("commitMinf: dinf box is required");
-    }
-
-    return emitMinfBox({
-        vmhd,
-        smhd,
-        dinf,
-        stbl: committedStblNode
-    });
+    // ---------------------------------------------------------
+    // Re-emit MINF via registry
+    // ---------------------------------------------------------
+    return EmitterRegistry.assemble(
+        "moov/trak/mdia/minf",
+        committedMinfIntent
+    );
 }

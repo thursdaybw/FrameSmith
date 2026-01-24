@@ -1,47 +1,91 @@
 import { asIsoBoxContainer } from "../../box-model/Box.js";
 import { getGoldenTruthBox } from "./index.js";
-import { emitMetaBox } from "../../box-emitters/metaBox.js";
 
-function readUdtaBoxFieldsFromBoxBytes(box) {
-    return { raw: box };
+// ---------------------------------------------------------------------------
+// readBoxReport
+// ---------------------------------------------------------------------------
+
+function readUdtaFields(boxBytes) {
+
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("udta.readBoxReport: expected Uint8Array");
+    }
+
+    const container =
+        asIsoBoxContainer(
+            boxBytes,
+            "moov/udta"
+        );
+
+    const children = container.enumerateChildren();
+
+    const childrenMap = {};
+
+    for (const child of children) {
+        childrenMap[child.type] = { type: child.type };
+    }
+
+    return {
+        raw: boxBytes,
+
+        box: {
+            type: "udta",
+            fields: {},
+            children: childrenMap
+        },
+
+        derived: {}
+    };
 }
 
-function getUdtaBuilderInputFromBoxBytes(box) {
-    const container = asIsoBoxContainer(box);
-    const children = [];
+// ---------------------------------------------------------------------------
+// getEmitterInput
+// ---------------------------------------------------------------------------
+function getUdtaBuilderInput(boxBytes) {
 
-    for (const child of container.enumerateChildren()) {
+    const report = readUdtaFields(boxBytes);
+    const box    = report.box;
 
-        switch (child.type) {
+    const input = {
+        children: []
+    };
+
+    for (const type of Object.keys(box.children)) {
+
+        switch (type) {
 
             case "meta": {
-                const childBytes = box.slice(
-                    child.offset,
-                    child.offset + child.size
-                );
+                const metaParams =
+                    getGoldenTruthBox
+                        .getSemanticBoxDataFromBox({
+                            boxBytes,
+                            sourceRegistryKey: "moov/udta",
+                            targetBoxPath: "moov/udta/meta"
+                        })
+                        .getEmitterInput();
 
-                const truth = getGoldenTruthBox.fromBox(
-                    childBytes,
-                    "moov/udta/meta"
-                );
-
-                children.push(
-                    emitMetaBox(truth.getBuilderInput())
-                );
+                input.children.push({
+                    type: "meta",
+                    ...metaParams
+                });
                 break;
             }
 
             default:
                 throw new Error(
-                    `UDTA golden truth: unsupported child '${child.type}'`
+                    `udta.getEmitterInput: unsupported child '${type}'`
                 );
         }
     }
 
-    return { children };
+    return input;
 }
 
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
 export function registerUdtaGoldenTruthExtractor(register) {
-    register.readFields(readUdtaBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getUdtaBuilderInputFromBoxBytes);
+    register.readBoxReport(readUdtaFields);
+    register.getEmitterInput(getUdtaBuilderInput);
 }

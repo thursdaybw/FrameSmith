@@ -1,11 +1,4 @@
-import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { asIsoBoxContainer } from "../box-model/Box.js";
-
-import {
-    readUint32,
-    readFourCC
-} from "../bytes/mp4ByteReader.js";
-
+import { readUint32, } from "../bytes/mp4ByteReader.js";
 import {
     assertEqual,
     assertEqualHex,
@@ -13,44 +6,49 @@ import {
 } from "./assertions.js";
 
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
-
-import { emitMetaHdlrBox } from "../box-emitters/metaHdlrBox.js";
-import { emitIlstBox } from "../box-emitters/ilstBox.js";
-import { emitMetaBox } from "../box-emitters/metaBox.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 /**
  * =========================================================
  * META — Structural Correctness (Phase A)
  * =========================================================
+ *
+ * STRUCTURE ONLY.
+ * No serialization.
  */
 export function testMeta_Structure() {
 
-    console.log("=== testMeta_Structure ===");
+    const node =
+        EmitterRegistry.assemble(
+            "moov/udta/meta",
+            {
+                hdlr: {
+                    nameBytes: new Uint8Array([0])
+                },
+                ilst: {
+                    items: []
+                }
+            }
+        );
 
-    const node = emitMetaBox({
-        hdlr: emitMetaHdlrBox({ nameBytes: new Uint8Array([0]) }),
-        ilst: emitIlstBox({ items: [] })
-    });
+    // ---------------------------------------------------------
+    // Box identity
+    // ---------------------------------------------------------
+    assertEqual("meta.type", node.type, "meta");
+    assertEqual("meta.version", node.version, 0);
+    assertEqual("meta.flags", node.flags, 0);
 
-    const bytes = serializeBoxTree(node);
+    // ---------------------------------------------------------
+    // Children (order + presence)
+    // ---------------------------------------------------------
+    assertExists("meta.children", node.children);
+    assertEqual("meta.children.length", node.children.length, 2);
 
-    assertEqual("meta.type", readFourCC(bytes, 4), "meta");
-    assertEqual("meta.version", bytes[8], 0);
-    assertEqual(
-        "meta.flags",
-        (bytes[9] << 16) | (bytes[10] << 8) | bytes[11],
-        0
-    );
-
-    const container = asIsoBoxContainer(bytes);
-    const children = container.enumerateChildren();
-
-    assertEqual("meta.child.count", children.length, 2);
-    assertEqual("meta.child[0].type", children[0].type, "hdlr");
-    assertEqual("meta.child[1].type", children[1].type, "ilst");
-
-    console.log("PASS: META structural correctness");
+    assertEqual("meta.child[0].type", node.children[0].type, "hdlr");
+    assertEqual("meta.child[1].type", node.children[1].type, "ilst");
 }
 
 
@@ -60,52 +58,50 @@ export function testMeta_Structure() {
  * =========================================================
  *
  * RULES:
- * - NO size assertions until the end
- * - NO derived fields before bytes
  * - BYTES are the authority
+ * - NO derived assertions before byte equality
  */
 export async function testMeta_LockedLayoutEquivalence_ffmpeg() {
-
-    console.log("=== testMeta_LockedLayoutEquivalence_ffmpeg ===");
 
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const refMeta = extractBoxByPathFromMp4(
-        mp4,
-        "moov/udta/meta"
-    );
-    assertExists("reference meta", refMeta);
+    // ---------------------------------------------------------
+    // Resolve semantic meta box via truth extractor
+    // ---------------------------------------------------------
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/udta/meta"
+        );
+
+    assertExists("reference meta truth", truth);
+
+    const read   = truth.readBoxReport();
+    const params = truth.getEmitterInput();
+    const refRaw = read.raw;
 
     // ---------------------------------------------------------
-    // Golden truth → exact emitter input
+    // Rebuild via registry
     // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromBox(
-        refMeta,
-        "moov/udta/meta"
-    );
-
-    const params = truth.getBuilderInput();
-
-    // ---------------------------------------------------------
-    // Rebuild exclusively from golden truth
-    // ---------------------------------------------------------
-    const out = serializeBoxTree(
-        emitMetaBox(params)
-    );
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.assemble(
+                "moov/udta/meta",
+                params
+            )
+        );
 
     // ---------------------------------------------------------
     // BYTE AUTHORITY
     // ---------------------------------------------------------
-    assertEqual("meta.size", out.length, refMeta.length);
+    assertEqual("meta.size", out.length, refRaw.length);
 
-    for (let i = 0; i < refMeta.length; i++) {
+    for (let i = 0; i < refRaw.length; i++) {
         assertEqualHex(
             `meta.byte[${i}]`,
             out[i],
-            refMeta[i]
+            refRaw[i]
         );
     }
-
-    console.log("PASS: META locked-layout equivalence with ffmpeg");
 }

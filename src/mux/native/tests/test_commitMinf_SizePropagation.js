@@ -1,12 +1,8 @@
 import { commitMinf } from "../commit/commitMinf.js";
-import { emitMinfBox } from "../box-emitters/minfBox.js";
-import { emitStblBox } from "../box-emitters/stblBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { assertEqual } from "./assertions.js";
 
 export function testCommitMinf_SizePropagation() {
-
-    console.log("=== testCommitMinf_SizePropagation ===");
 
     // ---------------------------------------------------------
     // 1. Small, valid STBL
@@ -40,7 +36,7 @@ export function testCommitMinf_SizePropagation() {
     // 3. Base MINF
     // ---------------------------------------------------------
     const baseMinf = emitMinfBox({
-        vmhd: { type: "vmhd", body: [] },
+        mediaHeader: { type: "vmhd", body: [] },
         dinf: { type: "dinf", body: [] },
         stbl: smallStbl
     });
@@ -58,5 +54,4 @@ export function testCommitMinf_SizePropagation() {
 
     assertEqual("minf size increased", newSize > baseSize, true);
 
-    console.log("PASS: commitMinf propagates size change via valid STBL");
 }

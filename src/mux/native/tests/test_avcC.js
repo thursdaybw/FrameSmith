@@ -1,8 +1,9 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { emitAvcCBox } from "../box-emitters/stsdBox/avcCBox.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
+import {  readFourCC } from "../box-schema/boxLayoutReaders.js";
 import { assertEqual } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 /**
  * avcC — AVC Decoder Configuration Box
@@ -136,8 +137,6 @@ import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
  * to the broken assumption or field.
  */
 export async function testAvcC_Structure() {
-    console.log("=== AvcC Granular tests ===");
-
     const avcCInput = Uint8Array.from([
         1, 100, 0, 31,
         0xFF, 0xE1,
@@ -148,8 +147,15 @@ export async function testAvcC_Structure() {
         7,7,7,7
     ]);
 
-    const node = emitAvcCBox({ avcC: avcCInput });
-    const box  = serializeBoxTree(node);
+    // ---------------------------------------------------------
+    // Build via registry (NOT direct emitter call)
+    // ---------------------------------------------------------
+    const node = EmitterRegistry.emit(
+        "moov/trak/mdia/minf/stbl/stsd|avc1/avcC",
+        { avcC: avcCInput }
+    );
+
+    const box = serializeBoxTree(node);
 
     const expectedSize = 8 + avcCInput.length;
 
@@ -185,8 +191,6 @@ export async function testAvcC_Structure() {
         avcCInput[0],
         1
     );
-
-    console.log("PASS: avcC granular tests");
 }
 
 /**
@@ -227,8 +231,9 @@ export async function testAvcC_Structure() {
  * If this test fails, it indicates a violation of the muxer’s
  * most basic contract: do not change what you do not own.
  */
+
+
 export async function testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg() {
-    console.log("=== testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg ===");
 
     // ---------------------------------------------------------
     // 1. Load golden MP4
@@ -239,23 +244,22 @@ export async function testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     // 2. Read golden truth avcC
     // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         mp4,
-        "moov/trak/mdia/minf/stbl/stsd",
-        {
-            sampleEntry: "avc1",
-            trackType: "video"
-        }
+        "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/avcC"
     );
 
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput();
+    const refFields = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
 
     // ---------------------------------------------------------
-    // 3. Emit avcC exclusively from golden truth
+    // 3. Emit avcC exclusively via registry
     // ---------------------------------------------------------
     const out = serializeBoxTree(
-        emitAvcCBox(params)
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stsd|avc1/avcC",
+            params
+        )
     );
 
     // ---------------------------------------------------------
@@ -280,6 +284,4 @@ export async function testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg() {
         expectedSize
     );
 
-    console.log("PASS: avcC matches golden MP4");
 }
-

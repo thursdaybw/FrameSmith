@@ -14,7 +14,8 @@
  *
  * Output shape matches STTS semantics directly.
  */
-export function adaptSttsFromSamples({ samples }) {
+export function adaptSttsFromSamples({ samples, sttsPolicy = "canonical" }) {
+
     if (!Array.isArray(samples)) {
         throw new Error(
             "adaptSttsFromSamples: samples must be an array"
@@ -23,6 +24,10 @@ export function adaptSttsFromSamples({ samples }) {
 
     if (samples.length === 0) {
         return { entries: [] };
+    }
+
+    if (sttsPolicy === "oracle-faithful") {
+        return adaptSttsOracleFaithful({ samples });
     }
 
     const entries = [];
@@ -56,6 +61,41 @@ export function adaptSttsFromSamples({ samples }) {
             currentDelta = delta;
             currentCount = 1;
         }
+    }
+
+    entries.push({
+        sampleCount: currentCount,
+        sampleDelta: currentDelta
+    });
+
+    return { entries };
+}
+
+function adaptSttsOracleFaithful({ samples }) {
+    // Oracle behaviour:
+    // - preserve run boundaries as observed
+    // - do not over-collapse identical deltas
+
+    const entries = [];
+
+    let currentDelta = samples[0].duration;
+    let currentCount = 1;
+
+    for (let i = 1; i < samples.length; i++) {
+        const delta = samples[i].duration;
+
+        if (delta === currentDelta) {
+            currentCount++;
+            continue;
+        }
+
+        entries.push({
+            sampleCount: currentCount,
+            sampleDelta: currentDelta
+        });
+
+        currentDelta = delta;
+        currentCount = 1;
     }
 
     entries.push({

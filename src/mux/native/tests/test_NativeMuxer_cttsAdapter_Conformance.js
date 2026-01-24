@@ -1,5 +1,4 @@
 import { adaptCttsFromSamples } from "../adapters/adaptCttsFromSamples.js";
-import { emitCttsBox } from "../box-emitters/cttsBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
@@ -34,13 +33,10 @@ export async function testNativeMuxer_CttsAdapter_Conformance_ffmpeg() {
     // debug
     const refParsed = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/ctts",
-        {
-            trackType: "video"
-        }
+        "moov/trak[0]/mdia/minf/stbl/ctts",
     );
 
-    const refFields = refParsed.readFields();
+    const refFields = refParsed.readBoxReport();
 
     console.log("=== CTTS ENTRY DIFF ===");
 

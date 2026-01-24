@@ -1,42 +1,97 @@
-import { extractChildBoxFromContainer } from "../reference/BoxExtractor.js";
+import { asIsoBoxContainer } from "../../box-model/Box.js";
 import { getGoldenTruthBox } from "./index.js";
-import { emitMetaHdlrBox } from "../../box-emitters/metaHdlrBox.js";
-import { emitIlstBox } from "../../box-emitters/ilstBox.js";
 
-function readMetaBoxFieldsFromBoxBytes(box) {
-    return { raw: box };
-}
+// ---------------------------------------------------------------------------
+// readBoxReport
+// ---------------------------------------------------------------------------
 
-function getMetaBuilderInputFromBoxBytes(box) {
+function readMetaFields(boxBytes) {
 
-    const hdlrBytes = extractChildBoxFromContainer(box, "hdlr");
-    const ilstBytes = extractChildBoxFromContainer(box, "ilst");
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("meta.readBoxReport: expected Uint8Array");
+    }
 
-    // ---------------------------------------------
-    // Golden truth → params → emit → NODE
-    // ---------------------------------------------
-    const hdlrNode = emitMetaHdlrBox(
-        getGoldenTruthBox
-            .fromBox(hdlrBytes, "moov/udta/meta/hdlr")
-            .getBuilderInput()
-    );
+    const container =
+        asIsoBoxContainer(
+            boxBytes,
+            "moov/udta/meta"
+        );
 
-    const ilstNode = emitIlstBox(
-        getGoldenTruthBox
-            .fromBox(ilstBytes, "moov/udta/meta/ilst")
-            .getBuilderInput()
-    );
+    const children = container.enumerateChildren();
 
-    // ---------------------------------------------
-    // EXACT emitMetaBox input
-    // ---------------------------------------------
+    const childrenMap = {};
+
+    for (const child of children) {
+        childrenMap[child.type] = { type: child.type };
+    }
+
     return {
-        hdlr: hdlrNode,
-        ilst: ilstNode
+        raw: boxBytes,
+
+        box: {
+            type: "meta",
+
+            header: {
+                version: boxBytes[8],
+                flags:
+                    (boxBytes[9] << 16) |
+                    (boxBytes[10] << 8) |
+                    boxBytes[11],
+            },
+
+            fields: {},
+            children: childrenMap
+        },
+
+        derived: {}
     };
 }
 
+// ---------------------------------------------------------------------------
+// getEmitterInput
+// ---------------------------------------------------------------------------
+
+function getMetaBuilderInput(boxBytes) {
+
+    const report = readMetaFields(boxBytes);
+    const box    = report.box;
+
+    const input = {};
+
+    // ---------------------------------------------------------
+    // Required children
+    // ---------------------------------------------------------
+
+    if (!box.children.hdlr) {
+        throw new Error("meta.getEmitterInput: missing required child 'hdlr'");
+    }
+
+    if (!box.children.ilst) {
+        throw new Error("meta.getEmitterInput: missing required child 'ilst'");
+    }
+
+    input.hdlr =
+        getGoldenTruthBox.getSemanticBoxDataFromBox({
+            boxBytes: boxBytes,
+            sourceRegistryKey: "moov/udta/meta",
+            targetBoxPath: "moov/udta/meta/hdlr"
+        }).getEmitterInput();
+
+    input.ilst =
+        getGoldenTruthBox.getSemanticBoxDataFromBox({
+            boxBytes: boxBytes,
+            sourceRegistryKey: "moov/udta/meta",
+            targetBoxPath: "moov/udta/meta/ilst"
+        }).getEmitterInput();
+
+    return input;
+}
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
 export function registerMetaGoldenTruthExtractor(register) {
-    register.readFields(readMetaBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getMetaBuilderInputFromBoxBytes);
+    register.readBoxReport(readMetaFields);
+    register.getEmitterInput(getMetaBuilderInput);
 }

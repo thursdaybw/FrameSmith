@@ -1,76 +1,128 @@
-import { readUint32 } from "../../bytes/mp4ByteReader.js";
-
 /**
  * CTTS — Composition Time to Sample Box
- * ------------------------------------
  *
- * Maps decoding time (DTS) to presentation time (PTS).
+ * Layout (ISO/IEC 14496-12, version 0):
  *
- * Parser guarantees:
- * - version 0 only (unsigned offsets)
- * - no inference
- * - no compression
- * - no normalization
+ *   uint32 entry_count
+ *   {
+ *     uint32 sample_count
+ *     uint32 sample_offset
+ *   } × entry_count
  *
- * This parser exists solely to extract the semantic parameters
- * required to rebuild an identical CTTS box.
+ * Contract:
+ * ---------
+ * - readBoxReport() exposes LOSSLESS on-disk structure
+ * - No inference
+ * - No normalization
+ * - Version semantics enforced (version 0 only)
  */
 
-function readCttsBoxFieldsFromBoxBytes(box) {
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+
+import {
+    readBoxHeaderFromBytes
+} from "../../box-schema/boxLayoutReaders.js";
+
+import {
+    getPayloadOffsetForPath
+} from "../../box-schema/boxSchemas.js";
+
+import { PRIMITIVE_SIZES } from "../../box-schema/primitiveLayouts.js";
+
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
+
+function readBoxReport(box) {
     if (!(box instanceof Uint8Array)) {
+        throw new Error("ctts.readBoxReport: expected Uint8Array");
+    }
+
+    const path = "moov/trak/mdia/minf/stbl/ctts";
+
+    const header = readBoxHeaderFromBytes(box, path);
+
+    if (header.version !== 0) {
         throw new Error(
-            "ctts.readFields: expected Uint8Array"
+            `ctts.readBoxReport: unsupported version ${header.version} (expected 0)`
         );
     }
 
-    const version = box[8];
+    const payloadOffset = getPayloadOffsetForPath(path);
 
-    if (version !== 0) {
-        throw new Error(
-            `ctts.readFields: unsupported version ${version} (expected 0)`
-        );
-    }
+    const entryCount = readUint32(box, payloadOffset);
 
-    const entryCount = readUint32(box, 12);
-
-    const entries = [];
-    let offset = 16;
-
-    for (let i = 0; i < entryCount; i++) {
-        entries.push({
-            count:  readUint32(box, offset),
-            offset: readUint32(box, offset + 4)
-        });
-        offset += 8;
-    }
+    const entries = readCttsEntriesFromOffset({
+        box,
+        payloadOffset,
+        count: entryCount
+    });
 
     return {
-        version,
-        entryCount,
-        entries,
-        raw: box
+        raw: box,
+
+        box: {
+            type: "ctts",
+            header,
+            fields: {
+                entryCount,
+                entries
+            }
+        },
+
+        derived: {}
     };
 }
 
-function getCttsBuildParamsFromBoxBytes(box) {
-    const parsed = readCttsBoxFieldsFromBoxBytes(box);
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
 
-    // Phase A rule:
-    // Preserve exactly what the file declares.
+function getEmitterInput(box) {
+    const read = readBoxReport(box);
+
     return {
-        entries: parsed.entries.map(e => ({
+        entries: read.box.fields.entries.map(e => ({
             count:  e.count,
             offset: e.offset
         }))
     };
 }
 
-/**
- * registerCttsParser
- * ------------------
- * Sole public export.
- */
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function readCttsEntriesFromOffset({
+    box,
+    payloadOffset,
+    count
+}) {
+    const UINT32_SIZE = PRIMITIVE_SIZES.uint32;
+    const values = [];
+
+    let cursor = payloadOffset + UINT32_SIZE;
+
+    for (let i = 0; i < count; i++) {
+        const sampleCount  = readUint32(box, cursor);
+        const sampleOffset = readUint32(box, cursor + UINT32_SIZE);
+
+        values.push({
+            count:  sampleCount,
+            offset: sampleOffset
+        });
+
+        cursor += UINT32_SIZE * 2;
+    }
+
+    return values;
+}
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
 export function registerCttsGoldenTruthExtractor(register) {
-    register.readFields(readCttsBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getCttsBuildParamsFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

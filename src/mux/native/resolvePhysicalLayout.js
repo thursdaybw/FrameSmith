@@ -73,8 +73,7 @@ export function resolvePhysicalLayout({
     // ---------------------------------------------------------
     const mdatHeaderSize = 8;
 
-    const mdatDataOffset =
-        boxOffsets.mdat + mdatHeaderSize;
+    const mdatDataOffset = boxOffsets.mdat + mdatHeaderSize;
 
     // ---------------------------------------------------------
     // 5. Chunk offset addressing decision

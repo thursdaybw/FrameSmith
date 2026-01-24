@@ -3,32 +3,6 @@ import { extractAccessUnitPayloadsFromMp4 } from "./reference/extractAccessUnitP
 import { deriveChunkModel } from "../derivers/deriveChunkModel.js";
 import { assembleMdatPayloadFromChunks } from "../assembleMdatPayloadFromChunks.js";
 import { resolvePhysicalLayout } from "../resolvePhysicalLayout.js";
-
-import { emitFtypBox } from "../box-emitters/ftypBox.js";
-import { emitFreeBox } from "../box-emitters/freeBox.js";
-import { emitMoovBox } from "../box-emitters/moovBox.js";
-import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
-import { emitTrakBox } from "../box-emitters/trakBox.js";
-import { emitMdatBox } from "../box-emitters/mdatBox.js";
-
-import { emitStblBox } from "../box-emitters/stblBox.js";
-import { emitMinfBox } from "../box-emitters/minfBox.js";
-import { emitMdiaBox } from "../box-emitters/mdiaBox.js";
-import { emitStcoBox } from "../box-emitters/stcoBox.js";
-import { emitStsdBox } from "../box-emitters/stsdBox.js";
-import { emitStssBox } from "../box-emitters/stssBox.js";
-import { emitSttsBox } from "../box-emitters/sttsBox.js";
-import { emitStscBox } from "../box-emitters/stscBox.js";
-import { emitStszBox } from "../box-emitters/stszBox.js";
-import { emitVmhdBox } from "../box-emitters/vmhdBox.js";
-import { emitDinfBox } from "../box-emitters/dinfBox.js";
-import { emitMdhdBox } from "../box-emitters/mdhdBox.js";
-import { emitHdlrBox } from "../box-emitters/hdlrBox.js";
-import { emitTkhdBox } from "../box-emitters/tkhdBox.js";
-import { emitCttsBox } from "../box-emitters/cttsBox.js";
-import { emitUdtaBox } from "../box-emitters/udtaBox.js";
-import { emitEdtsBox } from "../box-emitters/edtsBox.js";
-
 import { commitMoovWithResolvedLayout } from "../commit/commitMoovWithResolvedLayout.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { ChunkingStrategies } from "../derivers/strategies/chunkingStrategies.js";
@@ -44,7 +18,11 @@ import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
  */
 export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
 
-    console.log("=== testNativeMuxer_EndToEnd_Conformance_ffmpeg ===");
+    throw new Error(
+        "DEPRECATED: This test bypasses the Mp4BuildInput contract and relies " +
+        "on direct golden-truth traversal. It is superseded by source-client " +
+        "end-to-end tests and is intentionally retired."
+    );
 
     // ---------------------------------------------------------
     // 1. Load golden MP4 (ffmpeg oracle)
@@ -64,7 +42,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                 trackType: "video"
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         timing: {
             stts: getGoldenTruthBox
@@ -76,7 +54,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                         trackType: "video"
                     }
                 )
-            .getBuilderInput(),
+            .getEmitterInput(),
             ctts: getGoldenTruthBox
             .fromMp4(
                 goldenMp4,
@@ -85,7 +63,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                     trackType: "video"
                 }
             )
-            .getBuilderInput(),
+            .getEmitterInput(),
             stss: getGoldenTruthBox
             .fromMp4(
                 goldenMp4,
@@ -94,7 +72,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                     trackType: "video"
                 }
             )
-            .getBuilderInput()
+            .getEmitterInput()
         },
 
         sizes: getGoldenTruthBox
@@ -105,7 +83,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                 trackType: "video"
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         chunking: getGoldenTruthBox
         .fromMp4(
@@ -115,7 +93,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                 trackType: "video"
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         tkhd: getGoldenTruthBox
         .fromMp4(
@@ -125,7 +103,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                 trackType: "video"
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         mdhd: getGoldenTruthBox
         .fromMp4(
@@ -135,7 +113,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                 trackType: "video"
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         hdlr: getGoldenTruthBox
         .fromMp4(
@@ -145,7 +123,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                 trackType: "video"
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         vmhd: getGoldenTruthBox
         .fromMp4(
@@ -155,7 +133,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                 trackType: "video"
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         dinf: getGoldenTruthBox
         .fromMp4(
@@ -165,7 +143,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                 trackType: "video"
             }
         )
-        .getBuilderInput()
+        .getEmitterInput()
     };
 
     // ---------------------------------------------------------
@@ -228,7 +206,7 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
                 trackType: "video"
             }
         )
-        .getBuilderInput()
+        .getEmitterInput()
     );
 
     const trak = emitTrakBox({
@@ -242,14 +220,14 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
             getGoldenTruthBox
             .fromMp4(
                 goldenMp4, "moov/mvhd")
-            .getBuilderInput()
+            .getEmitterInput()
         ),
         traks: [trak],
         udta: emitUdtaBox(
             getGoldenTruthBox
             .fromMp4(
                 goldenMp4, "moov/udta")
-            .getBuilderInput()
+            .getEmitterInput()
         )
     });
 
@@ -346,7 +324,6 @@ export async function testNativeMuxer_EndToEnd_Conformance_ffmpeg() {
         downloadMp4(outBytes);
     }
 
-    console.log("PASS: NativeMuxer end-to-end byte-for-byte conformance");
 }
 
 

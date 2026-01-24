@@ -1,137 +1,158 @@
-import { extractChildBoxFromContainer } from "../reference/BoxExtractor.js";
 import { getGoldenTruthBox } from "./index.js";
+import { asIsoBoxContainer } from "../../box-model/Box.js";
+import { deriveSamplesFromStbl } from "./stbl/deriveSamplesFromStbl.js";
 
-import { emitStsdBox } from "../../box-emitters/stsdBox.js";
-import { emitSttsBox } from "../../box-emitters/sttsBox.js";
-import { emitStssBox } from "../../box-emitters/stssBox.js";
-import { emitCttsBox } from "../../box-emitters/cttsBox.js";
-import { emitStscBox } from "../../box-emitters/stscBox.js";
-import { emitStszBox } from "../../box-emitters/stszBox.js";
-import { emitStcoBox } from "../../box-emitters/stcoBox.js";
+// ---------------------------------------------------------------------------
+// readBoxReport
+// ---------------------------------------------------------------------------
 
-function readStblBoxFieldsFromBoxBytes(box) {
-    if (!(box instanceof Uint8Array)) {
-        throw new Error("stbl.readFields: expected Uint8Array");
+function readStblFields(boxBytes) {
+
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("stbl.readBoxReport: expected Uint8Array");
     }
 
-    return {
-        raw: box
-    };
-}
+    const container =
+        asIsoBoxContainer(
+            boxBytes,
+            "moov/trak/mdia/minf/stbl"
+        );
 
-function getStblBuildParamsFromBoxBytes(box) {
+    const children = container.enumerateChildren();
 
-    /**
-     * emitChild
-     * ---------
-     *
-     * Semantic rebuild helper for STBL child boxes.
-     *
-     * What this does:
-     * - Structurally extracts a named child box from the STBL container
-     * - Delegates to the registered golden truth extractor for that box
-     * - Re-emits the box via its corresponding emitter
-     *
-     * This function represents the *semantic rebuild pipeline*:
-     *
-     *   raw bytes
-     *     → golden truth parameters
-     *       → deterministic re-emission
-     *
-     * What this function assumes:
-     * - The child box is a standard ISO BMFF box
-     * - A golden truth extractor exists for the box type
-     * - A corresponding emitter exists
-     * - Byte-for-byte equivalence with the source MP4 is expected
-     *
-     * What this function MUST NOT be used for:
-     * - SampleEntry boxes (e.g. avc1, mp4a)
-     * - Codec-specific payloads
-     * - Opaque or partially-implemented boxes (e.g. sbgp, sgpd at this stage)
-     *
-     * If a box cannot be semantically rebuilt yet, it must NOT pass through
-     * this function.
-     *
-     * @param {string} name
-     *   FourCC of the child box (e.g. "stts", "stsc")
-     *
-     * @param {Function} emitter
-     *   Box emitter function responsible for re-emission
-     *
-     * @returns {Object}
-     *   Box node suitable for inclusion in emitStblBox(...)
-     */
-    function emitChild(name, emitter) {
-        const childBytes = extractChildBoxFromContainer(box, name);
+    const childrenMap = {};
 
-        const params = getGoldenTruthBox
-            .fromBox(
-                childBytes,
-                `moov/trak/mdia/minf/stbl/${name}`
-            )
-            .getBuilderInput();
-
-        return emitter(params);
+    for (const child of children) {
+        childrenMap[child.type] = { type: child.type };
     }
 
-    /**
-     * STBL build parameters
-     * --------------------
-     *
-     * This object intentionally distinguishes between:
-     *
-     * 1. Rebuildable semantic children
-     *    - Parsed via golden truth extractors
-     *    - Re-emitted via dedicated emitters
-     *
-     * 2. Leaf boxes (opaque at this stage)
-     *    - Structurally valid children of STBL
-     *    - Traversed and preserved byte-for-byte
-     *    - NOT semantically rebuilt yet
-     *
-     * This distinction is critical.
-     *
-     * Not every child of STBL is rebuildable.
-     * Treating leaf boxes as semantic boxes will cause traversal failures.
-     *
-     * Accessors are used instead of eager evaluation so that:
-     * - Structural tests do not trigger semantic rebuilds
-     * - Audio-only structures do not trigger video-only code paths
-     * - Partially implemented boxes do not break unrelated tests
-     */
-    return {
-        get stsd() { return emitChild("stsd", emitStsdBox); },
-        get stts() { return emitChild("stts", emitSttsBox); },
-        get stss() { return emitChild("stss", emitStssBox); },
-        get ctts() { return emitChild("ctts", emitCttsBox); },
-        get stsc() { return emitChild("stsc", emitStscBox); },
-        get stsz() { return emitChild("stsz", emitStszBox); },
-        get stco() { return emitChild("stco", emitStcoBox); },
+    const samples =
+        deriveSamplesFromStbl(boxBytes);
 
-        /**
-         * sbgp — leaf box (no semantic rebuild)
-         *
-         * sbgp is a valid structural child of STBL, but at this stage
-         * of the system it is treated as an opaque box.
-         *
-         * Responsibilities here are strictly:
-         * - locate the box structurally
-         * - preserve its raw bytes
-         *
-         * sbgp must NOT pass through emitChild because:
-         * - no golden truth semantic model exists yet
-         * - no emitter-driven reconstruction is implemented
-         *
-         * Byte-for-byte preservation is enforced by higher-level tests.
-         */
-        get sbgp() {
-            return extractChildBoxFromContainer(box, "sbgp");
+    return {
+        raw: boxBytes,
+
+        box: {
+            type: "stbl",
+            fields: {},
+            children: childrenMap
+        },
+
+        derived: {
+            samples
         }
-
     };
 }
+
+// ---------------------------------------------------------------------------
+// getEmitterInput
+// ---------------------------------------------------------------------------
+
+function getStblBuilderInput(boxBytes) {
+
+    const report = readStblFields(boxBytes);
+    const box    = report.box;
+
+    const input = {};
+
+    // ---------------------------------------------------------
+    // Required children
+    // ---------------------------------------------------------
+
+    if (!box.children.stsd) {
+        throw new Error("stbl.getEmitterInput: missing required child 'stsd'");
+    }
+
+    if (!box.children.stts) {
+        throw new Error("stbl.getEmitterInput: missing required child 'stts'");
+    }
+
+    if (!box.children.stsc) {
+        throw new Error("stbl.getEmitterInput: missing required child 'stsc'");
+    }
+
+    if (!box.children.stsz) {
+        throw new Error("stbl.getEmitterInput: missing required child 'stsz'");
+    }
+
+    if (!box.children.stco) {
+        throw new Error("stbl.getEmitterInput: missing required child 'stco'");
+    }
+
+    input.stsd = getGoldenTruthBox.getSemanticBoxDataFromBox({
+        boxBytes: boxBytes,
+        sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+        targetBoxPath: "moov/trak/mdia/minf/stbl/stsd"
+    }).getEmitterInput();
+
+    input.stts = getGoldenTruthBox.getSemanticBoxDataFromBox({
+        boxBytes: boxBytes,
+        sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+        targetBoxPath: "moov/trak/mdia/minf/stbl/stts"
+    }).getEmitterInput();
+
+    input.stsc = getGoldenTruthBox.getSemanticBoxDataFromBox({
+        boxBytes: boxBytes,
+        sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+        targetBoxPath: "moov/trak/mdia/minf/stbl/stsc"
+    }).getEmitterInput();
+
+    input.stsz = getGoldenTruthBox.getSemanticBoxDataFromBox({
+        boxBytes: boxBytes,
+        sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+        targetBoxPath: "moov/trak/mdia/minf/stbl/stsz"
+    }).getEmitterInput();
+
+    input.stco = getGoldenTruthBox.getSemanticBoxDataFromBox({
+        boxBytes: boxBytes,
+        sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+        targetBoxPath: "moov/trak/mdia/minf/stbl/stco"
+    }).getEmitterInput();
+
+    // ---------------------------------------------------------
+    // Optional children
+    // ---------------------------------------------------------
+
+    if (box.children.ctts) {
+        input.ctts = getGoldenTruthBox.getSemanticBoxDataFromBox({
+            boxBytes: boxBytes,
+            sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+            targetBoxPath: "moov/trak/mdia/minf/stbl/ctts"
+        }).getEmitterInput();
+    }
+
+    if (box.children.stss) {
+        input.stss = getGoldenTruthBox.getSemanticBoxDataFromBox({
+            boxBytes: boxBytes,
+            sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+            targetBoxPath: "moov/trak/mdia/minf/stbl/stss"
+        }).getEmitterInput();
+    }
+
+    if (box.children.sgpd) {
+        input.sgpd = getGoldenTruthBox.getSemanticBoxDataFromBox({
+            boxBytes: boxBytes,
+            sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+            targetBoxPath: "moov/trak/mdia/minf/stbl/sgpd"
+        }).getEmitterInput();
+    }
+
+    if (box.children.sbgp) {
+        input.sbgp = getGoldenTruthBox.getSemanticBoxDataFromBox({
+            boxBytes: boxBytes,
+            sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+            targetBoxPath: "moov/trak/mdia/minf/stbl/sbgp"
+        }).getEmitterInput();
+    }
+
+    return input;
+}
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerStblGoldenTruthExtractor(register) {
-    register.readFields(readStblBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getStblBuildParamsFromBoxBytes);
+    register.readBoxReport(readStblFields);
+    register.getEmitterInput(getStblBuilderInput);
 }

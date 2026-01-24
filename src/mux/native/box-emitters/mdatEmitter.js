@@ -14,6 +14,15 @@
  * - No mutation of sample bytes
  */
 export function emitMdatBytes(samples) {
+    throw new Error(
+        "ARCHITECTURE VIOLATION:\n" +
+        "This emitter/assembler is being called directly.\n\n" +
+        "Direct invocation is no longer permitted.\n\n" +
+        "All emitters and assemblers MUST be invoked via EmitterRegistry.emit(),\n" +
+        "which enforces schema validation and structural correctness.\n\n" +
+        "This failure indicates a false-green test or legacy call path.\n" +
+        "Refactor the caller to use EmitterRegistry, then remove this guard."
+    );
 
     if (!Array.isArray(samples)) {
         throw new Error("emitMdatBytes: samples must be an array");

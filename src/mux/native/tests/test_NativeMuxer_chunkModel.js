@@ -4,8 +4,6 @@ import { ChunkingStrategies } from "../derivers/strategies/chunkingStrategies.js
 
 export function testDeriveChunkModel_OneSamplePerChunk() {
 
-    console.log("=== testDeriveChunkModel_OneSamplePerChunk ===");
-
     const s1 = { duration: 5 };
     const s2 = { duration: 7 };
 
@@ -60,5 +58,4 @@ export function testDeriveChunkModel_OneSamplePerChunk() {
     assertEqual("chunk[0].duration", chunks[0].duration, 5);
     assertEqual("chunk[1].duration", chunks[1].duration, 7);
 
-    console.log("PASS: deriveChunkModel groups semantic samples correctly");
 }

@@ -1,8 +1,6 @@
-import { validateMp4BuildInput }
-    from "../validateMp4BuildInput.js";
-
-import { compileMp4 }
-    from "./compileMp4.js";
+import { validateMp4BuildInput } from "../validateMp4BuildInput.js";
+import { validateCompilerAdmissibility } from "./validateCompilerAdmissibility.js";
+import { compileMp4 } from "./compileMp4.js";
 
 /**
  * createMp4FromInputs
@@ -346,6 +344,9 @@ export function createMp4FromInputs(mp4BuildInput) {
     // probably should move this to createMp4FromInputs()
     // ---------------------------------------------------------
     validateMp4BuildInput(mp4BuildInput);
+
+    // semantic + required-value legality
+    validateCompilerAdmissibility(mp4BuildInput);
 
     return compileMp4({
         mp4CompilerState: mp4BuildInput

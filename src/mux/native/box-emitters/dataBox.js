@@ -83,3 +83,10 @@ export function emitDataBox(params) {
         ]
     };
 }
+
+export function registerDataEmitter(registry) {
+    registry.registerEmitter(
+        "moov/udta/meta/ilst/{atom}/data",
+        emitDataBox
+    );
+}

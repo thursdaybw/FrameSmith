@@ -2,6 +2,18 @@ NativeMuxer is a deterministic MP4 compiler designed for workflows where media i
 
 This architecture makes NativeMuxer particularly well suited to offline, non-linear media workflows such as browser-based editing, automated video assembly, retiming, and remuxing without re-encoding. Encoding cost scales with codec and resolution as expected, while muxing cost remains trivial even for long durations. NativeMuxer does not aim to be clever or adaptive — it aims to be correct, explicit, and boring in the best possible way. That is what makes higher-level systems safe to build on top of it.
 
+
+function naming style
+
+```
+<verb><ReturnedThing>From<PrimarySource>Using<DisambiguatorOrRule>
+```
+
+Or, when needed:
+```
+<verb><ReturnedThing>From<Source>When<ConstraintOrContextApplies>
+```
+
 ---
 
 ## Why MP4 Exists (and Why a Compiler Exists at All)

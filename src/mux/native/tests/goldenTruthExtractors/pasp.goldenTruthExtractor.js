@@ -1,31 +1,44 @@
-function readPaspBoxFieldsFromBoxBytes(boxBytes) {
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+
+/**
+ * pasp — Pixel Aspect Ratio Box (Golden Truth Extractor)
+ * =====================================================
+ *
+ * Structural, declarative extractor.
+ * No inference. No normalization. No policy.
+ */
+
+function readPaspFields(boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("pasp.readBoxReport: expected Uint8Array");
+    }
+
+    const hSpacing = readUint32(boxBytes, 8);
+    const vSpacing = readUint32(boxBytes, 12);
+
     return {
-        hSpacing:
-            (boxBytes[8]  << 24) |
-            (boxBytes[9]  << 16) |
-            (boxBytes[10] << 8)  |
-            boxBytes[11],
-
-        vSpacing:
-            (boxBytes[12] << 24) |
-            (boxBytes[13] << 16) |
-            (boxBytes[14] << 8)  |
-            boxBytes[15],
-
-        raw: boxBytes
+        raw: boxBytes,
+        box: {
+            type: "pasp",
+            fields: {
+                hSpacing,
+                vSpacing
+            }
+        },
+        derived: {}
     };
 }
 
-function getPaspBuilderInputFromBoxBytes(boxBytes) {
-    const fields = readPaspBoxFieldsFromBoxBytes(boxBytes);
+function getPaspBuilderInput(boxBytes) {
+    const fields = readPaspFields(boxBytes);
 
     return {
-        hSpacing: fields.hSpacing,
-        vSpacing: fields.vSpacing
+        hSpacing: fields.box.hSpacing,
+        vSpacing: fields.box.vSpacing
     };
 }
 
 export function registerPaspGoldenTruthExtractor(register) {
-    register.readFields(readPaspBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getPaspBuilderInputFromBoxBytes);
+    register.readBoxReport(readPaspFields);
+    register.getEmitterInput(getPaspBuilderInput);
 }

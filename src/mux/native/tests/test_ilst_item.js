@@ -1,5 +1,3 @@
-import { emitIlstItemBox } from "../box-emitters/ilstItemBox.js";
-import { emitDataBox } from "../box-emitters/dataBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 
 import {
@@ -11,60 +9,47 @@ import {
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 import {
-    extractIlstItemByKeyFromMp4
+    extractIlstItemByKeyFromMp4,
+    extractBoxByPathFromMp4
 } from "./reference/BoxExtractor.js";
+
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 export function testIlstItem_Structure() {
 
-    console.log("=== testIlstItem_Structure ===");
+    const intent = {
+        type: "©too",
+        data: {
+            version: 0,
+            flags: 0,
+            dataType: 1,
+            locale: 0,
+            payload: Uint8Array.from([0x66, 0x6f, 0x6f]) // "foo"
+        }
+    };
+
+    const node =
+        EmitterRegistry.assemble(
+            "moov/udta/meta/ilst/{atom}",
+            intent
+        );
+    // ---------------------------------------------------------
+    // Box identity
+    // ---------------------------------------------------------
+    assertEqual("ilst item.type", node.type, "©too");
 
     // ---------------------------------------------------------
-    // 1. Build DATA child explicitly
+    // Children
     // ---------------------------------------------------------
-    const data = emitDataBox({
-        version: 0,
-        flags: 1,
-        dataType: 1,
-        locale: 0,
-        payload: new Uint8Array([0x01, 0x02, 0x03])
-    });
+    assertExists("ilst item.children", node.children);
+    assertEqual("ilst item.children.length", node.children.length, 1);
 
-    // ---------------------------------------------------------
-    // 2. Build ilst item box
-    // ---------------------------------------------------------
-    const type = "©too";
+    const child = node.children[0];
 
-    const node = emitIlstItemBox({
-        type,
-        data
-    });
-
-    // ---------------------------------------------------------
-    // 3. Structural assertions
-    // ---------------------------------------------------------
-    assertEqual("ilstItem.type", node.type, type);
-
-    assertExists("ilstItem.children", node.children);
-    assertEqual("ilstItem.children.length", node.children.length, 1);
-
-    assertEqual(
-        "ilstItem.children[0].type",
-        node.children[0].type,
-        "data"
-    );
-
-    // ---------------------------------------------------------
-    // 4. Serialization sanity check
-    // ---------------------------------------------------------
-    const out = serializeBoxTree(node);
-    assertExists("serialized ilst item box", out);
-
-    console.log("PASS: ilst item structural correctness");
+    assertEqual("ilst item child.type", child.type, "data");
 }
 
 export async function testIlstItem_LockedLayoutEquivalence_ffmpeg() {
-
-    console.log("=== testIlstItem_LockedLayoutEquivalence_ffmpeg ===");
 
     // ---------------------------------------------------------
     // 1. Load golden MP4
@@ -73,39 +58,33 @@ export async function testIlstItem_LockedLayoutEquivalence_ffmpeg() {
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Extract reference ilst *item* bytes (explicit helper)
+    // 2. Extract golden truth directly (no structural walking)
     // ---------------------------------------------------------
-    const refItemBytes = extractIlstItemByKeyFromMp4(
-        mp4,
-        "moov/udta/meta/ilst",
-        "©too" // explicit, deterministic key
-    );
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/udta/meta/ilst/©too"
+        );
 
-    assertExists("reference ilst item", refItemBytes);
+    const refReport = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
 
-    // ---------------------------------------------------------
-    // 3. Read golden truth from isolated item
-    // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromBox(
-        refItemBytes,
-        "moov/udta/meta/ilst/*"
-    );
-
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput();
+    // Authoritative reference bytes
+    const refRaw = refReport.raw;
 
     // ---------------------------------------------------------
-    // 4. Rebuild ilst item exclusively from golden truth
+    // 3. Rebuild ilst item exclusively from semantic params
     // ---------------------------------------------------------
     const outItem = serializeBoxTree(
-        emitIlstItemBox(params)
+        EmitterRegistry.assemble(
+            "moov/udta/meta/ilst/{atom}",
+            params
+        )
     );
 
     // ---------------------------------------------------------
-    // 5. Byte-for-byte equivalence
+    // 4. Byte-for-byte locked-layout equivalence
     // ---------------------------------------------------------
-    const refRaw = refFields.raw;
-
     for (let i = 0; i < refRaw.length; i++) {
         assertEqualHex(
             `ilstItem.byte[${i}]`,
@@ -114,7 +93,9 @@ export async function testIlstItem_LockedLayoutEquivalence_ffmpeg() {
         );
     }
 
-    assertEqual("ilstItem.size", outItem.length, refRaw.length);
-
-    console.log("PASS: ilst item matches golden MP4 byte-for-byte");
+    assertEqual(
+        "ilstItem.size",
+        outItem.length,
+        refRaw.length
+    );
 }

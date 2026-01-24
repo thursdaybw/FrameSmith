@@ -1,14 +1,35 @@
 import {
     extractBoxByPathFromMp4,
     extractIlstItemByKeyFromMp4,
-    findFourCC
 } from "./reference/BoxExtractor.js";
 
 import { asIsoBoxContainer } from "../box-model/Box.js";
-import {
-    readUint32,
-    readFourCC
-} from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
+import { readFourCC } from "../box-schema/boxLayoutReaders.js";
+
+/**
+ * Finds all byte offsets where a fourcc appears in a buffer.
+ *
+ * This is a diagnostic utility only.
+ * It does not imply structural validity.
+ */
+export function findFourCC(buffer, fourcc) {
+    const codes = fourcc.split("").map(c => c.charCodeAt(0));
+    const hits = [];
+
+    for (let i = 0; i < buffer.length - 3; i++) {
+        if (
+            buffer[i]     === codes[0] &&
+            buffer[i + 1] === codes[1] &&
+            buffer[i + 2] === codes[2] &&
+            buffer[i + 3] === codes[3]
+        ) {
+            hits.push(i);
+        }
+    }
+
+    return hits;
+}
 
 /*
  * =========================================================

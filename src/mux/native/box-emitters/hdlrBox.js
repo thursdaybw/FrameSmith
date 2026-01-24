@@ -18,7 +18,8 @@
  * - mp4ra.org registered boxes
  * - ffmpeg, mp4box.js reference output
  */
-export function emitHdlrBox(params) {
+function emitHdlrBox(params) {
+
     if (typeof params !== "object" || params === null) {
         throw new Error("emitHdlrBox: expected a parameter object");
     }
@@ -59,4 +60,11 @@ export function emitHdlrBox(params) {
             }
         ]
     };
+}
+
+export function registerHdlrEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/hdlr",
+        emitHdlrBox
+    );
 }

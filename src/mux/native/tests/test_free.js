@@ -1,50 +1,40 @@
-import { emitFreeBox } from "../box-emitters/freeBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
 import { assertEqualHex } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 export function testFree_Structure() {
 
-    console.log("=== testFree_Structure ===");
+    // ---------------------------------------------------------
+    // Emit (raw node, no serialization)
+    // ---------------------------------------------------------
+    const node =
+        EmitterRegistry.emit(
+            "free",
+            {}
+        );
 
     // ---------------------------------------------------------
-    // 1. Emit + serialize
-    // ---------------------------------------------------------
-    const node = emitFreeBox();
-    const box  = serializeBoxTree(node);
-
-    // ---------------------------------------------------------
-    // 2. Box header
+    // Box identity
     // ---------------------------------------------------------
     assertEqual(
         "free.type",
-        readFourCC(box, 4),
+        node.type,
         "free"
     );
 
-    assertEqual(
-        "free.size",
-        readUint32(box, 0),
-        8
-    );
-
     // ---------------------------------------------------------
-    // 3. Exact size invariant
+    // No payload
     // ---------------------------------------------------------
     assertEqual(
-        "free.length",
-        box.length,
-        8
+        "free.body",
+        node.body,
+        undefined
     );
-
-    console.log("PASS: free structural correctness");
 }
 
 export async function testFree_LockedLayoutEquivalence_ffmpeg() {
-
-    console.log("=== testFree_LockedLayoutEquivalence_ffmpeg (golden MP4) ===");
 
     // ------------------------------------------------------------
     // 1. Load golden MP4
@@ -55,20 +45,25 @@ export async function testFree_LockedLayoutEquivalence_ffmpeg() {
     // ------------------------------------------------------------
     // 2. Extract golden truth free box
     // ------------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "free"
-    );
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "free"
+        );
 
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput(); // {}
+    const refFields = truth.readBoxReport();
+    const params    = truth.getEmitterInput(); // {}
 
     // ------------------------------------------------------------
-    // 3. Rebuild free box
+    // 3. Rebuild free box via registry
     // ------------------------------------------------------------
-    const outBytes = serializeBoxTree(
-        emitFreeBox(params)
-    );
+    const outBytes =
+        serializeBoxTree(
+            EmitterRegistry.emit(
+                "free",
+                params
+            )
+        );
 
     const refRaw = refFields.raw;
 
@@ -88,6 +83,4 @@ export async function testFree_LockedLayoutEquivalence_ffmpeg() {
             refRaw[i]
         );
     }
-
-    console.log("PASS: free matches golden MP4 byte-for-byte");
 }

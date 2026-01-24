@@ -19,17 +19,20 @@ export function adaptStscEntriesToEmitterParams(entries) {
         );
     }
 
-    if (entries.length !== 1) {
-        throw new Error(
-            "adaptStscEntriesToEmitterParams: STSC emitter currently supports exactly one entry"
-        );
+    const out = {
+        entries: []
+    };
+
+    for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+
+        out.entries.push({
+            firstChunk: e.firstChunk,
+            samplesPerChunk: e.samplesPerChunk,
+            sampleDescriptionIndex: e.sampleDescriptionIndex
+        });
     }
 
-    const entry = entries[0];
+    return out;
 
-    return {
-        firstChunk: entry.firstChunk,
-        samplesPerChunk: entry.samplesPerChunk,
-        sampleDescriptionIndex: entry.sampleDescriptionIndex
-    };
 }

@@ -58,7 +58,7 @@
  * - MP4 registry: https://mp4ra.org/registered-types/boxes
  * - mp4box.js reference implementation
  */
-export function emitStszBox({ sizes }) {
+function emitStszBox({ sizes }) {
 
     // ---------------------------------------------------------
     // Contract validation
@@ -152,7 +152,14 @@ export function emitStszBox({ sizes }) {
              * This table is used to compute exact byte offsets
              * when reading sample data from the file.
              */
-            { array: "int", values: sizes }
+            { array: "int", values: sizes.slice() }
         ]
     };
+}
+
+export function registerStszEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsz",
+        emitStszBox
+    );
 }

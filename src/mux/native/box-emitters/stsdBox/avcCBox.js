@@ -100,7 +100,7 @@
  * The avcC box is the heart of H.264 configuration in MP4. It packages SPS/PPS
  * and decoder metadata so that every player knows how to decode the video.
  */
-export function emitAvcCBox({ avcC }) {
+function emitAvcCBox({ avcC }) {
 
     /**
      * The avcC payload is a raw AVCDecoderConfigurationRecord.
@@ -141,4 +141,11 @@ export function emitAvcCBox({ avcC }) {
             }
         ]
     };
+}
+
+export function registerAvcCEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsd|avc1/avcC",
+        emitAvcCBox
+    );
 }

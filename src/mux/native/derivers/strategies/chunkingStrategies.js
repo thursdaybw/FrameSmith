@@ -64,5 +64,23 @@ export const ChunkingStrategies = {
      *
      * It does not change sample timing or ordering.
      */
-    ALL_SAMPLES_ONE_CHUNK: "all-samples-one-chunk"
+    ALL_SAMPLES_ONE_CHUNK: "all-samples-one-chunk",
+
+    /**
+     * PACKETIZED
+     * ----------
+     *
+     * Samples are grouped according to explicit packet identity.
+     *
+     * Requires:
+     * - each sample to declare a packetIndex
+     *
+     * This strategy is representational, not semantic.
+     */
+    PACKETIZED: "packetized",
+
+    // declared but not yet implemented
+    FIXED_SAMPLES_PER_CHUNK: "fixed-samples-per-chunk",
+    GOP_ALIGNED: "gop-aligned",
+    FIXED_DURATION_CHUNKS: "fixed-duration-chunks",
 };

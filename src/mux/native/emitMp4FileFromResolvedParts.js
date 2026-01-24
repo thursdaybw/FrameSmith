@@ -1,6 +1,8 @@
-import { emitMdatBox } from "./box-emitters/mdatBox.js";
-import { emitFreeBox } from "./box-emitters/freeBox.js";
 import { serializeBoxTree } from "./serializer/serializeBoxTree.js";
+import { EmitterRegistry } from "./box-emitters/EmitterRegistry.js";
+import { assertEqual, assertEqualHex } from "./tests/assertions.js";
+
+
 
 const ALLOWED_KEYS = [
     "ftypNode",
@@ -96,12 +98,7 @@ export function emitMp4FileFromResolvedParts(params) {
         }
     }
 
-    const {
-        ftypNode,
-        committedMoovNode,
-        mdatPayload,
-        fileBoxOrder
-    } = params;
+    const { ftypNode, committedMoovNode, mdatPayload, fileBoxOrder } = params;
 
     if (!ftypNode) {
         throw new Error("emitMp4FileFromResolvedParts: ftypNode is required");
@@ -136,17 +133,23 @@ export function emitMp4FileFromResolvedParts(params) {
         }
 
         if (boxType === "free") {
-            parts.push(serializeBoxTree(emitFreeBox()));
+            const freeNode = EmitterRegistry.emit("free");
+            parts.push(serializeBoxTree(freeNode));
             continue;
         }
 
         if (boxType === "mdat") {
-            const mdatNode = emitMdatBox({ payload: mdatPayload });
+            const mdatNode =
+                EmitterRegistry.emit(
+                    "mdat",
+                    { payload: mdatPayload }
+                );
             parts.push(serializeBoxTree(mdatNode));
             continue;
         }
 
         if (boxType === "moov") {
+
             parts.push(serializeBoxTree(committedMoovNode));
             continue;
         }

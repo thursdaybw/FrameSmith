@@ -42,9 +42,6 @@ import {
 } from "./clients/goldenMp4SourceClient.js";
 
 export async function test_SourceClient_GoldenMp4_ProducesMp4BuildInput() {
-    console.log(
-        "=== test_SourceClient_GoldenMp4_ProducesMp4BuildInput ==="
-    );
 
     const resp = await fetch("reference/reference_visual.mp4");
     const goldenMp4 = new Uint8Array(await resp.arrayBuffer());
@@ -142,7 +139,4 @@ export async function test_SourceClient_GoldenMp4_ProducesMp4BuildInput() {
 
     assertExists("mp4BuildInput", mp4BuildInput);
 
-    console.log(
-        "PASS: Golden MP4 client produces valid Mp4BuildInput"
-    );
 }

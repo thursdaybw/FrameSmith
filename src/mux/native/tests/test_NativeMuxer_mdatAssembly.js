@@ -10,10 +10,6 @@ import { extractAccessUnitPayloadsFromMp4 }
 
 export async function testNativeMuxer_MdatAssembly_FromChunkModel() {
 
-    console.log(
-        "=== testNativeMuxer_MdatAssembly_FromChunkModel ==="
-    );
-
     // ---------------------------------------------------------
     // 1. Load golden MP4
     // ---------------------------------------------------------
@@ -163,7 +159,4 @@ export async function testNativeMuxer_MdatAssembly_FromChunkModel() {
         );
     }
 
-    console.log(
-        "PASS: mdat payload assembly preserves bytes and group integrity"
-    );
 }

@@ -17,6 +17,36 @@
 export function deriveStscEntries({ samples, chunks }) {
 
     if (!Array.isArray(chunks) || chunks.length === 0) {
+        throw new Error("deriveStscEntries: chunks must be a non-empty array");
+    }
+
+    const entries = [];
+
+    let previousSamplesPerChunk = null;
+
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+
+        const chunk = chunks[chunkIndex];
+        const samplesPerChunk = chunk.samples.length;
+
+        if (previousSamplesPerChunk !== samplesPerChunk) {
+
+            entries.push({
+                firstChunk: chunkIndex + 1, // MP4 is 1-based
+                samplesPerChunk,
+                sampleDescriptionIndex: 1
+            });
+
+            previousSamplesPerChunk = samplesPerChunk;
+        }
+    }
+
+    return entries;
+}
+
+export function deriveStscEntriesoff({ samples, chunks }) {
+
+    if (!Array.isArray(chunks) || chunks.length === 0) {
         throw new Error(
             "deriveStscEntries: chunks must be a non-empty array"
         );
@@ -50,9 +80,12 @@ export function deriveStscEntries({ samples, chunks }) {
     for (const chunk of chunks) {
 
         if (chunk.samples.length !== samplesPerChunk) {
+            /*
             throw new Error(
                 "deriveStscEntries: variable samples-per-chunk not supported"
             );
+            */
+            console.warn("deriveStscEntries: variable samples-per-chunk is experimental");
         }
 
         for (const wrapped of chunk.samples) {

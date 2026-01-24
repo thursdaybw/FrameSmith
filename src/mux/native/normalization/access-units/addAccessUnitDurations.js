@@ -1,25 +1,19 @@
-export function addAccessUnitDurationsInPlace({ accessUnits }) {
-
-    console.log("=== DEBUG addAccessUnitDurationsInPlace ===");
-    console.log(
-        "PTS list:",
-        accessUnits.map(u => u.pts)
-    );
+export function addAccessUnitDurationsInPlace({
+    accessUnits,
+    codec,
+    trackDuration
+}) {
 
     assertNonEmptyArray(accessUnits);
     assertPtsPresent(accessUnits);
 
-    addDurationsByPtsAdjacency(accessUnits);
-
-    console.log(
-        "Derived durations:",
-        accessUnits.map(u => u.duration)
-    );
+    addDurationsByPtsAdjacency({
+        accessUnits,
+        codec,
+        trackDuration
+    });
 
     const total = accessUnits.reduce((s, u) => s + u.duration, 0);
-    console.log("Total trackDuration (pre-deriver):", total);
-    console.log("=== END DEBUG addAccessUnitDurationsInPlace ===");
-
 }
 
 function assertNonEmptyArray(accessUnits) {
@@ -52,7 +46,11 @@ function assertPtsPresent(accessUnits) {
  *
  * Original accessUnits order is preserved.
  */
-function addDurationsByPtsAdjacency(accessUnits) {
+function addDurationsByPtsAdjacency({
+    accessUnits,
+    codec,
+    trackDuration
+}) {
 
     // ---------------------------------------------------------
     // Build PTS-ordered index map
@@ -104,6 +102,30 @@ function addDurationsByPtsAdjacency(accessUnits) {
         }
 
         durationByIndex.set(currentIndex, duration);
+    }
+
+
+    // ---------------------------------------------------------
+    // AAC tail reconciliation (semantic fix)
+    // ---------------------------------------------------------
+    if ( typeof trackDuration === "number" && codec && codec.startsWith("mp4a")) {
+
+        let accumulated = 0;
+
+        const indices = Array.from(durationByIndex.keys())
+            .sort((a, b) => accessUnits[a].pts - accessUnits[b].pts);
+
+        for (let i = 0; i < indices.length - 1; i++) {
+            accumulated += durationByIndex.get(indices[i]);
+        }
+
+        const lastIndex = indices[indices.length - 1];
+        const reconciled =
+            trackDuration - accumulated;
+
+        if (reconciled > 0) {
+            durationByIndex.set(lastIndex, reconciled);
+        }
     }
 
     // ---------------------------------------------------------

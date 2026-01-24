@@ -3,8 +3,6 @@ import { assertEqual } from "./assertions.js";
 
 export function testCommitTrak_Structure() {
 
-    console.log("=== testCommitTrak_Structure ===");
-
     const tkhdNode = { type: "tkhd", body: [] };
     const edtsNode = { type: "edts", children: [] };
 
@@ -47,5 +45,4 @@ export function testCommitTrak_Structure() {
     assertEqual("edts preserved", children[1] === edtsNode, true);
     assertEqual("mdia replaced", children[2] === committedMdia, true);
 
-    console.log("PASS: commitTrak preserves structure and replaces mdia only");
 }

@@ -4,15 +4,13 @@ import { deriveChunkModel } from "../derivers/deriveChunkModel.js";
 import { assembleMdatPayloadFromChunks } from "../assembleMdatPayloadFromChunks.js";
 import { resolvePhysicalLayout } from "../resolvePhysicalLayout.js";
 
+/*
 import { emitFtypBox } from "../box-emitters/ftypBox.js";
 import { emitFreeBox } from "../box-emitters/freeBox.js";
 import { emitMoovBox } from "../box-emitters/moovBox.js";
 import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
-import { emitTrakBox } from "../box-emitters/trakBox.js";
+import { assembleTrak } from "../assemblers/assembleTrak.js";
 import { emitMdatBox } from "../box-emitters/mdatBox.js";
-
-import { emitStblBox } from "../box-emitters/stblBox.js";
-import { emitMinfBox } from "../box-emitters/minfBox.js";
 import { emitMdiaBox } from "../box-emitters/mdiaBox.js";
 import { emitStcoBox } from "../box-emitters/stcoBox.js";
 import { emitStsdBox } from "../box-emitters/stsdBox.js";
@@ -21,14 +19,16 @@ import { emitSttsBox } from "../box-emitters/sttsBox.js";
 import { emitStscBox } from "../box-emitters/stscBox.js";
 import { emitStszBox } from "../box-emitters/stszBox.js";
 import { emitVmhdBox } from "../box-emitters/vmhdBox.js";
-import { emitDinfBox } from "../box-emitters/dinfBox.js";
-import { emitMdhdBox } from "../box-emitters/mdhdBox.js";
+import { assembleDinf } from "../assemblers/assembleDinf.js";
 import { emitHdlrBox } from "../box-emitters/hdlrBox.js";
 import { emitTkhdBox } from "../box-emitters/tkhdBox.js";
 import { emitCttsBox } from "../box-emitters/cttsBox.js";
 import { emitUdtaBox } from "../box-emitters/udtaBox.js";
-import { emitEdtsBox } from "../box-emitters/edtsBox.js";
-
+import { assembleEdts } from "../assemblers/assembleEdts.js";
+import { assembleStbl } from "../assemblers/assembleStbl.js";
+import { assembleMinf } from "../assemblers/assembleMinf.js";
+import { assembleMdia } from "../assemblers/assembleMdia.js";
+*/
 import { commitMoovWithResolvedLayout } from "../commit/commitMoovWithResolvedLayout.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { ChunkingStrategies } from "../derivers/strategies/chunkingStrategies.js";
@@ -70,7 +70,11 @@ import { emitMp4FileFromResolvedParts } from "../emitMp4FileFromResolvedParts.js
  * Any failure here indicates a real regression in the linker.
  */
 export async function test_NativeMuxer_Linker_EmitsResolvedMp4() {
-    console.log("=== test_NativeMuxer_Linker_EmitsResolvedMp4 ===");
+
+    throw new Error(
+        "BLOCKED: Linker test requires extracted Phase 2 compiler output. " +
+        "Re-enable once structural materialization is a standalone phase."
+    );
 
     // ---------------------------------------------------------
     // 1. Load golden MP4 (ffmpeg oracle)
@@ -85,112 +89,112 @@ export async function test_NativeMuxer_Linker_EmitsResolvedMp4() {
         codec: getGoldenTruthBox
             .fromMp4(
                 goldenMp4,
-                "moov/trak/mdia/minf/stbl/stsd",
+                "moov/trak[0]/mdia/minf/stbl/stsd",
                 {
                     trackType: "video",
                 }
             )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         timing: {
             stts: getGoldenTruthBox
             .fromMp4(
                 goldenMp4,
-                "moov/trak/mdia/minf/stbl/stts",
+                "moov/trak[0]/mdia/minf/stbl/stts",
                 {
                     trackType: "video",
                 }
             )
-            .getBuilderInput(),
+            .getEmitterInput(),
             ctts: getGoldenTruthBox
             .fromMp4(
                 goldenMp4,
-                "moov/trak/mdia/minf/stbl/ctts",
+                "moov/trak[0]/mdia/minf/stbl/ctts",
                 {
                     trackType: "video",
                 }
             )
-            .getBuilderInput(),
+            .getEmitterInput(),
             stss: getGoldenTruthBox
             .fromMp4(
                 goldenMp4,
-                "moov/trak/mdia/minf/stbl/stss",
+                "moov/trak[0]/mdia/minf/stbl/stss",
                 {
                     trackType: "video",
                 }
             )
-            .getBuilderInput()
+            .getEmitterInput()
         },
 
         sizes: getGoldenTruthBox
         .fromMp4(
             goldenMp4,
-            "moov/trak/mdia/minf/stbl/stsz",
+            "moov/trak[0]/mdia/minf/stbl/stsz",
             {
                 trackType: "video",
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         chunking: getGoldenTruthBox
         .fromMp4(
             goldenMp4,
-            "moov/trak/mdia/minf/stbl/stsc",
+            "moov/trak[0]/mdia/minf/stbl/stsc",
             {
                 trackType: "video",
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         tkhd: getGoldenTruthBox
         .fromMp4(
             goldenMp4,
-            "moov/trak/tkhd",
+            "moov/trak[0]/tkhd",
             {
                 trackType: "video",
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         mdhd: getGoldenTruthBox
         .fromMp4(
             goldenMp4,
-            "moov/trak/mdia/mdhd",
+            "moov/trak[0]/mdia/mdhd",
             {
                 trackType: "video",
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         hdlr: getGoldenTruthBox
         .fromMp4(
             goldenMp4,
-            "moov/trak/mdia/hdlr",
+            "moov/trak[0]/mdia/hdlr",
             {
                 trackType: "video",
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         vmhd: getGoldenTruthBox
         .fromMp4(
             goldenMp4,
-            "moov/trak/mdia/minf/vmhd",
+            "moov/trak[0]/mdia/minf/vmhd",
             {
                 trackType: "video",
             }
         )
-        .getBuilderInput(),
+        .getEmitterInput(),
 
         dinf: getGoldenTruthBox
         .fromMp4(
             goldenMp4,
-            "moov/trak/mdia/minf/dinf",
+            "moov/trak[0]/mdia/minf/dinf",
             {
                 trackType: "video",
             }
         )
-        .getBuilderInput()
+        .getEmitterInput()
     };
 
     // ---------------------------------------------------------
@@ -216,76 +220,86 @@ export async function test_NativeMuxer_Linker_EmitsResolvedMp4() {
     });
 
     // ---------------------------------------------------------
+    // 3.5 Normalize semantic inputs for assemblers
+    // ---------------------------------------------------------
+
+    const stblSemanticInput = {
+        stsd: trackSemanticInput.codec,
+        stts: trackSemanticInput.timing.stts,
+        ctts: trackSemanticInput.timing.ctts,
+        stss: trackSemanticInput.timing.stss,
+        stsc: trackSemanticInput.chunking,
+        stsz: trackSemanticInput.sizes,
+        stco: {
+            chunkOffsets: new Array(chunkOffsets.length).fill(0)
+        }
+    };
+
+    const vmhdSemanticInput = trackSemanticInput.vmhd;
+    const dinfSemanticInput = trackSemanticInput.dinf;
+    const mdhdSemanticInput = trackSemanticInput.mdhd;
+    const hdlrSemanticInput = trackSemanticInput.hdlr;
+
+
+    // ---------------------------------------------------------
     // 4. Build full structural graph (with placeholder STCO)
     // ---------------------------------------------------------
     const placeholderStco = emitStcoBox({
         chunkOffsets: new Array(chunkOffsets.length).fill(0)
     });
 
-    const stbl = emitStblBox({
-        stsd: emitStsdBox(trackSemanticInput.codec),
-        stts: emitSttsBox(trackSemanticInput.timing.stts),
-        ctts: emitCttsBox(trackSemanticInput.timing.ctts),
-        stss: emitStssBox(trackSemanticInput.timing.stss),
-        stsc: emitStscBox(trackSemanticInput.chunking),
-        stsz: emitStszBox(trackSemanticInput.sizes),
-        stco: placeholderStco
-    });
+    const stbl = assembleStbl(stblSemanticInput);
 
-    const minf = emitMinfBox({
-        vmhd: emitVmhdBox(trackSemanticInput.vmhd),
-        dinf: emitDinfBox(trackSemanticInput.dinf),
-        stbl
-    });
-
-    const mdia = emitMdiaBox({
-        mdhd: emitMdhdBox(trackSemanticInput.mdhd),
-        hdlr: emitHdlrBox(trackSemanticInput.hdlr),
-        minf
-    });
-
-    const edts = emitEdtsBox(
+    const edtsParams =
         getGoldenTruthBox
         .fromMp4(
             goldenMp4,
-            "moov/trak/edts",
-            {
-                trackType: "video",
-            }
+            "moov/trak[0]/edts",
+            { trackType: "video" }
         )
-        .getBuilderInput()
+        .getEmitterInput();
+
+    const edts = assembleEdts(
+        getGoldenTruthBox
+        .fromMp4(
+            goldenMp4,
+            "moov/trak[0]/edts",
+            { trackType: "video" }
+        )
+        .getEmitterInput()
     );
 
-    const trak = emitTrakBox({
-        tkhd: emitTkhdBox(trackSemanticInput.tkhd),
+
+    const trak = assembleTrak({
+        tkhd: trackSemanticInput.tkhd,
         edts,
-        mdia
+        mdia: {
+            mdhd: mdhdSemanticInput,
+            hdlr: hdlrSemanticInput,
+            minf: {
+                mediaHeader: vmhdSemanticInput,
+                dinf: dinfSemanticInput,
+                stbl: stblSemanticInput
+            }
+        }
     });
 
-    const moov = emitMoovBox({
-        mvhd: emitMvhdBox(
-            getGoldenTruthBox
-            .fromMp4(
-                goldenMp4,
-                "moov/mvhd",
-                {
-                    trackType: "video",
-                }
-            )
-            .getBuilderInput()
-        ),
-        traks: [trak],
-        udta: emitUdtaBox(
-            getGoldenTruthBox
-            .fromMp4(
-                goldenMp4,
-                "moov/udta",
-                {
-                    trackType: "video",
-                }
-            )
-            .getBuilderInput()
+    const moov = assembleMoov({
+        mvhd: getGoldenTruthBox
+        .fromMp4(
+            goldenMp4,
+            "moov/mvhd",
+            { trackType: "video" }
         )
+        .getEmitterInput(),
+        traks: [trak],
+        udta: getGoldenTruthBox
+        .fromMp4(
+            goldenMp4,
+            "moov/udta",
+            { trackType: "video" }
+        )
+        .getEmitterInput()
     });
 
     const ftyp = emitFtypBox({
@@ -371,7 +385,6 @@ export async function test_NativeMuxer_Linker_EmitsResolvedMp4() {
         downloadMp4(outBytes);
     }
 
-    console.log("PASS: NativeMuxer end-to-end byte-for-byte conformance");
 }
 
 

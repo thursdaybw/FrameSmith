@@ -1,6 +1,5 @@
 import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
 import { adaptSttsFromSamples } from "../adapters/adaptSttsFromSamples.js";
-import { emitSttsBox } from "../box-emitters/sttsBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 import { assertEqualHex, assertEqual } from "./assertions.js";

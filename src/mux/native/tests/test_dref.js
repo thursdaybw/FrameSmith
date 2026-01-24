@@ -1,114 +1,119 @@
-import { emitDrefBox } from "../box-emitters/drefBox.js";
-import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { assertEqual, assertEqualHex } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 
-
+/**
+ * testDref_Structure
+ * ------------------
+ * Phase B — Structural correctness test for dref.
+ *
+ * This test asserts the emitted box *model*, not serialized bytes.
+ *
+ * Guarantees:
+ * - Correct box type and FullBox header
+ * - Exactly one entry_count
+ * - Exactly one child `url ` box
+ * - Correct child FullBox header
+ * - No payload fields
+ */
 export function testDref_Structure() {
-    console.log("=== testDref_Structure ===");
 
-    const node = emitDrefBox();
-    const box  = serializeBoxTree(node);
+    // ------------------------------------------------------------
+    // 1. Emit box model via registry (NO serialization)
+    // ------------------------------------------------------------
+    const node =
+        EmitterRegistry.assemble(
+            "moov/trak/mdia/minf/dinf/dref",
+            {}
+        );
 
-    // ----------------------------------------
-    // Parent box: dref
-    // ----------------------------------------
+    // ------------------------------------------------------------
+    // 2. Parent box: dref
+    // ------------------------------------------------------------
+    assertEqual("dref.type",    node.type,    "dref");
+    assertEqual("dref.version", node.version, 0);
+    assertEqual("dref.flags",   node.flags,   0);
+
+    // ------------------------------------------------------------
+    // 3. Body fields
+    // ------------------------------------------------------------
     assertEqual(
-        "dref.type",
-        readFourCC(box, 4),
-        "dref"
+        "dref.body.length",
+        node.body.length,
+        1
     );
 
     assertEqual(
-        "dref.size",
-        readUint32(box, 0),
-        box.length
+        "dref.entry_count",
+        node.body[0].int,
+        1
     );
 
-    // FullBox header
-    const version = box[8];
-    const flags =
-        (box[9] << 16) |
-        (box[10] << 8) |
-        box[11];
-
-    assertEqual("dref.version", version, 0);
-    assertEqual("dref.flags",   flags,   0);
-
-    // entry_count
-    const entryCount = readUint32(box, 12);
-    assertEqual("dref.entry_count", entryCount, 1);
-
-    // ----------------------------------------
-    // Child box: url
-    // ----------------------------------------
-    const urlOffset = 16;
-
-    const urlSize = readUint32(box, urlOffset);
-    const urlType = readFourCC(box, urlOffset + 4);
-
-    assertEqual("dref.url.type", urlType, "url ");
-    assertEqual("dref.url.size", urlSize, 12);
-
-    const urlVersion = box[urlOffset + 8];
-    const urlFlags =
-        (box[urlOffset + 9] << 16) |
-        (box[urlOffset + 10] << 8) |
-        box[urlOffset + 11];
-
-    assertEqual("dref.url.version", urlVersion, 0);
-    assertEqual("dref.url.flags",   urlFlags,   1);
-
-    // ----------------------------------------
-    // No trailing bytes
-    // ----------------------------------------
+    // ------------------------------------------------------------
+    // 4. Child boxes
+    // ------------------------------------------------------------
     assertEqual(
-        "dref.trailing_bytes",
-        urlOffset + urlSize,
-        box.length
+        "dref.children.length",
+        node.children.length,
+        1
     );
 
-    console.log("PASS: dref structural correctness");
+    const url = node.children[0];
+
+    assertEqual("dref.url.type",    url.type,    "url ");
+    assertEqual("dref.url.version", url.version, 0);
+    assertEqual("dref.url.flags",   url.flags,   1);
+
+    // ------------------------------------------------------------
+    // 5. url box has no payload
+    // ------------------------------------------------------------
+    assertEqual(
+        "dref.url.body.length",
+        url.body.length,
+        0
+    );
+
+    assertEqual(
+        "dref.url.children.length",
+        url.children ? url.children.length : 0,
+        0
+    );
 }
 
 export async function testDref_LockedLayoutEquivalence_ffmpeg() {
-    console.log("=== testDref_LockedLayoutEquivalence_ffmpeg (golden MP4) ===");
 
     // ------------------------------------------------------------
-    // 1. Load golden MP4
+    // Load golden MP4
     // ------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ------------------------------------------------------------
-    // 2. Read golden truth (validation + raw bytes)
+    // Read golden truth (validation + raw bytes)
     // ------------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/minf/dinf/dref",
-        { trackType: "video" }
-    );
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]/mdia/minf/dinf/dref"
+        );
 
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput(); // {}
+    const refFields = truth.readBoxReport();
+    const params    = truth.getEmitterInput(); // {}
 
     // ------------------------------------------------------------
-    // 3. Rebuild dref
+    // Rebuild dref via registry
     // ------------------------------------------------------------
     const outBytes = serializeBoxTree(
-        emitDrefBox(params)
+        EmitterRegistry.assemble(
+            "moov/trak/mdia/minf/dinf/dref",
+            params
+        )
     );
 
     // ------------------------------------------------------------
-    // 4. Re-read rebuilt dref
-    // ------------------------------------------------------------
-    const outFields = getGoldenTruthBox
-        .fromBox(outBytes, "moov/trak/mdia/minf/dinf/dref")
-        .readFields();
-
-    // ------------------------------------------------------------
-    // 5. Byte-for-byte equivalence
+    // Byte-for-byte equivalence
     // ------------------------------------------------------------
     const refRaw = refFields.raw;
 
@@ -125,6 +130,4 @@ export async function testDref_LockedLayoutEquivalence_ffmpeg() {
             refRaw[i]
         );
     }
-
-    console.log("PASS: dref matches golden MP4 byte-for-byte");
 }

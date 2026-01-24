@@ -1,7 +1,17 @@
 import { addAccessUnitDurationsInPlace } from "./addAccessUnitDurations.js";
 
-export function normalizeAccessUnitsInPlace({ accessUnits }) {
-    addAccessUnitDurationsInPlace({ accessUnits });
+export function normalizeAccessUnitsInPlace({
+    accessUnits,
+    codec,
+    trackDuration
+}) {
+
+
+    addAccessUnitDurationsInPlace({
+        accessUnits,
+        codec,
+        trackDuration
+    });
     addSampleDescriptionIndexInPlace({ accessUnits });
 }
 

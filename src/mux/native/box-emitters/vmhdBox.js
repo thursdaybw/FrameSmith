@@ -59,8 +59,9 @@ import { writeUint32, writeString } from "../binary/Writer.js";
  * not by changing this emitter.
  */
 
-export function emitVmhdBox() {
-    return {
+function emitVmhdBox() {
+
+    const node = {
         type: "vmhd",
 
         // FullBox header (see FullBox.md)
@@ -143,4 +144,13 @@ export function emitVmhdBox() {
             { short: 0 },
         ]
     };
+
+    return node;
+}
+
+export function registerVmhdEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/vmhd",
+        emitVmhdBox
+    );
 }

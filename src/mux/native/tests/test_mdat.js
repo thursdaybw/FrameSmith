@@ -1,11 +1,11 @@
-import { emitMdatBox } from "../box-emitters/mdatBox.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
+import { readFourCC } from "../box-schema/boxLayoutReaders.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 import { assertEqual, assertEqualHex } from "./assertions.js";
 
 export function testMdat_Structure() {
-
-    console.log("=== testMdat_Structure ===");
 
     // ---------------------------------------------------------
     // 1. Deterministic payload
@@ -16,10 +16,15 @@ export function testMdat_Structure() {
     ]);
 
     // ---------------------------------------------------------
-    // 2. Emit + serialize
+    // 2. Emit via registry + serialize
     // ---------------------------------------------------------
-    const node = emitMdatBox({ payload });
-    const box  = serializeBoxTree(node);
+    const node =
+        EmitterRegistry.emit(
+            "mdat",
+            { payload }
+        );
+
+    const box = serializeBoxTree(node);
 
     // ---------------------------------------------------------
     // 3. Box header
@@ -75,8 +80,67 @@ export function testMdat_Structure() {
         headerSize + payload.length,
         box.length
     );
+}
 
-    console.log(
-        "PASS: mdat structural correctness"
-    );
+
+
+/**
+ * testMdat_LockedLayoutEquivalence_ffmpeg
+ *
+ * Proves:
+ * - mdat payload is serialized verbatim
+ * - header + payload layout matches ffmpeg output byte-for-byte
+ *
+ * This is intentionally a byte-level test.
+ */
+
+export async function testMdat_LockedLayoutEquivalence_ffmpeg() {
+
+    // ---------------------------------------------------------
+    // Load oracle MP4
+    // ---------------------------------------------------------
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // ---------------------------------------------------------
+    // Extract mdat truth
+    // ---------------------------------------------------------
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "mdat"
+        );
+
+    const read = truth.readBoxReport();
+    const raw  = read.raw;
+
+    // ---------------------------------------------------------
+    // Emit canonical mdat
+    // ---------------------------------------------------------
+    const input = truth.getEmitterInput(); // { payload }
+
+    const node =
+        EmitterRegistry.emit(
+            "mdat",
+            input
+        );
+
+    const out = serializeBoxTree(node);
+
+    // ---------------------------------------------------------
+    // Byte-for-byte equivalence
+    // ---------------------------------------------------------
+    if (out.length !== raw.length) {
+        throw new Error(
+            `mdat size mismatch: expected ${raw.length}, got ${out.length}`
+        );
+    }
+
+    for (let i = 0; i < raw.length; i++) {
+        assertEqualHex(
+            `mdat.byte[${i}]`,
+            out[i],
+            raw[i]
+        );
+    }
 }

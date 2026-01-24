@@ -1,7 +1,3 @@
-import { emitAvcCBox } from "./avcCBox.js";
-import { emitBtrtBox } from "./btrtBox.js";
-import { emitPaspBox } from "./paspBox.js";
-
 /*
  *
  * avc1 — H.264 Video Sample Entry
@@ -75,66 +71,62 @@ import { emitPaspBox } from "./paspBox.js";
  * that the serializer converts into a fully compliant MP4 structure.
  */
 
-/**
- * avc1 — H.264 Video Sample Entry
- * -------------------------------
- * (doc comment unchanged — preserved as requested)
- */
-
-export function emitAvc1Box({
+function emitAvc1SampleEntryBox({
     width,
     height,
-    avcC,
-    compressorName = "",
-    btrt
+    avcCNode,
+    compressorNameFields,
+    paspNode,
+    btrtNode
 }) {
-
+    // ---------------------------------------------------------
+    // Required scalar fields
+    // ---------------------------------------------------------
     if (!Number.isInteger(width) || width <= 0) {
-        throw new Error("emitAvc1Box: width must be a positive integer");
+        throw new Error("emitAvc1SampleEntryBox: width must be a positive integer");
     }
 
     if (!Number.isInteger(height) || height <= 0) {
-        throw new Error("emitAvc1Box: height must be a positive integer");
+        throw new Error("emitAvc1SampleEntryBox: height must be a positive integer");
     }
 
-    if (!(avcC instanceof Uint8Array) || avcC.length === 0) {
+    // ---------------------------------------------------------
+    // Required child: avcCNode (structural, non-negotiable)
+    // ---------------------------------------------------------
+
+    if (avcCNode === undefined || avcCNode === null) {
         throw new Error(
-            "emitAvc1Box: avcC must be a non-empty Uint8Array"
+            "emitAvc1SampleEntryBox: missing required child 'avcCNode'"
         );
     }
 
-    if (btrt !== undefined) {
-        if (
-            typeof btrt !== "object" ||
-            !Number.isInteger(btrt.bufferSizeDB) ||
-            !Number.isInteger(btrt.maxBitrate) ||
-            !Number.isInteger(btrt.avgBitrate)
-        ) {
-            throw new Error(
-                "emitAvc1Box: btrt must contain integer bufferSizeDB, maxBitrate, avgBitrate"
-            );
-        }
-    }
-
-    const avcCBox = emitAvcCBox({ avcC });
-    const compressorFields = buildCompressorNameFields(compressorName);
-
-    const children = [
-        avcCBox,
-        emitPaspBox()
-    ];
-
-    if (btrt !== undefined) {
-        children.push(
-            emitBtrtBox(btrt)
+    if (typeof avcCNode !== "object") {
+        throw new Error(
+            "emitAvc1SampleEntryBox: avcCNode must be an object"
         );
     }
 
+    if (avcCNode.type !== "avcC") {
+        throw new Error(
+            `emitAvc1SampleEntryBox: avcCNode.type must be 'avcC', ` +
+            `got '${avcCNode.type}'`
+        );
+    }
+
+    if (!Array.isArray(compressorNameFields)) {
+        throw new Error(
+            "emitAvc1SampleEntryBox: compressorNameFields must be an array"
+        );
+    }
+
+    // ---------------------------------------------------------
+    // Emit avc1 SampleEntry
+    // ---------------------------------------------------------
     return {
         type: "avc1",
 
         body: [
-            // Reserved bytes (6)
+            // reserved (6)
             { byte: 0 }, { byte: 0 }, { byte: 0 },
             { byte: 0 }, { byte: 0 }, { byte: 0 },
 
@@ -164,8 +156,8 @@ export function emitAvc1Box({
             // frame_count
             { short: 1 },
 
-            // compressorname (fully explicit)
-            ...compressorFields,
+            // compressorname (explicit fields)
+            ...compressorNameFields,
 
             // depth
             { short: 0x0018 },
@@ -174,66 +166,17 @@ export function emitAvc1Box({
             { short: 0xffff }
         ],
 
-        children: children,
+        children: [
+            avcCNode,
+            ...(paspNode ? [paspNode] : []),
+            ...(btrtNode ? [btrtNode] : [])
+        ]
     };
 }
 
-// ---------------------------------------------------------------------------
-// Compressor name construction (explicit, readable)
-// ---------------------------------------------------------------------------
-
-function buildCompressorNameFields(compressorName) {
-    if (compressorName === "") {
-        return [
-            // Sentinel value indicating “no compressor name”
-            { byte: 0x80 },
-
-            // Exactly 31 bytes of zero padding
-            {
-                array: "byte",
-                values: Array(31).fill(0)
-            }
-        ];
-    }
-
-    const encoder = new TextEncoder();
-    const nameBytes = encoder.encode(compressorName);
-    const nameLength = Math.min(nameBytes.length, 31);
-
-
-    return [
-        /**
-         * compressorname length
-         * ---------------------
-         * Length of the compressor name string (0–31).
-         *
-         * Legacy QuickTime field.
-         * Ignored by decoders.
-         */
-        { byte: nameLength },
-
-        /**
-         * compressorname bytes
-         * --------------------
-         * Encoder name emitted by the reference encoder (ffmpeg).
-         *
-         * Framesmith reproduces this value verbatim during
-         * conformance testing to guarantee byte-for-byte equality.
-         */
-        {
-            array: "byte",
-            values: Array.from(nameBytes.slice(0, nameLength))
-        },
-
-        /**
-         * compressorname padding
-         * ----------------------
-         * Field must be exactly 31 bytes long.
-         * Remaining bytes are zero-filled.
-         */
-        {
-            array: "byte",
-            values: Array(31 - nameLength).fill(0)
-        }
-    ];
+export function registerAvc1SampleEntryEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsd|avc1",
+        emitAvc1SampleEntryBox
+    );
 }

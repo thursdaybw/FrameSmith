@@ -1,84 +1,67 @@
-import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
 import {
     assertEqual,
     assertEqualHex,
     assertExists
 } from "./assertions.js";
 
-import { emitMetaHdlrBox } from "../box-emitters/metaHdlrBox.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
+
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 /**
  * META > HDLR — Structural Correctness (Phase A)
  *
- * Ground truth from inspection:
- *
- * offset  size  meaning
- * 0       4     size = 33
- * 4       4     type = "hdlr"
- * 8       1     version = 0
- * 9       3     flags = 0
- * 12      4     zero padding
- * 16      4     handler_type = "mdir"
- * 20..32  bytes name + padding
+ * JSON-level structural intent only.
+ * No serialization.
  */
 export function testMetaHdlr_Structure() {
 
-    console.log("=== testMetaHdlr_Structure ===");
-
-    const node = emitMetaHdlrBox({
-        nameBytes: new Uint8Array([
-            0x61, 0x70, 0x70, 0x6c, // "appl"
-            0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00,
-            0x00
-        ])
-    });
-
-    const box = serializeBoxTree(node);
-
-    // size + type
-    assertEqual("hdlr.size.field", readUint32(box, 0), 33);
-    assertEqual("hdlr.type", readFourCC(box, 4), "hdlr");
-
-    // fullbox header
-    assertEqual("hdlr.version", box[8], 0);
-    assertEqual(
-        "hdlr.flags",
-        (box[9] << 16) | (box[10] << 8) | box[11],
-        0
-    );
-
-    // zero padding (12..15)
-    for (let i = 0; i < 4; i++) {
-        assertEqualHex(
-            `hdlr.zero_pad.byte[${i}]`,
-            box[12 + i],
-            0x00
+    const node =
+        EmitterRegistry.emit(
+            "moov/udta/meta/hdlr",
+            {
+                nameBytes: new Uint8Array([
+                    0x61, 0x70, 0x70, 0x6c, // "appl"
+                    0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00,
+                    0x00
+                ])
+            }
         );
-    }
 
-    // handler_type (16..19)
-    assertEqual("hdlr.handler_type", readFourCC(box, 16), "mdir");
+    // ---------------------------------------------------------
+    // Box identity
+    // ---------------------------------------------------------
+    assertEqual("hdlr.type", node.type, "hdlr");
+    assertEqual("hdlr.version", node.version, 0);
+    assertEqual("hdlr.flags", node.flags, 0);
 
-    // name + padding exists
-    const nameBytes = box.slice(20);
-    assertExists("hdlr.nameBytes", nameBytes);
+    // ---------------------------------------------------------
+    // Body structure
+    // ---------------------------------------------------------
+    assertExists("hdlr.body", node.body);
+    assertEqual("hdlr.body.length", node.body.length, 3);
 
-    console.log("PASS: META hdlr structural correctness");
+    // zero padding
+    assertEqual("hdlr.zeroPadding", node.body[0].int, 0);
+
+    // handler type
+    assertEqual("hdlr.handlerType", node.body[1].type, "mdir");
+
+    // name bytes
+    assertEqual("hdlr.name.array", node.body[2].array, "byte");
+    assertExists("hdlr.name.values", node.body[2].values);
 }
-
 
 /**
  * META > HDLR — Locked Layout Equivalence (ffmpeg)
  *
- * Field-level, byte-for-byte assertions.
+ * Byte-for-byte safety net.
  */
 export async function testMetaHdlr_LockedLayoutEquivalence_ffmpeg() {
-
-    console.log("=== testMetaHdlr_LockedLayoutEquivalence_ffmpeg ===");
 
     // ---------------------------------------------------------
     // 1. Load golden MP4
@@ -87,43 +70,39 @@ export async function testMetaHdlr_LockedLayoutEquivalence_ffmpeg() {
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Extract reference hdlr
+    // 2. Resolve semantic hdlr
     // ---------------------------------------------------------
-    const ref = extractBoxByPathFromMp4(
-        mp4,
-        "moov/udta/meta/hdlr"
-    );
-    assertExists("reference meta hdlr", ref);
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/udta/meta/hdlr"
+        );
+
+    const read   = truth.readBoxReport();
+    const params = truth.getEmitterInput();
+    const refRaw = read.raw;
 
     // ---------------------------------------------------------
-    // 3. Golden truth → exact emitter input
+    // 3. Rebuild via registry
     // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromBox(
-        ref,
-        "moov/udta/meta/hdlr"
-    );
-
-    const params = truth.getBuilderInput();
-
-    // ---------------------------------------------------------
-    // 4. Rebuild exclusively from golden truth
-    // ---------------------------------------------------------
-    const out = serializeBoxTree(
-        emitMetaHdlrBox(params)
-    );
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.emit(
+                "moov/udta/meta/hdlr",
+                params
+            )
+        );
 
     // ---------------------------------------------------------
-    // 5. Byte-for-byte equivalence
+    // 4. Byte-for-byte equivalence
     // ---------------------------------------------------------
-    assertEqual("hdlr.size", out.length, ref.length);
+    assertEqual("hdlr.size", out.length, refRaw.length);
 
-    for (let i = 0; i < ref.length; i++) {
+    for (let i = 0; i < refRaw.length; i++) {
         assertEqualHex(
             `hdlr.byte[${i}]`,
             out[i],
-            ref[i]
+            refRaw[i]
         );
     }
-
-    console.log("PASS: META hdlr locked-layout equivalence with ffmpeg");
 }

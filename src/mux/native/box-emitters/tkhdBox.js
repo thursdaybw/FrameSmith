@@ -85,13 +85,15 @@ const TKHD_FLAG_BITS = {
     inPreview:  0x000004, // deprecated, intentionally unused
 };
 
-export function emitTkhdBox({
+function emitTkhdBox({
     width,
     height,
     widthFraction,
     heightFraction,
     duration,
-    trackId
+    trackId,
+    alternateGroup = 0,
+    volume = 0
 }) {
 
     if (!Number.isInteger(width) || width < 0) {
@@ -131,6 +133,18 @@ export function emitTkhdBox({
     if (!Number.isInteger(trackId) || trackId <= 0) {
         throw new Error(
             "emitTkhdBox: trackId must be a positive integer"
+        );
+    }
+
+    if (!Number.isInteger(alternateGroup) || alternateGroup < 0) {
+        throw new Error(
+            "emitTkhdBox: alternateGroup must be a non-negative integer"
+        );
+    }
+
+    if (!Number.isInteger(volume) || volume < 0 || volume > 0xFFFF) {
+        throw new Error(
+            "emitTkhdBox: volume must be a 16-bit fixed-point value"
         );
     }
 
@@ -287,20 +301,16 @@ export function emitTkhdBox({
              * alternate_group (int16)
              * -----------------------
              * Used for alternate tracks (e.g. language variants).
-             *
-             * Not used in Framesmith.
-             * Set to 0.
              */
-            { short: 0 },
+            { short: alternateGroup },
 
             /**
              * volume (int16, 8.8 fixed-point)
              * -------------------------------
              * Audio-only field.
-             *
              * For video tracks, this must be 0.
              */
-            { short: 0 },
+            { short: volume },
 
             /**
              * reserved (uint16)
@@ -355,4 +365,11 @@ export function emitTkhdBox({
             { int: heightFixed }
         ]
     };
+}
+
+export function registerTkhdEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/tkhd",
+        emitTkhdBox
+    );
 }

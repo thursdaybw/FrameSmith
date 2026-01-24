@@ -1,11 +1,7 @@
 import { commitMoov } from "../commit/commitMoov.js";
-import { emitMoovBox } from "../box-emitters/moovBox.js";
-import { emitTrakBox } from "../box-emitters/trakBox.js";
 import { assertEqual } from "./assertions.js";
 
 export function testCommitMoov_Structure() {
-
-    console.log("=== testCommitMoov_Structure ===");
 
     const originalTrak = emitTrakBox({
         tkhd: { type: "tkhd", body: [] },
@@ -38,5 +34,4 @@ export function testCommitMoov_Structure() {
     assertEqual("child[1].type", children[1].type, "trak");
     assertEqual("trak replaced", children[1] === committedTrak, true);
 
-    console.log("PASS: commitMoov replaces trak");
 }

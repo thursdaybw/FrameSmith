@@ -1,78 +1,95 @@
 import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import {
+    readUint32ArrayFromOffset,
+    readBoxHeaderFromBytes
+} from "../../box-schema/boxLayoutReaders.js";
+import {
+    getPayloadOffsetForPath
+} from "../../box-schema/boxSchemas.js";
 
+import { PRIMITIVE_SIZES } from "../../box-schema/primitiveLayouts.js";
 /**
  * STSZ — Sample Size Box
  * ---------------------
  *
- * Declares the byte size of each encoded sample.
+ * Layout (ISO/IEC 14496-12):
  *
- * Parser responsibilities:
- * ------------------------
- * - Read variable-size sample table (sample_size == 0)
- * - Preserve declared sizes exactly
- * - Expose raw bytes for locked-layout equivalence
+ *   uint32 sample_size
+ *   uint32 sample_count
+ *   uint32[sample_count] sample_sizes
  *
- * Non-responsibilities:
- * ---------------------
+ * Contract:
+ * ---------
+ * - readBoxReport() exposes LOSSLESS on-disk structure
  * - No inference
- * - No constant-size optimization
- * - No validation across boxes
- * - No mutation
+ * - No reuse of incompatible generic readers
  */
 
-function readStszBoxFieldsFromBoxBytes(box) {
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
+
+function readBoxReport(box) {
     if (!(box instanceof Uint8Array)) {
-        throw new Error(
-            "stsz.readFields: expected Uint8Array"
-        );
+        throw new Error("stsz.readBoxReport: expected Uint8Array");
     }
 
-    const version = box[8];
+    const path = "moov/trak/mdia/minf/stbl/stsz";
 
-    if (version !== 0) {
-        throw new Error(
-            `STSZ: unsupported version ${version} (expected 0)`
-        );
-    }
+    const header = readBoxHeaderFromBytes(box, path);
+    const payloadOffset = getPayloadOffsetForPath(path);
 
-    const sampleSize  = readUint32(box, 12);
-    const sampleCount = readUint32(box, 16);
+    const UINT32 = PRIMITIVE_SIZES.uint32;
+
+    const sampleSize  = readUint32(box, payloadOffset);
+    const sampleCount = readUint32(box, payloadOffset + UINT32);
 
     if (sampleSize !== 0) {
         throw new Error(
-            `STSZ: constant sample_size ${sampleSize} not supported`
+            `stsz.readBoxReport: constant sample_size ${sampleSize} not supported`
         );
     }
 
-    const sizes = [];
-    let offset = 20;
-
-    for (let i = 0; i < sampleCount; i++) {
-        sizes.push(
-            readUint32(box, offset)
-        );
-        offset += 4;
-    }
+    const sizes = readUint32ArrayFromOffset({
+        box,
+        payloadOffset: payloadOffset + UINT32, // shared helper expects count first
+        count: sampleCount
+    });
 
     return {
-        sampleSize,
-        sampleCount,
-        sizes,
-        raw: box
+        raw: box,
+
+        box: {
+            type: "stsz",
+            header,
+            fields: {
+                sampleSize,
+                sampleCount,
+                sizes
+            }
+        },
+
+        derived: {}
     };
 }
 
-function getStszBuildParamsFromBoxBytes(box) {
-    const parsed = readStszBoxFieldsFromBoxBytes(box);
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
 
-    // Framesmith Phase A:
-    // Preserve exact sample sizes declared by ffmpeg
+function getEmitterInput(boxBytes) {
+    const read = readBoxReport(boxBytes);
+
     return {
-        sizes: parsed.sizes.slice()
+        sizes: read.box.fields.sizes.slice()
     };
 }
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerStszGoldenTruthExtractor(register) {
-    register.readFields(readStszBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getStszBuildParamsFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

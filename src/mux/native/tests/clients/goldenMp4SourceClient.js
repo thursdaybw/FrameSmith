@@ -144,37 +144,65 @@ export async function runGoldenMp4TestClient({ mp4Bytes }) {
     });
 
     // ---------------------------------------------------------
-    // Codec configuration (semantic only)
+    // Codec configuration (direct SampleEntry extraction)
     // ---------------------------------------------------------
 
-    const stsd =
+    const avc1SampleEntry =
         getGoldenTruthBox
-            .fromMp4(
-                mp4Bytes,
-                "moov/trak/mdia/minf/stbl/stsd",
-                {
-                    trackType: "video",
-                }
-            )
-            .getBuilderInput();
+        .fromMp4(
+            mp4Bytes,
+            "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]"
+        )
+        .readBoxReport();
 
-    if (!stsd?.codec) {
+    if (!avc1SampleEntry || avc1SampleEntry.type !== "avc1") {
         throw new Error(
-            "GoldenMp4TestClient: codec.codec missing"
+            "GoldenMp4TestClient: expected avc1 sample entry"
         );
     }
 
-    if (!(stsd.avcC instanceof Uint8Array)) {
+    if (!(avc1SampleEntry.avcC instanceof Uint8Array)) {
         throw new Error(
-            "GoldenMp4TestClient: codec.avcC missing"
+            "GoldenMp4TestClient: avcC missing from avc1 sample entry"
         );
     }
 
+    // ---------------------------------------------------------
+    // Codec identity declaration (source-level responsibility)
+    // ---------------------------------------------------------
+    //
+    // Video and audio tracks require a *codec identifier string* that
+    // names the encoding format in a standardized, interoperable way.
+    //
+    // This string is a LABEL, not a configuration.
+    // It answers the question:
+    //
+    //   "What kind of media is this track?"
+    //
+    // Examples:
+    //   - "avc1"  → H.264 / AVC video
+    //   - "mp4a"  → MPEG-4 AAC audio
+    //
+    // The actual decoder configuration (SPS/PPS, profiles, levels, etc.)
+    // lives elsewhere (e.g. in `avcC`) and is treated as opaque bytes.
+    //
+    // IMPORTANT ARCHITECTURAL RULE:
+    // ------------------------------
+    // Codec identity is NOT inferred from container structure.
+    // It MUST be declared explicitly by the source adapter.
+    //
+    // For Golden MP4 test fixtures:
+    // - the source is a known, fixed oracle
+    // - the sample entry type ("avc1") is authoritative
+    // - we declare the codec identity directly and explicitly
+    //
+    // This avoids guesswork and keeps responsibility at the system boundary.
     const codec = {
-        codec: stsd.codec,
-        avcC: stsd.avcC,
+        codec: "avc1", // H.264 video track
+        avcC: avc1SampleEntry.avcC,
         avcCCompleteness: "container-complete"
     };
+
 
     // ---------------------------------------------------------
     // Build hints (observable container facts)
@@ -196,16 +224,16 @@ export async function runGoldenMp4TestClient({ mp4Bytes }) {
 
     buildHints.udtaBytes = udtaBytes;
 
-    if (stsd.btrt) {
+    if (avc1SampleEntry.btrt) {
         buildHints.btrt = {
-            bufferSizeDB: stsd.btrt.bufferSizeDB,
-            maxBitrate:   stsd.btrt.maxBitrate,
-            avgBitrate:   stsd.btrt.avgBitrate
+            bufferSizeDB: avc1SampleEntry.btrt.bufferSizeDB,
+            maxBitrate:   avc1SampleEntry.btrt.maxBitrate,
+            avgBitrate:   avc1SampleEntry.btrt.avgBitrate
         };
     }
 
-    if (typeof stsd.compressorName === "string") {
-        buildHints.compressorName = stsd.compressorName;
+    if (typeof avc1SampleEntry.compressorName === "string") {
+        buildHints.compressorName = avc1SampleEntry.compressorName;
     }
 
     // ---------------------------------------------------------
@@ -214,33 +242,33 @@ export async function runGoldenMp4TestClient({ mp4Bytes }) {
 
     const tkhd =
         getGoldenTruthBox
-            .fromMp4(
-                mp4Bytes,
-                "moov/trak/tkhd",
-                {
-                    trackType: "video",
-                }
-            )
-            .getBuilderInput();
+        .fromMp4(
+            mp4Bytes,
+            "moov/trak[0]/tkhd",
+            {
+                trackType: "video",
+            }
+        )
+        .getEmitterInput();
 
     const mdhd =
         getGoldenTruthBox
-            .fromMp4(
-                mp4Bytes,
-                "moov/trak/mdia/mdhd",
-                {
-                    trackType: "video",
-                }
-            )
-            .getBuilderInput();
+        .fromMp4(
+            mp4Bytes,
+            "moov/trak[0]/mdia/mdhd",
+            {
+                trackType: "video",
+            }
+        )
+        .getEmitterInput();
 
     const mvhd =
         getGoldenTruthBox
-            .fromMp4(
-                mp4Bytes,
-                "moov/mvhd"
-            )
-            .getBuilderInput();
+        .fromMp4(
+            mp4Bytes,
+            "moov/mvhd"
+        )
+        .getEmitterInput();
 
     if (!Number.isInteger(mvhd.timescale)) {
         throw new Error(

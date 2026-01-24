@@ -1,24 +1,20 @@
 import { commitMdia } from "../commit/commitMdia.js";
-import { emitMdiaBox } from "../box-emitters/mdiaBox.js";
-import { emitMinfBox } from "../box-emitters/minfBox.js";
 import { assertEqual } from "./assertions.js";
 
 export function testCommitMdia_Structure() {
-
-    console.log("=== testCommitMdia_Structure ===");
 
     const mdhdNode = { type: "mdhd", body: [] };
     const hdlrNode = { type: "hdlr", body: [] };
     const elngNode = { type: "elng", body: [] };
 
     const originalMinf = emitMinfBox({
-        vmhd: { type: "vmhd", body: [] },
+        mediaHeader: { type: "vmhd", body: [] },
         dinf: { type: "dinf", body: [] },
         stbl: { type: "stbl", children: [] }
     });
 
     const committedMinf = emitMinfBox({
-        vmhd: { type: "vmhd", body: [] },
+        mediaHeader: { type: "vmhd", body: [] },
         dinf: { type: "dinf", body: [] },
         stbl: { type: "stbl", children: [{ type: "stts", body: [] }] }
     });
@@ -47,5 +43,4 @@ export function testCommitMdia_Structure() {
     assertEqual("elng preserved", children[2] === elngNode, true);
     assertEqual("minf replaced", children[3] === committedMinf, true);
 
-    console.log("PASS: commitMdia preserves structure and replaces minf only");
 }

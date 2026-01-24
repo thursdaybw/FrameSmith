@@ -1,64 +1,130 @@
-import { readUint32, readUint16 } from "../../bytes/mp4ByteReader.js";
+import {
+    readUint32,
+    readUint16
+} from "../../bytes/mp4ByteReader.js";
 
 /**
- * MVHD Parser
- * ===========
+ * MVHD Golden Truth Extractor
+ * ==========================
  *
- * Test-only parser for the Movie Header Box (mvhd).
+ * Test-only structural extractor for the Movie Header Box (mvhd).
  *
- * Exposes two capabilities:
- *   - readFields     → full structural truth
- *   - getBuilderInput → semantic intent for rebuilding
+ * Contracts
+ * ---------
+ * readBoxReport():
+ *   - returns raw bytes
+ *   - returns box fields as structurally defined by ISO BMFF
+ *   - returns no policy, preference, or mutation
+ *
+ * getEmitterInput():
+ *   - returns only semantic intent required to rebuild mvhd
  *
  * No traversal.
+ * No inference.
  * No normalization.
- * No policy.
  */
-
-function readMvhdBoxFieldsFromBoxBytes(box) {
+function readMvhdFields(box) {
     if (!(box instanceof Uint8Array)) {
         throw new Error(
-            "mvhd.readFields: expected Uint8Array box bytes"
+            "mvhd.readBoxReport: expected Uint8Array"
         );
     }
 
-    const version = box[8];
+    let offset = 8;
 
+    const version = box[offset];
     const flags =
-        (box[9]  << 16) |
-        (box[10] << 8)  |
-        box[11];
+        (box[offset + 1] << 16) |
+        (box[offset + 2] << 8)  |
+        box[offset + 3];
+
+    offset += 4;
+
+    const creationTime     = readUint32(box, offset); offset += 4;
+    const modificationTime = readUint32(box, offset); offset += 4;
+    const timescale        = readUint32(box, offset); offset += 4;
+    const duration         = readUint32(box, offset); offset += 4;
+
+    const rate   = readUint32(box, offset); offset += 4;
+    const volume = readUint16(box, offset); offset += 2;
+
+    const reservedShort = readUint16(box, offset); offset += 2;
+
+    const reserved0 = readUint32(box, offset); offset += 4;
+    const reserved1 = readUint32(box, offset); offset += 4;
+
+    const matrix = [];
+    for (let i = 0; i < 9; i++) {
+        matrix.push(readUint32(box, offset));
+        offset += 4;
+    }
+
+    const preDefined = [];
+    for (let i = 0; i < 6; i++) {
+        preDefined.push(readUint32(box, offset));
+        offset += 4;
+    }
+
+    const nextTrackId = readUint32(box, offset);
 
     return {
-        type: "mvhd",
+        raw: box,
 
-        version,
-        flags,
+        box: {
+            type: "mvhd",
 
-        timescale:   readUint32(box, 20),
-        duration:    readUint32(box, 24),
+            header: {
+                version,
+                flags
+            },
 
-        // fixed-point values preserved verbatim
-        rate:        readUint32(box, 28),
-        volume:      readUint16(box, 32),
+            fields: {
+                creationTime,
+                modificationTime,
+                timescale,
+                duration,
+                rate,
+                volume,
+                reservedShort,
+                reserved0,
+                reserved1,
 
-        nextTrackId: readUint32(box, 104),
+                matrix0: matrix[0],
+                matrix1: matrix[1],
+                matrix2: matrix[2],
+                matrix3: matrix[3],
+                matrix4: matrix[4],
+                matrix5: matrix[5],
+                matrix6: matrix[6],
+                matrix7: matrix[7],
+                matrix8: matrix[8],
 
-        raw: box
+                preDefined0: preDefined[0],
+                preDefined1: preDefined[1],
+                preDefined2: preDefined[2],
+                preDefined3: preDefined[3],
+                preDefined4: preDefined[4],
+                preDefined5: preDefined[5],
+
+                nextTrackId
+            }
+        },
+
+        derived: {}
     };
 }
 
-function getMvhdBuildParamsFromBoxBytes(box) {
-    const fields = readMvhdBoxFieldsFromBoxBytes(box);
+function getMvhdBuilderInput(boxBytes) {
+    const read = readMvhdFields(boxBytes);
 
     return {
-        timescale:   fields.timescale,
-        duration:    fields.duration,
-        nextTrackId: fields.nextTrackId
+        timescale:   read.box.fields.timescale,
+        duration:    read.box.fields.duration,
+        nextTrackId: read.box.fields.nextTrackId
     };
 }
 
 export function registerMvhdGoldenTruthExtractor(register) {
-    register.readFields(readMvhdBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getMvhdBuildParamsFromBoxBytes);
+    register.readBoxReport(readMvhdFields);
+    register.getEmitterInput(getMvhdBuilderInput);
 }

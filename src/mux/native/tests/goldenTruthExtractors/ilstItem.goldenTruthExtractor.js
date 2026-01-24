@@ -1,59 +1,88 @@
-import { readFourCC } from "../../bytes/mp4ByteReader.js";
+import { readFourCC } from "../../box-schema/boxLayoutReaders.js";
 import { getGoldenTruthBox } from "./index.js";
-import { emitDataBox } from "../../box-emitters/dataBox.js";
 import { extractChildBoxFromIlstItem } from "../reference/BoxExtractor.js";
+import { GoldenTruthRegistry } from "./GoldenTruthRegistry.js";
 
 /**
- * readIlstItemBoxFieldsFromBoxBytes
- * --------------------------------
- * Answers:
- *   "What does this ilst item contain?"
+ * ilst item — Golden Truth Extractor
+ * =================================
+ *
+ * Leaf box with dynamic FourCC type (e.g. "©too", "©nam").
+ *
+ * Rules:
+ * - ilst item has no fixed schema beyond:
+ *     - box type (dynamic FourCC)
+ *     - one required child: data
+ * - no policy
+ * - no inference
+ * - no mutation
  */
-function readIlstItemBoxFieldsFromBoxBytes(boxBytes) {
+
+/**
+ * readBoxReport
+ * ----------
+ * Structural + descriptive only.
+ */
+function readIlstItemFields(boxBytes) {
     if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("ilstItem.readBoxReport: expected Uint8Array");
+    }
+
+    const type = readFourCC(boxBytes, 4);
+
+    const dataBoxBytes =
+        extractChildBoxFromIlstItem(boxBytes, "data");
+
+    if (!(dataBoxBytes instanceof Uint8Array)) {
         throw new Error(
-            "ilstItem.readFields: expected Uint8Array"
+            "ilstItem.readBoxReport: missing required child 'data'"
         );
     }
 
     return {
-        type: readFourCC(boxBytes, 4),
-        raw: boxBytes
+        raw: boxBytes,
+
+        box: {
+            type,
+            children: {
+                data: {
+                    type: "data",
+                    raw: dataBoxBytes
+                }
+            }
+        },
+
+        derived: {}
     };
 }
 
-/**
- * getIlstItemEmitterInputFromBoxBytes
- * ----------------------------------
- * Answers:
- *   "What EXACT input object does emitIlstItemBox require
- *    to rebuild this ilst item?"
- *
- * emitIlstItemBox expects:
- *   {
- *     type: FourCC,
- *     data: <DATA BOX NODE>
- *   }
- *
- * Therefore this extractor MUST return a full data box node,
- * not data emitter params.
- */
-function getIlstItemEmitterInputFromBoxBytes(boxBytes) {
-    const type = readFourCC(boxBytes, 4);
+function getIlstItemBuilderInput(boxBytes) {
 
-    const dataBoxBytes = extractChildBoxFromIlstItem(
-        boxBytes,
-        "data"
-    );
+    const read = readIlstItemFields(boxBytes);
 
-    const dataEmitterInput = getGoldenTruthBox
-        .fromBox(
-            dataBoxBytes,
-            "moov/udta/meta/ilst/*/data"
-        )
-        .getBuilderInput();
+    const { type, children } = read.box;
 
-    const dataNode = emitDataBox(dataEmitterInput);
+    const dataChild = children?.data;
+
+    if (!dataChild || !(dataChild.raw instanceof Uint8Array)) {
+        throw new Error(
+            "ilstItem.getEmitterInput: missing required child 'data'"
+        );
+    }
+
+    const extractor =
+        GoldenTruthRegistry.getExtractor(
+            `moov/udta/meta/ilst/${type}/data`
+        );
+
+    if (!extractor) {
+        throw new Error(
+            `ilstItem.getEmitterInput: no extractor registered for moov/udta/meta/ilst/${type}/data`
+        );
+    }
+
+    const dataNode =
+        extractor.getEmitterInput(dataChild.raw);
 
     return {
         type,
@@ -62,6 +91,6 @@ function getIlstItemEmitterInputFromBoxBytes(boxBytes) {
 }
 
 export function registerIlstItemGoldenTruthExtractor(register) {
-    register.readFields(readIlstItemBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getIlstItemEmitterInputFromBoxBytes);
+    register.readBoxReport(readIlstItemFields);
+    register.getEmitterInput(getIlstItemBuilderInput);
 }

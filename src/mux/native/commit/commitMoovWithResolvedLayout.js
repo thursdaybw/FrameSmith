@@ -1,4 +1,4 @@
-import { emitStcoBox } from "../box-emitters/stcoBox.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 import { commitStbl } from "./commitStbl.js";
 import { commitMinf } from "./commitMinf.js";
 import { commitMdia } from "./commitMdia.js";
@@ -20,49 +20,86 @@ import { commitMoov } from "./commitMoov.js";
  */
 export function commitMoovWithResolvedLayout({
     originalMoovNode,
-    stcoOffsets
+    perTrackStcoOffsets
 }) {
     if (!originalMoovNode || originalMoovNode.type !== "moov") {
         throw new Error("commitMoovWithResolvedLayout: originalMoovNode must be moov");
     }
 
-    if (!Array.isArray(stcoOffsets)) {
-        throw new Error("commitMoovWithResolvedLayout: stcoOffsets must be array");
+    if (!Array.isArray(perTrackStcoOffsets)) {
+        throw new Error(
+            "commitMoovWithResolvedLayout: perTrackStcoOffsets must be array"
+        );
     }
 
-    const stcoNode = emitStcoBox({ chunkOffsets: stcoOffsets });
+    const originalTraks =
+        originalMoovNode.children.filter(c => c.type === "trak");
 
-    const originalTrak = originalMoovNode.children.find(c => c.type === "trak");
-    if (!originalTrak) {
-        throw new Error("commitMoovWithResolvedLayout: trak not found");
+    if (originalTraks.length === 0) {
+        throw new Error("commitMoovWithResolvedLayout: no trak boxes found");
     }
 
-    const originalMdia = originalTrak.children.find(c => c.type === "mdia");
-    const originalMinf = originalMdia.children.find(c => c.type === "minf");
-    const originalStbl = originalMinf.children.find(c => c.type === "stbl");
+    const committedTraks = [];
 
-    const committedStbl = commitStbl({
-        originalStblNode: originalStbl,
-        committedStcoNode: stcoNode
-    });
+    for (let i = 0; i < originalTraks.length; i++) {
 
-    const committedMinf = commitMinf({
-        originalMinfNode: originalMinf,
-        committedStblNode: committedStbl
-    });
+        const originalTrak = originalTraks[i];
 
-    const committedMdia = commitMdia({
-        originalMdiaNode: originalMdia,
-        committedMinfNode: committedMinf
-    });
+        const perTrack = perTrackStcoOffsets[i];
+        if (!perTrack || !Array.isArray(perTrack.stcoOffsets)) {
+            throw new Error(
+                `commitMoovWithResolvedLayout: missing stcoOffsets for track ${i}`
+            );
+        }
 
-    const committedTrak = commitTrak({
-        originalTrakNode: originalTrak,
-        committedMdiaNode: committedMdia
-    });
+        const stcoNode = EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stco",
+            { chunkOffsets: perTrack.stcoOffsets }
+        );
+
+        const originalMdia =
+            originalTrak.children.find(c => c.type === "mdia");
+        if (!originalMdia) {
+            throw new Error("commitMoovWithResolvedLayout: mdia not found");
+        }
+
+        const originalMinf =
+            originalMdia.children.find(c => c.type === "minf");
+        if (!originalMinf) {
+            throw new Error("commitMoovWithResolvedLayout: minf not found");
+        }
+
+        const originalStbl =
+            originalMinf.children.find(c => c.type === "stbl");
+        if (!originalStbl) {
+            throw new Error("commitMoovWithResolvedLayout: stbl not found");
+        }
+
+        const committedStbl = commitStbl({
+            originalStblNode: originalStbl,
+            committedStcoNode: stcoNode
+        });
+
+        const committedMinf = commitMinf({
+            originalMinfNode: originalMinf,
+            committedStblNode: committedStbl
+        });
+
+        const committedMdia = commitMdia({
+            originalMdiaNode: originalMdia,
+            committedMinfNode: committedMinf
+        });
+
+        const committedTrak = commitTrak({
+            originalTrakNode: originalTrak,
+            committedMdiaNode: committedMdia
+        });
+
+        committedTraks.push(committedTrak);
+    }
 
     return commitMoov({
         originalMoovNode,
-        committedTrakNodes: [committedTrak]
+        committedTrakNodes: committedTraks
     });
 }

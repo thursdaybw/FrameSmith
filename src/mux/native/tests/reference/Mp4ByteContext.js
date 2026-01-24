@@ -1,4 +1,5 @@
-import { readUint32, readFourCC } from "../../bytes/mp4ByteReader.js";
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import { readFourCC } from "../../box-schema/boxLayoutReaders.js";
 
 /**
  * Walk top-level MP4 boxes and return semantic context

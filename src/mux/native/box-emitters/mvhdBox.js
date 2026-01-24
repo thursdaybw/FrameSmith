@@ -99,8 +99,7 @@
  * and clear separation between domain intent (timing, next track) and encoding
  * details (fixed-point fields, identity matrix).
  */
-export function emitMvhdBox({ nextTrackId, timescale, duration }) {
-
+function emitMvhdBox({ nextTrackId, timescale, duration }) {
     // ---------------------------------------------------------------------
     // Defensive validation — fail fast on invalid movie headers
     // ---------------------------------------------------------------------
@@ -277,4 +276,11 @@ export function emitMvhdBox({ nextTrackId, timescale, duration }) {
             { int: nextTrackId }
         ]
     };
+}
+
+export function registerMvhdEmitter(registry) {
+    registry.registerEmitter(
+        "moov/mvhd",
+        emitMvhdBox
+    );
 }

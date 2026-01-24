@@ -1,187 +1,167 @@
-import { emitMdhdBox } from "../box-emitters/mdhdBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32, readUint16, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32, readUint16 } from "../bytes/mp4ByteReader.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
-import { assertEqual } from "./assertions.js";
-
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { assertEqual, assertExists } from "./assertions.js";
+import { GoldenTruthRegistry } from "./goldenTruthExtractors/GoldenTruthRegistry.js";
 
 export async function testMdhd_Structure() {
-    console.log("=== mdhd Granular structural tests ===");
 
     const timescale = 90000;
     const duration  = 90000 * 5;
 
-    const box = serializeBoxTree(
-        emitMdhdBox({ timescale, duration })
-    );
+    const node =
+        EmitterRegistry.emit(
+            "moov/trak/mdia/mdhd",
+            { timescale, duration }
+        );
 
     // ---------------------------------------------------------
-    // FIELD 1: size
+    // Box identity
     // ---------------------------------------------------------
-    assertEqual(
-        "mdhd.size",
-        readUint32(box, 0),
-        box.length
-    );
+    assertEqual("mdhd.type", node.type, "mdhd");
+    assertEqual("mdhd.version", node.version, 0);
+    assertEqual("mdhd.flags", node.flags, 0);
 
     // ---------------------------------------------------------
-    // FIELD 2: type
+    // Body structure
     // ---------------------------------------------------------
-    assertEqual(
-        "mdhd.type",
-        readFourCC(box, 4),
-        "mdhd"
-    );
+    assertExists("mdhd.body", node.body);
+    assertEqual("mdhd.body.length", node.body.length, 6);
 
-    // ---------------------------------------------------------
-    // FIELD 3: version
-    // ---------------------------------------------------------
-    assertEqual(
-        "mdhd.version",
-        box[8],
-        0
-    );
+    // creation_time
+    assertEqual("mdhd.creation_time", node.body[0].int, 0);
 
-    // ---------------------------------------------------------
-    // FIELD 4: flags
-    // ---------------------------------------------------------
-    const flags =
-        (box[9] << 16) |
-        (box[10] << 8) |
-        box[11];
+    // modification_time
+    assertEqual("mdhd.modification_time", node.body[1].int, 0);
 
-    assertEqual(
-        "mdhd.flags",
-        flags,
-        0
-    );
+    // timescale
+    assertEqual("mdhd.timescale", node.body[2].int, timescale);
 
-    // ---------------------------------------------------------
-    // FIELD 5: creation_time
-    // ---------------------------------------------------------
-    assertEqual(
-        "mdhd.creation_time",
-        readUint32(box, 12),
-        0
-    );
+    // duration
+    assertEqual("mdhd.duration", node.body[3].int, duration);
 
-    // ---------------------------------------------------------
-    // FIELD 6: modification_time
-    // ---------------------------------------------------------
-    assertEqual(
-        "mdhd.modification_time",
-        readUint32(box, 16),
-        0
-    );
+    // language ("und")
+    assertEqual("mdhd.language", node.body[4].short, 0x55c4);
 
-    // ---------------------------------------------------------
-    // FIELD 7: timescale
-    // ---------------------------------------------------------
-    assertEqual(
-        "mdhd.timescale",
-        readUint32(box, 20),
-        timescale
-    );
-
-    // ---------------------------------------------------------
-    // FIELD 8: duration
-    // ---------------------------------------------------------
-    assertEqual(
-        "mdhd.duration",
-        readUint32(box, 24),
-        duration
-    );
-
-    // ---------------------------------------------------------
-    // FIELD 9: language
-    // ---------------------------------------------------------
-    const expectedLanguage = 0x55c4; // "und"
-
-    assertEqual(
-        "mdhd.language",
-        readUint16(box, 28),
-        expectedLanguage
-    );
-
-    // ---------------------------------------------------------
-    // FIELD 10: predefined
-    // ---------------------------------------------------------
-    assertEqual(
-        "mdhd.predefined",
-        readUint16(box, 30),
-        0
-    );
-
-    console.log("PASS: mdhd granular structural tests");
+    // predefined
+    assertEqual("mdhd.predefined", node.body[5].short, 0);
 }
 
 
 export async function testMdhd_Conformance() {
-    console.log("=== testMdhd_Conformance (golden MP4) ===");
 
     // -------------------------------------------------------------
-    // 1. Load golden MP4
+    // Load golden MP4
     // -------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // -------------------------------------------------------------
-    // 2. Read reference MDHD via parser registry
+    // Read reference MDHD via golden truth
     // -------------------------------------------------------------
-    const ref = getGoldenTruthBox.fromMp4(
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         mp4,
-        "moov/trak/mdia/mdhd",
-        { trackType: "video" }
+        "moov/trak[0]/mdia/mdhd"
     );
 
-    const refFields = ref.readFields();
-    const params    = ref.getBuilderInput();
+    const refReport = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
 
     // -------------------------------------------------------------
-    // 3. Rebuild MDHD via Framesmith
+    // Rebuild MDHD via emitter registry
     // -------------------------------------------------------------
-    const outBytes = serializeBoxTree(
-        emitMdhdBox(params)
-    );
+    const outBytes =
+        serializeBoxTree(
+            EmitterRegistry.emit(
+                "moov/trak/mdia/mdhd",
+                params
+            )
+        );
 
     // -------------------------------------------------------------
-    // 4. Read rebuilt MDHD via same parser
+    // Read rebuilt MDHD via same extractor
     // -------------------------------------------------------------
-    const outFields = getGoldenTruthBox.fromBox(
-        outBytes,
-        "moov/trak/mdia/mdhd",
-        { trackType: "video" }
-    ).readFields();
+    const outReport = GoldenTruthRegistry
+        .getExtractor("moov/trak/mdia/mdhd")
+        .readBoxReport(outBytes);
 
     // -------------------------------------------------------------
-    // 5. Field-level conformance
+    // Field-level conformance
     // -------------------------------------------------------------
-    assertEqual("mdhd.version",   outFields.version,   refFields.version);
-    assertEqual("mdhd.flags",     outFields.flags,     refFields.flags);
-    assertEqual("mdhd.timescale", outFields.timescale, refFields.timescale);
-    assertEqual("mdhd.duration",  outFields.duration,  refFields.duration);
-    assertEqual("mdhd.language",  outFields.language,  refFields.language);
+    assertEqual("mdhd.version",   outReport.box.header.version, refReport.box.header.version);
+    assertEqual("mdhd.flags",     outReport.box.header.flags,   refReport.box.header.flags);
+    assertEqual("mdhd.timescale", outReport.box.fields.timescale, refReport.box.fields.timescale);
+    assertEqual("mdhd.duration",  outReport.box.fields.duration,  refReport.box.fields.duration);
+    assertEqual("mdhd.language",  outReport.box.fields.language,  refReport.box.fields.language);
 
     // -------------------------------------------------------------
-    // 6. Byte-for-byte conformance
+    // Byte-for-byte conformance
     // -------------------------------------------------------------
-    const refRaw = refFields.raw;
+    const refRaw = refReport.raw;
 
-    assertEqual(
-        "mdhd.size",
-        outBytes.length,
-        refRaw.length
-    );
+    assertEqual("mdhd.size", outBytes.length, refRaw.length);
 
     for (let i = 0; i < refRaw.length; i++) {
-        assertEqual(
-            `mdhd.byte[${i}]`,
-            outBytes[i],
-            refRaw[i]
-        );
+        assertEqual(`mdhd.byte[${i}]`, outBytes[i], refRaw[i]);
     }
-
-    console.log("PASS: mdhd matches golden MP4 byte-for-byte");
 }
 
+export async function testMdhd_Conformance_Audio() {
+
+    // -------------------------------------------------------------
+    // Load golden MP4 (audio track)
+    // -------------------------------------------------------------
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // -------------------------------------------------------------
+    // Read reference MDHD via golden truth
+    // -------------------------------------------------------------
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+        mp4,
+        "moov/trak[1]/mdia/mdhd"
+    );
+
+    const refReport = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
+
+    // -------------------------------------------------------------
+    // Rebuild MDHD via emitter registry
+    // -------------------------------------------------------------
+    const outBytes =
+        serializeBoxTree(
+            EmitterRegistry.emit(
+                "moov/trak/mdia/mdhd",
+                params
+            )
+        );
+
+    // -------------------------------------------------------------
+    // Read rebuilt MDHD
+    // -------------------------------------------------------------
+    const outReport = GoldenTruthRegistry
+        .getExtractor("moov/trak/mdia/mdhd")
+        .readBoxReport(outBytes);
+
+    // -------------------------------------------------------------
+    // Field-level conformance
+    // -------------------------------------------------------------
+    assertEqual("mdhd.version",   outReport.box.header.version, refReport.box.header.version);
+    assertEqual("mdhd.flags",     outReport.box.header.flags,   refReport.box.header.flags);
+    assertEqual("mdhd.timescale", outReport.box.fields.timescale, refReport.box.fields.timescale);
+    assertEqual("mdhd.duration",  outReport.box.fields.duration,  refReport.box.fields.duration);
+    assertEqual("mdhd.language",  outReport.box.fields.language,  refReport.box.fields.language);
+
+    // -------------------------------------------------------------
+    // Byte-for-byte conformance
+    // -------------------------------------------------------------
+    const refRaw = refReport.raw;
+
+    assertEqual("mdhd.size", outBytes.length, refRaw.length);
+
+    for (let i = 0; i < refRaw.length; i++) {
+        assertEqual(`mdhd.byte[${i}]`, outBytes[i], refRaw[i]);
+    }
+}

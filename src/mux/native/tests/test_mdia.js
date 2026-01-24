@@ -1,67 +1,79 @@
-import { emitMdiaBox } from "../box-emitters/mdiaBox.js";
-import { emitMinfBox } from "../box-emitters/minfBox.js";
-import { emitMdhdBox } from "../box-emitters/mdhdBox.js";
-import { emitHdlrBox } from "../box-emitters/hdlrBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import {
-    extractBoxByPathFromMp4,
+    findBoxesByPathFromMp4,
     extractChildBoxFromContainer
 } from "./reference/BoxExtractor.js";
 import {
     assertExists,
-    assertEqual
+    assertEqual,
+    assertEqualHex
 } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 import { asIsoBoxContainer } from "../box-model/Box.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 /**
- * MDIA — Structural Correctness (Phase A)
- * --------------------------------------
+ * MDIA — Builder Input / Structure Test
  *
- * Validates the structural intent of the Media Box.
+ * This test asserts:
+ * - MDIA builder input is correctly derived from the oracle
+ * - Assembler accepts oracle-provided intent
+ * - MDIA emits required children in canonical order
  *
- * This test does NOT:
- *   - infer media type
- *   - validate timing semantics
- *   - test byte equivalence
- *
- * It asserts only what MDIA is responsible for:
- *   - container presence
- *   - required children
- *   - canonical ordering
+ * This avoids deep stubbing and scales up the tree.
  */
 export async function testMdia_Structure() {
 
-    console.log("=== testMdia_Structure ===");
+    // ---------------------------------------------------------
+    // 1. Load oracle MP4
+    // ---------------------------------------------------------
+
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 1. Explicit children (policy injected by test)
+    // 2. Resolve MDIA via golden truth
     // ---------------------------------------------------------
-    const mdhd = { type: "mdhd", body: [] };
-    const hdlr = { type: "hdlr", body: [] };
-    const minf = { type: "minf", body: [] };
+
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]/mdia"
+        );
+
+    assertEqual(
+        "mdia box type",
+        truth.readBoxReport().box.type,
+        "mdia"
+    );
 
     // ---------------------------------------------------------
-    // 2. Build MDIA
+    // 3. Builder input from oracle
     // ---------------------------------------------------------
-    const node = emitMdiaBox({
-        mdhd,
-        hdlr,
-        minf
-    });
 
-    const mdia = serializeBoxTree(node);
+    const input = truth.getEmitterInput();
 
-    // ---------------------------------------------------------
-    // 3. Structural assertions
-    // ---------------------------------------------------------
-    assertExists("mdhd", extractChildBoxFromContainer(mdia, "mdhd"));
-    assertExists("hdlr", extractChildBoxFromContainer(mdia, "hdlr"));
-    assertExists("minf", extractChildBoxFromContainer(mdia, "minf"));
+    assertExists("builder input", input);
+    assertExists("mdhd", input.mdhd);
+    assertExists("hdlr", input.hdlr);
+    assertExists("minf", input.minf);
 
     // ---------------------------------------------------------
-    // 4. Ordering assertions
+    // 4. Assemble MDIA
     // ---------------------------------------------------------
+
+    const node =
+        EmitterRegistry.assemble(
+            "moov/trak/mdia",
+            input
+        );
+
+    // ---------------------------------------------------------
+    // 5. Structural assertions (MDIA only)
+    // ---------------------------------------------------------
+
+    assertExists("mdia.children", node.children);
+
     const childTypes = node.children.map(c => c.type);
 
     assertEqual(
@@ -75,23 +87,10 @@ export async function testMdia_Structure() {
         childTypes.join(","),
         "mdhd,hdlr,minf"
     );
-
-    console.log("PASS: MDIA structural correctness");
 }
 
 
-/**
- * MDIA — Locked Layout Equivalence (ffmpeg)
- * ----------------------------------------
- *
- * Validates that MDIA serializes identically to ffmpeg
- * when provided with the same resolved child boxes.
- *
- * All policy decisions are injected.
- */
 export async function testMdia_LockedLayoutEquivalence_ffmpeg() {
-
-    console.log("=== testMdia_LockedLayoutEquivalence_ffmpeg ===");
 
     // ---------------------------------------------------------
     // 1. Load golden MP4
@@ -100,73 +99,100 @@ export async function testMdia_LockedLayoutEquivalence_ffmpeg() {
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Extract reference MDIA
+    // 2. Extract reference MDIA (authoritative bytes)
     // ---------------------------------------------------------
-    const refMdia = extractBoxByPathFromMp4(
-        mp4,
-        "moov/trak/mdia",
-        {
-            trackType: "video"
-        }
-    );
+    const refMdia =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia"
+            )
+            .readBoxReport()
+            .raw;
 
     assertExists("reference mdia", refMdia);
 
     // ---------------------------------------------------------
-    // 3. Read golden truth MDIA
+    // 3. Rebuild MDIA via registry (semantic intent only)
     // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia",
-        {
-            trackType: "video"
-        }
-    );
+    const params =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia"
+            )
+            .getEmitterInput();
 
-    const params = truth.getBuilderInput();
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.assemble(
+                "moov/trak/mdia",
+                params
+            )
+        );
 
     // ---------------------------------------------------------
-    // 4. Rebuild MDIA exclusively from golden truth
+    // 4. Container-level comparison (ISO only)
     // ---------------------------------------------------------
-    const out = serializeBoxTree(
-        emitMdiaBox(params)
-    );
-
-    // ---------------------------------------------------------
-    // 5. Child-level byte equivalence
-    // ---------------------------------------------------------
-    const refContainer = asIsoBoxContainer(refMdia);
-    const outContainer = asIsoBoxContainer(out);
-
-    const refMeta = refContainer.enumerateChildren();
-
-    for (let i = 0; i < refMeta.length; i++) {
-        const { type } = refMeta[i];
-
-        const refChildBytes = extractChildBoxFromContainer(
+    const refContainer =
+        asIsoBoxContainer(
             refMdia,
-            type
+            "moov/trak/mdia"
         );
 
-        const outChildBytes = extractChildBoxFromContainer(
+    const outContainer =
+        asIsoBoxContainer(
             out,
-            type
+            "moov/trak/mdia"
         );
+
+    const refChildren = refContainer.enumerateChildren();
+    const outChildren = outContainer.enumerateChildren();
+
+    assertEqual(
+        "mdia.childCount",
+        outChildren.length,
+        refChildren.length
+    );
+
+    // ---------------------------------------------------------
+    // 5. Child-level byte-for-byte equivalence
+    // ---------------------------------------------------------
+    for (let i = 0; i < refChildren.length; i++) {
+
+        const refChild = refChildren[i];
+        const outChild = outChildren[i];
 
         assertEqual(
-            `mdia.${type}.size`,
-            outChildBytes.length,
-            refChildBytes.length
+            `mdia.child[${i}].type`,
+            outChild.type,
+            refChild.type
         );
 
-        for (let j = 0; j < refChildBytes.length; j++) {
-            assertEqual(
-                `mdia.${type}.byte[${j}]`,
-                outChildBytes[j],
-                refChildBytes[j]
+        const refBytes =
+            refMdia.slice(
+                refChild.offset,
+                refChild.offset + refChild.size
+            );
+
+        const outBytes =
+            out.slice(
+                outChild.offset,
+                outChild.offset + outChild.size
+            );
+
+        assertEqual(
+            `mdia.${refChild.type}.size`,
+            outBytes.length,
+            refBytes.length
+        );
+
+        for (let j = 0; j < refBytes.length; j++) {
+            assertEqualHex(
+                `mdia.${refChild.type}.byte[${j}]`,
+                outBytes[j],
+                refBytes[j]
             );
         }
     }
-
-    console.log("PASS: MDIA matches ffmpeg byte-for-byte");
 }

@@ -1,48 +1,47 @@
-import { emitSttsBox } from "../box-emitters/sttsBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { GoldenTruthRegistry } from "./goldenTruthExtractors/GoldenTruthRegistry.js";
 
 export async function testStts_Structure() {
-    console.log("=== testStts_Structure ===");
 
-    const fps = 30;
+    const fps   = 30;
     const delta = Math.floor(90000 / fps);
     const count = 47;
 
-    const node = emitSttsBox({
-        entries: [
+    const node =
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stts",
             {
-                sampleCount: count,
-                sampleDelta: delta
+                entries: [
+                    {
+                        sampleCount: count,
+                        sampleDelta: delta
+                    }
+                ]
             }
-        ]
-    });
-
-    const stts = serializeBoxTree(node);
+        );
 
     // ---------------------------------------------------------
-    // Box header
+    // Box identity
     // ---------------------------------------------------------
-    assertEqual(
-        "stts.type",
-        readFourCC(stts, 4),
-        "stts"
-    );
+    assertEqual("stts.type", node.type, "stts");
+    assertEqual("stts.version", node.version, 0);
+    assertEqual("stts.flags", node.flags, 0);
 
-    assertEqual(
-        "stts.version_and_flags",
-        readUint32(stts, 8),
-        0
-    );
+    // ---------------------------------------------------------
+    // Body shape
+    // ---------------------------------------------------------
+    assertEqual("stts.body.length", node.body.length, 3);
 
     // ---------------------------------------------------------
     // Entry count
     // ---------------------------------------------------------
     assertEqual(
         "stts.entry_count",
-        readUint32(stts, 12),
+        node.body[0].int,
         1
     );
 
@@ -51,7 +50,7 @@ export async function testStts_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stts.sample_count",
-        readUint32(stts, 16),
+        node.body[1].int,
         count
     );
 
@@ -60,20 +59,9 @@ export async function testStts_Structure() {
     // ---------------------------------------------------------
     assertEqual(
         "stts.sample_delta",
-        readUint32(stts, 20),
+        node.body[2].int,
         delta
     );
-
-    // ---------------------------------------------------------
-    // Size
-    // ---------------------------------------------------------
-    assertEqual(
-        "stts.size",
-        readUint32(stts, 0),
-        24
-    );
-
-    console.log("PASS: stts structural correctness");
 }
 
 /**
@@ -89,7 +77,6 @@ export async function testStts_Structure() {
  */
 
 export async function testStts_Conformance() {
-    console.log("=== testStts_Conformance (golden MP4) ===");
 
     // -------------------------------------------------------------
     // 1. Load golden MP4
@@ -100,50 +87,54 @@ export async function testStts_Conformance() {
     // -------------------------------------------------------------
     // 2. Read reference STTS via MP4 navigation
     // -------------------------------------------------------------
-    const ref = getGoldenTruthBox.fromMp4(
+    const ref = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         mp4,
-        "moov/trak/mdia/minf/stbl/stts",
-        { trackType: "video" }
+        "moov/trak[0]/mdia/minf/stbl/stts",
     );
 
-    const refFields = ref.readFields();
-    const params    = ref.getBuilderInput();
+    const refFields = ref.readBoxReport();
+    const params    = ref.getEmitterInput();
 
     // -------------------------------------------------------------
     // 3. Rebuild STTS via Framesmith
     // -------------------------------------------------------------
     const outSttsBytes = serializeBoxTree(
-        emitSttsBox(params)
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stts",
+            params
+        ),
     );
 
     // -------------------------------------------------------------
     // 4. Read rebuilt STTS via box entry
     // -------------------------------------------------------------
-    const out = getGoldenTruthBox.fromBox(
-        outSttsBytes,
-        "moov/trak/mdia/minf/stbl/stts",
-        { trackType: "video" }
-    ).readFields();
+    const extractor = GoldenTruthRegistry.getExtractor(
+            "moov/trak/mdia/minf/stbl/stts",
+        );
+    const out = extractor.readBoxReport(outSttsBytes);
 
     // -------------------------------------------------------------
     // 5. Field-level conformance
     // -------------------------------------------------------------
+    const outEntries = out.box.fields.entries;
+    const refEntries = refFields.box.fields.entries;
+
     assertEqual(
         "stts.entryCount",
-        out.entryCount,
-        refFields.entryCount
+        outEntries.length,
+        refEntries.length
     );
 
     assertEqual(
         "stts.sampleCount",
-        out.entries[0].sampleCount,
-        refFields.entries[0].sampleCount
+        outEntries[0].sampleCount,
+        refEntries[0].sampleCount
     );
 
     assertEqual(
         "stts.sampleDelta",
-        out.entries[0].sampleDelta,
-        refFields.entries[0].sampleDelta
+        outEntries[0].sampleDelta,
+        refEntries[0].sampleDelta
     );
 
     // -------------------------------------------------------------
@@ -165,6 +156,5 @@ export async function testStts_Conformance() {
         );
     }
 
-    console.log("PASS: stts matches golden MP4 byte-for-byte");
 }
 

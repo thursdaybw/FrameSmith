@@ -3,15 +3,15 @@ import { extractAccessUnitPayloadsFromMp4 } from "./reference/extractAccessUnitP
 import { deriveChunkModel } from "../derivers/deriveChunkModel.js";
 import { assembleMdatPayloadFromChunks } from "../assembleMdatPayloadFromChunks.js";
 import { resolvePhysicalLayout } from "../resolvePhysicalLayout.js";
-
-import { emitStcoBox } from "../box-emitters/stcoBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 
+/*
+import { emitStcoBox } from "../box-emitters/stcoBox.js";
 import { emitFtypBox } from "../box-emitters/ftypBox.js";
 import { emitMoovBox } from "../box-emitters/moovBox.js";
 import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
 import { emitTrakBox } from "../box-emitters/trakBox.js";
-
+*/
 import { ChunkingStrategies } from "../derivers/strategies/chunkingStrategies.js";
 import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";

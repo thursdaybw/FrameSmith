@@ -139,3 +139,10 @@ export function emitDinfBox(children) {
         ]
     };
 }
+
+export function registerDinfEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/dinf",
+        emitDinfBox
+    );
+}

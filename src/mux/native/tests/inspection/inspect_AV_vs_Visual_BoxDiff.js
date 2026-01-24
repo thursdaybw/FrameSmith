@@ -12,36 +12,32 @@
  * Output answers:
  *   “What boxes must the compiler learn next?”
  */
+
 import { asIsoBoxContainer } from "../../box-model/Box.js";
 
-import {
-    extractBoxByPathFromMp4,
-    extractVideoStsd
-} from "../reference/BoxExtractor.js";
+function collectBoxPaths(bytes, path) {
 
-import { logStsdDiff } from "./debug/logStsdDiff.js";
-
-function collectBoxPaths(bytes, prefix = "") {
-    const container = asIsoBoxContainer(bytes);
+    const container = asIsoBoxContainer(bytes, path);
     const children = container.enumerateChildren();
 
     const paths = [];
 
     for (const child of children) {
-        const path = prefix ? `${prefix}/${child.type}` : child.type;
-        paths.push(path);
+
+        const childPath = `${path}/${child.type}`;
+        paths.push(childPath);
 
         const childBytes = bytes.slice(
             child.offset,
             child.offset + child.size
         );
 
-        // Recurse only if container
+        // Recurse only if child is a container
         try {
-            asIsoBoxContainer(childBytes);
-            paths.push(...collectBoxPaths(childBytes, path));
+            collectBoxPaths(childBytes, childPath)
+                .forEach(p => paths.push(p));
         } catch {
-            // leaf box, stop
+            // Leaf box, stop recursion
         }
     }
 
@@ -49,16 +45,23 @@ function collectBoxPaths(bytes, prefix = "") {
 }
 
 export async function inspectBoxTreeDiff_AV_vs_Visual() {
+
     const visResp = await fetch("reference/reference_visual.mp4");
     const avResp  = await fetch("reference/reference_av.mp4");
 
     const visBytes = new Uint8Array(await visResp.arrayBuffer());
     const avBytes  = new Uint8Array(await avResp.arrayBuffer());
 
-    const visPaths = new Set(collectBoxPaths(visBytes));
-    const avPaths  = new Set(collectBoxPaths(avBytes));
+    const visList = collectBoxPaths(visBytes, "$mp4");
+    const avList  = collectBoxPaths(avBytes, "$mp4");
 
-    const added = [...avPaths].filter(p => !visPaths.has(p));
+    summarizePaths("VISUAL", visList);
+    summarizePaths("AV", avList);
+
+    const visPaths = new Set(visList);
+    const avPaths  = new Set(avList);
+
+    const added   = [...avPaths].filter(p => !visPaths.has(p));
     const removed = [...visPaths].filter(p => !avPaths.has(p));
 
     console.log("=== BOX TREE DIFF (AV vs VISUAL) ===");
@@ -72,17 +75,25 @@ export async function inspectBoxTreeDiff_AV_vs_Visual() {
     }
 
     console.log("=== END DIFF ===");
+}
 
-    const visualStsd = extractVideoStsd(visBytes);
-    const audioStsd  = extractVideoStsd(avBytes);
+function summarizePaths(label, paths) {
+    const counts = {};
 
-    if (visualStsd && audioStsd) {
-        logStsdDiff({
-            leftLabel: "VISUAL",
-            rightLabel: "AV",
-            leftRaw: visualStsd,
-            rightRaw: audioStsd
-        });
+    for (const p of paths) {
+        const fourcc = p.split("/").pop();
+        counts[fourcc] = (counts[fourcc] || 0) + 1;
     }
 
+    console.log(`--- ${label} SUMMARY ---`);
+    console.log("total boxes:", paths.length);
+
+    const sorted = Object.entries(counts)
+        .sort((a, b) => a[0].localeCompare(b[0]));
+
+    for (const [fourcc, count] of sorted) {
+        console.log(`${fourcc}: ${count}`);
+    }
+
+    console.log(`--- END ${label} SUMMARY ---`);
 }

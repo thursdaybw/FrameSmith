@@ -1,5 +1,6 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
+import { readFourCC } from "../box-schema/boxLayoutReaders.js";
 export async function testSerializer() {
     console.log("=== testSerializer ===");
 

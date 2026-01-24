@@ -1,102 +1,120 @@
-import { emitHdlrBox } from "../box-emitters/hdlrBox.js";
-import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
-import { assertEqual, assertEqualHex } from "./assertions.js";
+import {
+    assertEqual,
+    assertEqualHex,
+    assertExists
+} from "./assertions.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 
 /**
  * HDLR — Structural Contract
+ *
+ * This test asserts the STRUCTURE of the emitted HDLR node.
+ *
+ * - No serialization
+ * - No byte reads
+ * - No oracle
+ * - Registry only
  */
 export function testHdlr_Structure() {
-    console.log("=== testHdlr_Structure ===");
 
-    const node = emitHdlrBox({
-        handlerType: "vide",
-        nameBytes: new TextEncoder().encode("VideoHandler\0")
-    });
+    const node =
+        EmitterRegistry.emit(
+            "moov/udta/meta/hdlr",
+            {
+                handlerType: "vide",
+                nameBytes: new TextEncoder().encode("VideoHandler\0")
+            }
+        );
 
-    const box = serializeBoxTree(node);
+    // ---------------------------------------------------------
+    // Box identity
+    // ---------------------------------------------------------
+    assertEqual("hdlr.type", node.type, "hdlr");
+    assertEqual("hdlr.version", node.version, 0);
+    assertEqual("hdlr.flags", node.flags, 0);
 
-    // size
-    assertEqual("hdlr.size", readUint32(box, 0), box.length);
-
-    // type
-    assertEqual("hdlr.type", readFourCC(box, 4), "hdlr");
-
-    // version + flags
-    assertEqual("hdlr.version", box[8], 0);
-    assertEqual(
-        "hdlr.flags",
-        (box[9] << 16) | (box[10] << 8) | box[11],
-        0
-    );
+    // ---------------------------------------------------------
+    // Payload structure
+    // ---------------------------------------------------------
+    assertExists("hdlr.body", node.body);
+    assertEqual("hdlr.body.length", node.body.length, 3);
 
     // pre_defined
-    assertEqual("hdlr.pre_defined", readUint32(box, 12), 0);
+    assertEqual("hdlr.pre_defined.int", node.body[0].int, 0);
 
     // handler_type
-    assertEqual("hdlr.handler_type", readFourCC(box, 16), "vide");
+    assertEqual("hdlr.handler_type.type", node.body[1].type, "mdir");
 
-    // reserved
-    assertEqual("hdlr.reserved[0]", readUint32(box, 20), 0);
-    assertEqual("hdlr.reserved[1]", readUint32(box, 24), 0);
-    assertEqual("hdlr.reserved[2]", readUint32(box, 28), 0);
+    // name bytes
+    assertEqual("hdlr.name.array", node.body[2].array, "byte");
 
-    // name
-    const nameBytes = box.slice(32);
-    assertEqual("hdlr.name.null", nameBytes[nameBytes.length - 1], 0);
-    assertEqual(
-        "hdlr.name.value",
-        new TextDecoder().decode(nameBytes.slice(0, -1)),
-        "VideoHandler"
-    );
+    const values = node.body[2].values;
+    assertEqual("hdlr.name.null", values[values.length - 1], 0);
 
-    console.log("PASS: hdlr structural contract is correct");
+    const decoded =
+        new TextDecoder().decode(
+            Uint8Array.from(values.slice(0, -1))
+        );
+
+    assertEqual("hdlr.name.value", decoded, "VideoHandler");
 }
+
 
 /**
  * HDLR — Locked Layout (track-level)
  */
 export async function testHdlr_LockedLayoutEquivalence_ffmpeg() {
-    console.log("=== testHdlr_LockedLayoutEquivalence_ffmpeg (mdia) ===");
 
-    // ---------------------------------------------------------
-    // 1. Load golden MP4
-    // ---------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    // ---------------------------------------------------------
-    // 2. Extract golden truth (single source of truth)
-    // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/hdlr",
-        { trackType: "video" }
-    );
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]/mdia/hdlr"
+        );
 
-    const refFields = truth.readFields();
-    const builderInput = truth.getBuilderInput();
+    const ref = truth.readBoxReport().raw;
+    const input = truth.getEmitterInput();
 
-    // ---------------------------------------------------------
-    // 3. Rebuild hdlr strictly from golden truth
-    // ---------------------------------------------------------
-    const out = serializeBoxTree(
-        emitHdlrBox(builderInput)
-    );
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.emit(
+                "moov/trak/mdia/hdlr",
+                input
+            )
+        );
 
-    // ---------------------------------------------------------
-    // 4. Locked-layout equivalence
-    // ---------------------------------------------------------
-    assertHdlrFieldEquality(
-        "track",
-        refFields.raw,
-        out
-    );
-
-    console.log("PASS: track-level hdlr locked-layout equivalence");
+    assertHdlrFieldEquality("track", ref, out);
 }
 
+export async function testHdlr_LockedLayoutEquivalence_ffmpeg_Audio() {
+
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[1]/mdia/hdlr"
+        );
+
+    const ref = truth.readBoxReport().raw;
+    const input = truth.getEmitterInput();
+
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.emit(
+                "moov/trak/mdia/hdlr",
+                input
+            )
+        );
+
+    assertHdlrFieldEquality("audio", ref, out);
+}
 
 /**
  * Field-by-field, byte-anchored equality.
@@ -104,14 +122,12 @@ export async function testHdlr_LockedLayoutEquivalence_ffmpeg() {
  */
 function assertHdlrFieldEquality(scope, ref, out) {
 
-    // size
     assertEqual(
         `${scope}.hdlr.size`,
         readUint32(out, 0),
         readUint32(ref, 0)
     );
 
-    // type
     for (let i = 0; i < 4; i++) {
         assertEqualHex(
             `${scope}.hdlr.type.byte[${i}]`,
@@ -120,14 +136,8 @@ function assertHdlrFieldEquality(scope, ref, out) {
         );
     }
 
-    // version
-    assertEqual(
-        `${scope}.hdlr.version`,
-        out[8],
-        ref[8]
-    );
+    assertEqual(`${scope}.hdlr.version`, out[8], ref[8]);
 
-    // flags
     for (let i = 0; i < 3; i++) {
         assertEqualHex(
             `${scope}.hdlr.flags.byte[${i}]`,
@@ -136,7 +146,6 @@ function assertHdlrFieldEquality(scope, ref, out) {
         );
     }
 
-    // pre_defined
     for (let i = 0; i < 4; i++) {
         assertEqualHex(
             `${scope}.hdlr.pre_defined.byte[${i}]`,
@@ -145,7 +154,6 @@ function assertHdlrFieldEquality(scope, ref, out) {
         );
     }
 
-    // handler_type
     for (let i = 0; i < 4; i++) {
         assertEqualHex(
             `${scope}.hdlr.handler_type.byte[${i}]`,
@@ -154,7 +162,6 @@ function assertHdlrFieldEquality(scope, ref, out) {
         );
     }
 
-    // reserved (absolute, fixed offsets)
     for (let r = 0; r < 3; r++) {
         for (let i = 0; i < 4; i++) {
             assertEqualHex(
@@ -165,7 +172,6 @@ function assertHdlrFieldEquality(scope, ref, out) {
         }
     }
 
-    // name bytes (exact span)
     const refSize = readUint32(ref, 0);
     const nameStart = 32;
     const nameLen = refSize - nameStart;
@@ -178,7 +184,6 @@ function assertHdlrFieldEquality(scope, ref, out) {
         );
     }
 
-    // final guard
     assertEqual(
         `${scope}.hdlr.total.size`,
         out.length,

@@ -87,13 +87,33 @@
  *
  * Any mutation, even if numerically “equivalent,” is a bug.
  */
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { emitBtrtBox } from "../box-emitters/stsdBox/btrtBox.js";
 import { assertEqual } from "./assertions.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 import {
-    extractSampleEntryFromMp4
-} from "./reference/BoxExtractor.js";
+    SampleEntryReader,
+    getSampleEntryHeaderSize
+} from "../reference/SampleEntryReader.js";
+
+
+/**
+ * NOTE
+ * ----
+ * The btrt box is valid for both video (avc1) and audio (mp4a) SampleEntries.
+ *
+ * These tests assert the btrt box via the avc1 path only because the
+ * reference oracle files used here contain btrt metadata on the video
+ * track, but not on the audio track.
+ *
+ * This is a limitation of the oracle data, not of the btrt schema,
+ * emitter, or registry wiring.
+ *
+ * Structural correctness of btrt under mp4a is guaranteed by reuse of
+ * the same emitter and schema, and does not require a duplicate test
+ * in the absence of an oracle that includes mp4a/btrt.
+ */
 
 /**
  * btrt Structural (Granular) Test
@@ -134,37 +154,55 @@ import {
  *
  * They do NOT indicate problems with encoding or playback.
  */
-export async function testBtrt_Structure() {
-    console.log("=== btrt Granular structural tests ===");
 
-    const box = serializeBoxTree(
-        emitBtrtBox({
+export async function testBtrt_Structure() {
+
+    const node = EmitterRegistry.emit(
+        "moov/trak/mdia/minf/stbl/stsd|avc1/btrt",
+        {
             bufferSizeDB: 0,
             maxBitrate: 0,
             avgBitrate: 0
-        })
+        }
     );
 
-    const expectedSize = 20;
-    const actualSize   = box.length;
+    // --------------------------------------------------
+    // Box identity
+    // --------------------------------------------------
 
-    assertEqual("btrt.size", actualSize, expectedSize);
+    assertEqual("btrt.type", node.type, "btrt");
 
-    const sizeField = readUint32(box, 0);
-    assertEqual("btrt.sizeField", sizeField, expectedSize);
+    // --------------------------------------------------
+    // Body structure
+    // --------------------------------------------------
 
-    const type = readFourCC(box, 4);
-    assertEqual("btrt.type", type, "btrt");
-
-    const bufferSizeDB = readUint32(box, 8);
-    const maxBitrate   = readUint32(box, 12);
-    const avgBitrate   = readUint32(box, 16);
-
-    if (bufferSizeDB !== 0 || maxBitrate !== 0 || avgBitrate !== 0) {
-        throw new Error("FAIL: btrt default values incorrect");
+    if (!Array.isArray(node.body)) {
+        throw new Error("FAIL: btrt.body must be an array");
     }
 
-    console.log("PASS: btrt granular structural tests");
+    assertEqual("btrt.body.length", node.body.length, 3);
+
+    // --------------------------------------------------
+    // Field values (structural)
+    // --------------------------------------------------
+
+    assertEqual(
+        "btrt.bufferSizeDB",
+        node.body[0].int,
+        0
+    );
+
+    assertEqual(
+        "btrt.maxBitrate",
+        node.body[1].int,
+        0
+    );
+
+    assertEqual(
+        "btrt.avgBitrate",
+        node.body[2].int,
+        0
+    );
 }
 
 /**
@@ -209,33 +247,27 @@ export async function testBtrt_Structure() {
  * Any byte difference indicates a muxer bug.
  */
 export async function  testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg() {
-    console.log("=== testBtrt_Conformance (golden MP4) ===");
 
     const resp = await fetch("reference/reference_visual.mp4");
     const buf  = new Uint8Array(await resp.arrayBuffer());
 
-    const avc1Box = extractSampleEntryFromMp4(
+    const avc1 = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         buf,
-        "moov/trak/mdia/minf/stbl/stsd",
-        "avc1"
+        "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]"
     );
 
-    // Local structural scan for btrt
-    let offset = 8 + 78; // VisualSampleEntry header
-    let refBtrt = null;
+    const sampleEntryRaw = avc1.readBoxReport().raw;
 
-    while (offset + 8 <= avc1Box.length) {
-        const size = readUint32(avc1Box, offset);
-        const type = readFourCC(avc1Box, offset + 4);
+    const headerSize =
+        getSampleEntryHeaderSize("avc1");
 
-        if (type === "btrt") {
-            refBtrt = avc1Box.slice(offset, offset + size);
-            break;
-        }
+    const reader =
+        new SampleEntryReader(
+            sampleEntryRaw,
+            headerSize
+        );
 
-        if (size < 8) break;
-        offset += size;
-    }
+    const refBtrt = reader.getChild("btrt");
 
     if (!refBtrt) {
         throw new Error("FAIL: btrt box not found in avc1 sample entry");
@@ -249,11 +281,13 @@ export async function  testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg() {
     };
 
     const outRaw = serializeBoxTree(
-        emitBtrtBox({
-            bufferSizeDB: ref.bufferSizeDB,
-            maxBitrate:   ref.maxBitrate,
-            avgBitrate:   ref.avgBitrate
-        })
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stsd|avc1/btrt",
+            {
+                bufferSizeDB: ref.bufferSizeDB,
+                maxBitrate:   ref.maxBitrate,
+                avgBitrate:   ref.avgBitrate
+            })
     );
 
     assertEqual("btrt.length", ref.raw.length, outRaw.length);
@@ -266,5 +300,4 @@ export async function  testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg() {
         );
     }
 
-    console.log("PASS: btrt matches golden MP4");
 }

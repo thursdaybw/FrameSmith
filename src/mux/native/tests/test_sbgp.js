@@ -14,29 +14,31 @@
  */
 
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { emitSbgpBox } from "../box-emitters/sbgpBox.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 /**
  * sbgp Structural (Granular) Test
  */
 export function testSbgp_Structure() {
-    console.log("=== sbgp Structural tests ===");
 
-    const node = emitSbgpBox({
-        groupingType: "roll",
-        entries: [
-            { sampleCount: 5, groupDescriptionIndex: 1 }
-        ]
-    });
+    const node = EmitterRegistry.emit(
+        "moov/trak/mdia/minf/stbl/sbgp",
+        {
+            groupingType: "roll",
+            entries: [
+                { sampleCount: 5, groupDescriptionIndex: 1 }
+            ]
+        }
+    );
 
     // ---------------------------------------------------------
     // Box identity
     // ---------------------------------------------------------
     assertEqual("sbgp.type", node.type, "sbgp");
-    assertEqual("sbgp.version", node.version, 1);
+    assertEqual("sbgp.version", node.version, 0);
     assertEqual("sbgp.flags", node.flags, 0);
 
     // ---------------------------------------------------------
@@ -44,9 +46,28 @@ export function testSbgp_Structure() {
     // ---------------------------------------------------------
     assertEqual("sbgp.body.length", node.body.length, 4);
 
-    // grouping_type
-    assertEqual("sbgp.grouping_type.kind", "type" in node.body[0], true);
-    assertEqual("sbgp.grouping_type", node.body[0].type, "roll");
+    // grouping_type (uint32 FourCC)
+    assertEqual(
+        "sbgp.grouping_type.kind",
+        "int" in node.body[0],
+        true
+    );
+
+    const groupingTypeUint32 = node.body[0].int;
+
+    const groupingType =
+        String.fromCharCode(
+            (groupingTypeUint32 >> 24) & 0xff,
+            (groupingTypeUint32 >> 16) & 0xff,
+            (groupingTypeUint32 >> 8)  & 0xff,
+            groupingTypeUint32 & 0xff
+        );
+
+    assertEqual(
+        "sbgp.grouping_type",
+        groupingType,
+        "roll"
+    );
 
     // entry_count
     assertEqual("sbgp.entry_count.kind", "int" in node.body[1], true);
@@ -58,7 +79,6 @@ export function testSbgp_Structure() {
     // entry[0].group_description_index
     assertEqual("sbgp.entry[0].groupIndex", node.body[3].int, 1);
 
-    console.log("PASS: sbgp structural correctness");
 }
 
 
@@ -66,25 +86,23 @@ export function testSbgp_Structure() {
  * sbgp Locked Layout Equivalence (ffmpeg)
  */
 export async function testSbgp_LockedLayoutEquivalence_ffmpeg() {
-    console.log("=== sbgp LockedLayoutEquivalence (ffmpeg) ===");
 
     const resp = await fetch("reference/reference_av.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const truth = getGoldenTruthBox.fromMp4(
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         mp4,
-        "moov/trak/mdia/minf/stbl",
-        {
-            child: "sbgp",
-            trackType: "audio"
-        }
+        "moov/trak[1]/mdia/minf/stbl/sbgp",
     );
 
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput();
+    const refFields = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
 
     const outRaw = serializeBoxTree(
-        emitSbgpBox(params)
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/sbgp",
+            params
+        )
     );
 
     assertEqual("sbgp.size", outRaw.length, refFields.raw.length);
@@ -97,5 +115,4 @@ export async function testSbgp_LockedLayoutEquivalence_ffmpeg() {
         );
     }
 
-    console.log("PASS: sbgp matches golden MP4");
 }

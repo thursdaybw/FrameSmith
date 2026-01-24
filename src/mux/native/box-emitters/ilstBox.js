@@ -27,7 +27,7 @@
  * - no version
  * - no flags
  */
-export function emitIlstBox(params) {
+function emitIlstBox(params) {
 
     // ---------------------------------------------------------
     // Contract validation
@@ -69,4 +69,11 @@ export function emitIlstBox(params) {
         type: "ilst",
         children: items
     };
+}
+
+export function registerIlstEmitter(registry) {
+    registry.registerEmitter(
+        "moov/udta/meta/ilst",
+        emitIlstBox
+    );
 }

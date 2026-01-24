@@ -1,70 +1,86 @@
-import { readUint32 } from "../../bytes/mp4ByteReader.js";
-
 /**
  * STCO — Chunk Offset Box
- * ----------------------
  *
- * Declares absolute byte offsets for each chunk.
+ * Layout (ISO/IEC 14496-12):
  *
- * Parser responsibilities:
- * ------------------------
- * - Read entry_count
- * - Read absolute chunk offsets
- * - Preserve ordering and values exactly
+ *   uint32 entry_count
+ *   uint32[entry_count] chunk_offsets
  *
- * Non-responsibilities:
- * ---------------------
- * - No offset computation
- * - No chunking policy
+ * Contract:
+ * ---------
+ * - readBoxReport() exposes LOSSLESS on-disk structure
  * - No inference
- * - No normalization
+ * - No collapsing of fields
  */
 
-function readStcoBoxFieldsFromBoxBytes(box) {
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
+
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import {
+    readBoxHeaderFromBytes
+} from "../../box-schema/boxLayoutReaders.js";
+import {
+    getPayloadOffsetForPath
+} from "../../box-schema/boxSchemas.js";
+
+import { PRIMITIVE_SIZES } from "../../box-schema/primitiveLayouts.js";
+
+import { readUint32ArrayFromOffset } from "../../box-schema/boxLayoutReaders.js";
+function readBoxReport(box) {
     if (!(box instanceof Uint8Array)) {
-        throw new Error(
-            "stco.readFields: expected Uint8Array"
-        );
+        throw new Error("stco.readBoxReport: expected Uint8Array");
     }
 
-    const version = box[8];
+    const path = "moov/trak/mdia/minf/stbl/stco";
 
-    if (version !== 0) {
-        throw new Error(
-            `STCO: unsupported version ${version} (expected 0)`
-        );
-    }
+    const header = readBoxHeaderFromBytes(box, path);
 
-    const entryCount = readUint32(box, 12);
+    const payloadOffset = getPayloadOffsetForPath(path);
 
-    const offsets = [];
-    let offset = 16;
+    const entryCount = readUint32(box, payloadOffset);
 
-    for (let i = 0; i < entryCount; i++) {
-        offsets.push(
-            readUint32(box, offset)
-        );
-        offset += 4;
-    }
+    const chunkOffsets = readUint32ArrayFromOffset({
+        box,
+        payloadOffset,
+        count: entryCount
+    });
 
     return {
-        entryCount,
-        offsets,
-        raw: box
+        raw: box,
+
+        box: {
+            type: "stco",
+            header,
+            fields: {
+                entryCount,
+                chunkOffsets
+            }
+        },
+
+        derived: {}
     };
 }
 
-function getStcoBuildParamsFromBoxBytes(box) {
-    const parsed = readStcoBoxFieldsFromBoxBytes(box);
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
 
-    // Framesmith Phase A:
-    // Preserve exact offsets emitted by ffmpeg
+function getEmitterInput(box) {
+    const read = readBoxReport(box);
+
     return {
-        chunkOffsets: parsed.offsets.slice()
+        chunkOffsets: read.box.fields.chunkOffsets.slice()
     };
 }
+
+let registered = false;
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerStcoGoldenTruthExtractor(register) {
-    register.readFields(readStcoBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getStcoBuildParamsFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

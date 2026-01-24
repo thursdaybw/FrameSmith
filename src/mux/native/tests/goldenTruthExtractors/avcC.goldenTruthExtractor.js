@@ -1,37 +1,86 @@
 /**
- * avcC — AVC Configuration Box
- * ============================
+ * avcC — AVC Configuration Box (Opaque)
+ * ====================================
  *
  * Golden truth extractor for avcC.
  *
- * avcC is treated as an opaque payload:
- * - no semantic parsing
- * - no normalization
- * - payload is owned by the encoder
+ * avcC is treated as an opaque payload at the MP4 container layer.
+ * No semantic parsing is performed here.
  *
- * This extractor exists solely to:
- * - capture authoritative bytes from a golden MP4
- * - provide exact emitter input for locked-layout tests
+ * Structural truth:
+ *   - this box exists
+ *   - it contains a byte payload
  */
 
-function readAvcCBoxFields(boxBytes) {
-    // Structural guard only
+
+import {
+  readFourCC,
+  getOpaquePayloadFromBytes
+} from "../../box-schema/boxLayoutReaders.js";
+
+function readAvcCFieldsFromBoxBytes(boxBytes) {
+
     if (!(boxBytes instanceof Uint8Array)) {
-        throw new Error("avcC.readFields: expected Uint8Array");
+        throw new Error("avcC.readBoxReport: expected Uint8Array");
     }
 
+    if (readFourCC(boxBytes, 4) !== "avcC") {
+        throw new Error(
+            "avcC.readBoxReport: expected 'avcC' box"
+        );
+    }
+
+    const payload = getOpaquePayloadFromBytes(
+        boxBytes,
+        "moov/trak/mdia/minf/stbl/stsd|avc1/avcC"
+    );
+
     return {
-        raw: boxBytes
+        raw: boxBytes,
+
+        box: {
+            type: "avcC",
+            fields: {
+                /**
+                 * Expose the payload as a plain array of numbers.
+                 *
+                 * We intentionally do NOT return the Uint8Array here:
+                 * - it would be a live view into the original buffer
+                 * - it could be mutated by accident
+                 * - it is awkward to inspect and compare in tests
+                 *
+                 * A plain array is a safe, snapshot representation of
+                 * what was actually in the box at read time.
+                 *
+                 * The builder gets the real Uint8Array again later.
+                 */
+                opaquePayloadBytes: Array.from(payload)
+            }
+        },
+
+        derived: {}
     };
 }
 
-function getAvcCEmitterInputFromBox(boxBytes) {
+function getAvcCBuilderInputFromBoxBytes(boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error(
+            "avcC.getEmitterInput: expected Uint8Array"
+        );
+    }
+
+    const read = readAvcCFieldsFromBoxBytes(boxBytes);
+
     return {
-        avcC: boxBytes.slice(8) // strip MP4 header
+        avcC: getOpaquePayloadFromBytes(
+            boxBytes,
+            "moov/trak/mdia/minf/stbl/stsd|avc1/avcC"
+        )
     };
+
 }
 
 export function registerAvcCGoldenTruthExtractor(register) {
-    register.readFields(readAvcCBoxFields);
-    register.getBuilderInput(getAvcCEmitterInputFromBox);
+    register.readBoxReport(readAvcCFieldsFromBoxBytes);
+    register.getEmitterInput(getAvcCBuilderInputFromBoxBytes);
 }

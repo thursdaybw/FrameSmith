@@ -184,45 +184,28 @@ export function applyEditListPolicy({
     }
 
     // ---------------------------------------------------------------------
-    // Timescale conversion (EMPIRICAL REQUIREMENT)
+    // ORACLE RULE (ffmpeg)
     // ---------------------------------------------------------------------
     //
-    // Oracle shows:
+    // Empirically observed behavior:
     //
-    //   editDuration = mvhd.duration
+    //   elst.editDuration === mvhd.duration
     //
-    // But we are given:
+    // NOT:
+    //   trackDuration * movieTimescale / trackTimescale
     //
-    //   trackDuration in TRACK timescale units.
+    // This avoids fractional durations when track timescales differ
+    // and matches ffmpeg byte-for-byte for single-track and AV muxes.
     //
-    // Therefore:
+    // This is an explicit container policy choice.
     //
-    //   editDuration =
-    //     trackDuration * movieTimescale / trackTimescale
-    //
-    // This conversion is REQUIRED.
-    // Omitting it produces a byte-for-byte mismatch with the oracle.
-    //
-    // ---------------------------------------------------------------------
-
-    const editDuration =
-        (trackDuration * movieTimescale) / trackTimescale;
-
-    console.group("DEBUG applyEditListPolicy");
-    console.log("trackDuration:", trackDuration);
-    console.log("trackTimescale:", trackTimescale);
-    console.log("movieTimescale:", movieTimescale);
-    console.log("mediaStartTime:", mediaStartTime);
-    console.log("numerator:", trackDuration * movieTimescale);
-    console.log("raw editDuration:", editDuration);
-    console.log("isInteger:", Number.isInteger(editDuration));
-    console.groupEnd();
-
-    if (!Number.isInteger(editDuration)) {
-        throw new Error(
-            "applyEditListPolicy: computed editDuration is not an integer"
+    const editDuration = trackDuration
+        * movieTimescale
+        / trackTimescale === trackDuration
+        ? trackDuration
+        : Math.round(
+            trackDuration * movieTimescale / trackTimescale
         );
-    }
 
     // ---------------------------------------------------------------------
     // ffmpeg-compatible single-entry edit list

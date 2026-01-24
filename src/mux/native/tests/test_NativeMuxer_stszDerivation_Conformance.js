@@ -1,5 +1,4 @@
 import { adaptStszSizesFromPayloads } from "../adapters/adaptStszSizesFromPayloads.js";
-import { emitStszBox } from "../box-emitters/stszBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";

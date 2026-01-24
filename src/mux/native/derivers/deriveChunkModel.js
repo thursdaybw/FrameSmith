@@ -29,6 +29,7 @@ export function deriveChunkModel(samples, policy) {
         throw new Error("deriveChunkModel: samples must be an array");
     }
 
+
     switch (policy) {
 
         case ChunkingStrategies.ONE_SAMPLE_PER_CHUNK:
@@ -48,6 +49,36 @@ export function deriveChunkModel(samples, policy) {
                 })),
                 duration: samples.reduce((n, s) => n + s.duration, 0)
             }];
+
+        case ChunkingStrategies.PACKETIZED: {
+            const chunks = [];
+            let currentPacket = null;
+
+            for (let i = 0; i < samples.length; i++) {
+                const sample = samples[i];
+
+                if (
+                    !currentPacket ||
+                    sample.packetIndex !== currentPacket.packetIndex
+                ) {
+                    currentPacket = {
+                        packetIndex: sample.packetIndex,
+                        samples: [],
+                        duration: 0
+                    };
+                    chunks.push(currentPacket);
+                }
+
+                currentPacket.samples.push({
+                    sample,
+                    sampleIndex: i
+                });
+
+                currentPacket.duration += sample.duration;
+            }
+
+            return chunks;
+        }
 
         default:
             throw new Error(

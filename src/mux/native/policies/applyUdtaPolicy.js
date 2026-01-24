@@ -60,12 +60,6 @@
  * It does NOT define that contract.
  */
 
-import { emitUdtaBox }     from "../box-emitters/udtaBox.js";
-import { emitMetaBox }     from "../box-emitters/metaBox.js";
-import { emitMetaHdlrBox } from "../box-emitters/metaHdlrBox.js";
-import { emitIlstBox }     from "../box-emitters/ilstBox.js";
-import { emitIlstItemBox } from "../box-emitters/ilstItemBox.js";
-import { emitDataBox }     from "../box-emitters/dataBox.js";
 
 export function applyUdtaPolicy({
     opaqueUdta,

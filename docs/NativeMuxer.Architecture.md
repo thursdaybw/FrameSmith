@@ -304,6 +304,218 @@ or fallback behavior.
 
 ---
 
+### 4.6.2 Codec-Owned vs Container-Owned SampleEntry Responsibility
+
+SampleEntry boxes (`avc1`, `mp4a`, etc.) sit at a critical architectural boundary.
+
+They are:
+
+* part of the MP4 container
+* but owned semantically by the codec they describe
+
+NativeMuxer makes an **explicit, asymmetric decision** about how different SampleEntry types are handled.
+
+This decision is intentional and architectural.
+
+---
+
+#### Container-Owned SampleEntries (avc1)
+
+NativeMuxer **constructs and owns** the `avc1` SampleEntry.
+
+This means:
+
+* NativeMuxer emits the complete VisualSampleEntry structure
+* All fixed fields are explicit and spec-constrained
+* `avcC` is treated as structured codec configuration
+* Optional container-level extensions (`btrt`, `pasp`) are applied via policy
+* Byte-for-byte equivalence with ffmpeg output is mandatory
+
+Rationale:
+
+* The MP4-level structure of `avc1` is shallow, stable, and well-defined
+* Container-level correctness is critical for browser playback
+* `avc1` fields are largely independent of H.264 bitstream semantics
+* Deterministic rebuilding is achievable and testable
+* NativeMuxer can safely enforce container invariants without interpreting codec internals
+
+As a result, `avc1` is treated as **container-owned structure with codec-provided configuration**.
+
+NativeMuxer does **not** interpret H.264 bitstreams.
+It owns only the container representation.
+
+---
+
+#### Codec-Owned SampleEntries (mp4a)
+
+NativeMuxer **does not construct** the `mp4a` SampleEntry.
+
+Instead:
+
+* `mp4a` is treated as an opaque SampleEntry
+* The `esds` descriptor graph is preserved byte-for-byte
+* No container-level mutation is performed
+* No descriptor lengths are recomputed
+* No audio codec semantics are inferred or derived
+
+Rationale:
+
+* `mp4a` correctness depends on ISO/IEC 14496-1 descriptor graphs
+* Descriptor structure is recursive and length-sensitive
+* Any mutation requires full descriptor parsing and re-serialization
+* Partial understanding would produce silent corruption
+* NativeMuxer is a container compiler, not an AAC descriptor compiler
+
+Treating `mp4a` as opaque is **honest and safe**.
+
+It preserves determinism without pretending to understand codec internals.
+
+---
+
+#### Architectural Rule
+
+NativeMuxer distinguishes SampleEntry handling based on **where correctness responsibility lives**:
+
+* If correctness lives primarily at the container level
+  → NativeMuxer may build and validate the SampleEntry (`avc1`)
+* If correctness lives primarily inside codec-specific descriptor graphs
+  → NativeMuxer must preserve the SampleEntry verbatim (`mp4a`)
+
+This is **not** a limitation of the architecture.
+
+It is an explicit boundary.
+
+---
+
+#### Future Extension (Non-Architectural)
+
+NativeMuxer may, in the future, implement full descriptor parsing and emission for audio SampleEntries.
+
+If and only if that occurs:
+
+* `mp4a` handling must meet the same standards as `avc1`
+* Full descriptor graphs must be rebuilt deterministically
+* Byte-for-byte equivalence must be proven
+* Descriptor ownership rules must be explicit and test-covered
+
+Until then:
+
+* `mp4a` remains codec-owned
+* `avc1` remains container-owned
+* Mixing the two models is forbidden
+
+---
+
+#### Forbidden States
+
+The following are architectural errors:
+
+* Mutating `esds` without full descriptor recomputation
+* Applying container policy inside audio descriptor graphs
+* Treating `mp4a` as partially structured
+* Allowing SampleEntry rebuilding without byte-for-byte proof
+
+NativeMuxer prefers **explicit opacity** over **implicit corruption**.
+
+---
+
+That section locks the decision down.
+
+It explains **what is owned**, **why**, and **what would have to change** for the boundary to move, without promising or implying anything.
+
+If you want, next we can:
+
+* update `stsd` emitter docs to reference this rule explicitly, or
+* add a short “Codec Ownership Matrix” table (avc1, mp4a, future codecs) to make this visible at a glance.
+
+---
+
+## 4.6.3 SampleEntry Emitters Are Atomic
+
+SampleEntry emitters (`avc1`, `mp4a`, etc.) are **atomic structural units**, even when they internally emit child boxes.
+
+### Rule
+
+A SampleEntry emitter **may call other emitters internally**.
+
+This is:
+
+* NOT structural delegation
+* NOT container assembly
+* NOT emitter composition in the container sense
+
+It is **atomic emission**.
+
+### Rationale
+
+SampleEntries are:
+
+* not ISO container boxes
+* not governed by generic container traversal rules
+* codec-defined structures with internal layout requirements
+
+Child boxes such as:
+
+* `avcC`
+* `esds`
+* `pasp`
+* `btrt`
+
+are **intrinsic parts of the SampleEntry**, not independent container children.
+
+As a result:
+
+* SampleEntry structure must be defined *entirely* by the SampleEntry emitter
+* Parent containers (`stsd`, `stbl`, `trak`, etc.) must treat SampleEntries as opaque nodes
+* No parent container may:
+
+  * inspect SampleEntry internals
+  * reorder SampleEntry children
+  * assemble SampleEntry sub-boxes
+  * apply policy inside a SampleEntry
+
+### Examples
+
+The following is explicitly allowed and correct:
+
+```js
+emitAvc1SampleEntryBox({
+  avcC,
+  btrt,
+  pasp
+})
+```
+
+Where `emitAvc1SampleEntryBox` internally calls:
+
+* `emitAvcCBox`
+* `emitPaspBox`
+* `emitBtrtBox`
+
+These calls are **implementation details**, not architectural composition.
+
+### Boundary Enforcement
+
+This rule enforces a strict separation:
+
+* **Container emitters** assemble boxes
+* **SampleEntry emitters** define boxes
+
+Crossing this boundary is a structural error.
+
+### Forbidden States
+
+The following are architectural violations:
+
+* Emitting SampleEntry child boxes outside the SampleEntry emitter
+* Passing partially constructed SampleEntry children into `stsd`
+* Treating SampleEntry children as normal ISO container children
+* Reassembling SampleEntry structure at a higher layer
+
+NativeMuxer prefers **atomic SampleEntry definition** over fragmented construction.
+
+---
+
 ### 4.7 Physical Layout Resolution Layer
 
 **Purpose**  

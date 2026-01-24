@@ -20,35 +20,30 @@
  */
 
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { emitAvcCBox } from "../box-emitters/stsdBox/avcCBox.js";
+//import { emitAvcCBox } from "../box-emitters/stsdBox/avcCBox.js";
 import { applyAvcCContainerPolicy } from "../policies/applyAvcCContainerPolicy.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 import { assertEqual } from "./assertions.js";
 
 export async function test_avcC_policy_locked_layout_container_complete() {
-    console.log("=== test_avcC_policy_locked_layout_container_complete ===");
 
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const truth = getGoldenTruthBox.fromMp4(
+    const avcCTruth = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stsd",
-        {
-            sampleEntry: "avc1",
-            trackType: "video"
-        }
+        "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/avcC"
     );
 
-    const oracleParams = truth.getBuilderInput();
+    const oracleAvcC = avcCTruth.readBoxReport().raw;
 
     // Emit oracle avcC directly (baseline for comparison)
     const oracleBox = serializeBoxTree(
-        emitAvcCBox({ avcC: oracleParams.avcC })
+        emitAvcCBox({ avcC: oracleAvcC })
     );
 
     const policyOut = applyAvcCContainerPolicy({
-        avcC: oracleParams.avcC,
+        avcC: oracleAvcC,
         avcCCompleteness: "container-complete"
     });
 
@@ -66,48 +61,44 @@ export async function test_avcC_policy_locked_layout_container_complete() {
         );
     }
 
-    console.log("PASS: container-complete avcC preserved byte-for-byte");
 }
 
 export async function test_avcC_policy_locked_layout_semantic_high_profile() {
-    console.log("=== test_avcC_policy_locked_layout_semantic_high_profile ===");
 
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const truth = getGoldenTruthBox.fromMp4(
+    const avcCTruth = getGoldenTruthBox.fromMp4(
         mp4,
-        "moov/trak/mdia/minf/stbl/stsd",
-        {
-            sampleEntry: "avc1",
-            trackType: "video"
-        }
+        "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/avcC"
     );
 
-    const oracleParams = truth.getBuilderInput();
+    const oracleAvcC = avcCTruth.getEmitterInput().avcC;
 
     const oracleBox = serializeBoxTree(
-        emitAvcCBox({ avcC: oracleParams.avcC })
+        emitAvcCBox({ avcC: oracleAvcC })
     );
 
-    const SEMANTIC_EXTENSION_LENGTH = 4;
-
-    const semanticAvcC = oracleParams.avcC.slice(
-        0,
-        oracleParams.avcC.length - SEMANTIC_EXTENSION_LENGTH
-    );
+    // ---------------------------------------------------------
+    // Construct semantic avcC explicitly (no container extension)
+    // ---------------------------------------------------------
+    const semanticAvcC = new Uint8Array([
+        oracleAvcC[0], // configurationVersion
+        oracleAvcC[1], // AVCProfileIndication
+        oracleAvcC[2], // profile_compatibility
+        oracleAvcC[3], // AVCLevelIndication
+        ...oracleAvcC.slice(4, oracleAvcC.length - 4)
+    ]);
 
     const completed = applyAvcCContainerPolicy({
         avcC: semanticAvcC,
         avcCCompleteness: "semantic",
-        profileIndication: oracleParams.avcC[1]
+        profileIndication: oracleAvcC[1]
     });
 
     const producedBox = serializeBoxTree(
         emitAvcCBox({ avcC: completed })
     );
-
-    assertEqual("avcC box size", producedBox.length, oracleBox.length);
 
     for (let i = 0; i < oracleBox.length; i++) {
         assertEqual(
@@ -117,5 +108,5 @@ export async function test_avcC_policy_locked_layout_semantic_high_profile() {
         );
     }
 
-    console.log("PASS: semantic High Profile avcC completes to oracle");
+    assertEqual("avcC box size", producedBox.length, oracleBox.length);
 }

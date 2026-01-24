@@ -47,12 +47,9 @@ export async function test_DeriveDecodeTimestamps_LockedLayoutEquivalence_ffmpeg
         getGoldenTruthBox
             .fromMp4(
                 mp4,
-                "moov/trak/mdia/minf/stbl/ctts",
-                {
-                    trackType: "video"
-                }
+                "moov/trak[0]/mdia/minf/stbl/ctts",
             )
-            .readFields();
+            .readBoxReport();
 
     // Expand run-length encoded CTTS into per-accessUnits offsets
     const refOffsets = [];

@@ -31,15 +31,15 @@
  */
 
 export function applyMovieTimingPolicy({
-    trackDuration,
+    movieDurationInTrackTimescale,
     trackTimescale,
     trackId,
     movieTimescale
 }) {
 
-    if (!Number.isInteger(trackDuration) || trackDuration < 0) {
+    if (!Number.isInteger(movieDurationInTrackTimescale) || movieDurationInTrackTimescale < 0) {
         throw new Error(
-            "applyMovieTimingPolicy: trackDuration must be a non-negative integer"
+            "applyMovieTimingPolicy: movieDurationInTrackTimescale must be a non-negative integer"
         );
     }
 
@@ -60,8 +60,7 @@ export function applyMovieTimingPolicy({
         ? movieTimescale
         : trackTimescale;
 
-    const duration =
-        trackDuration * MOVIE_TIMESCALE / trackTimescale;
+    const duration = Math.floor(movieDurationInTrackTimescale * MOVIE_TIMESCALE / trackTimescale);
 
     return {
         timescale: MOVIE_TIMESCALE,

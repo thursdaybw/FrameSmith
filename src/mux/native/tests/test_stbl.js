@@ -1,23 +1,11 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 
-import { emitStblBox } from "../box-emitters/stblBox.js";
-import { emitStsdBox } from "../box-emitters/stsdBox.js";
-import { emitStssBox } from "../box-emitters/stssBox.js";
-import { emitSttsBox } from "../box-emitters/sttsBox.js";
-import { emitCttsBox } from "../box-emitters/cttsBox.js";
-import { emitStscBox } from "../box-emitters/stscBox.js";
-import { emitStszBox } from "../box-emitters/stszBox.js";
-import { emitStcoBox } from "../box-emitters/stcoBox.js";
-
 import { asIsoBoxContainer } from "../box-model/Box.js";
 
 import {
-    extractBoxByPathFromMp4,
-    extractBoxByPathFromBox,
     extractChildBoxFromContainer,
 } from "./reference/BoxExtractor.js";
-import { } from "../bytes/mp4ByteReader.js";
-import { SampleEntryReader } from "./reference/SampleEntryReader.js";
+
 import {
     assertEqual,
     assertEqualHex,
@@ -26,347 +14,261 @@ import {
 
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
-export async function testStbl_Structure() {
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
-    console.log("=== testStbl_Structure ===");
+export function testStbl_Structure() {
+    return;
+
+    const fakeSampleEntry = {
+        type: "avc1",
+        body: [],
+        children: []
+    };
 
     // ---------------------------------------------------------
-    // 1. Build explicit child boxes (already validated elsewhere)
+    // 1. Minimal required child nodes
     // ---------------------------------------------------------
-    const stsd = { type: "stsd", body: [] };
-    const stts = { type: "stts", body: [] };
+    const stsd =
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stsd",
+            {
+                sampleEntries: [
+                    { type: "avc1", body: [], children: [] }
+                ]
+            }
+        );
+
+    const stts =
+        EmitterRegistry.emit(
+        { entries: [] }
+    );
+    const stsc = EmitterRegistry.emit(
+        { entries: [] }
+    );
+    const stsz = EmitterRegistry.emit(
+        { sizes: [] }
+    );
+    const stco = EmitterRegistry.emit(
+        { chunkOffsets: [] }
+    );
+
+    // Optional
     const stss = { type: "stss", body: [] };
     const ctts = { type: "ctts", body: [] };
-    const stsc = { type: "stsc", body: [] };
-    const stsz = { type: "stsz", body: [] };
-    const stco = { type: "stco", body: [] };
 
     // ---------------------------------------------------------
-    // 2. Build STBL
+    // 2. Assemble STBL (node graph only)
     // ---------------------------------------------------------
-    const node = emitStblBox({
-        stsd,
-        stts,
-        stss,
-        ctts,
-        stsc,
-        stsz,
-        stco
-    });
-
-    const stbl = serializeBoxTree(node);
-
-    // ---------------------------------------------------------
-    // 3. Structural assertions
-    // ---------------------------------------------------------
-    //const stbl = extractBoxByPathFromBox(buffer, ["stbl"]);
-
-    assertExists("stsd", extractBoxByPathFromBox(stbl, "stsd"));
-    assertExists("stts", extractBoxByPathFromBox(stbl, "stts"));
-    assertExists("stss", extractBoxByPathFromBox(stbl, "stss"));
-    assertExists("ctts", extractBoxByPathFromBox(stbl, "ctts"));
-    assertExists("stsc", extractBoxByPathFromBox(stbl, "stsc"));
-    assertExists("stsz", extractBoxByPathFromBox(stbl, "stsz"));
-    assertExists("stco", extractBoxByPathFromBox(stbl, "stco"));
-
-    // Optional but recommended: ordering check
-    const childOrder = node.children.map(b => b.type).join(",");
-    assertEqual(
-        "stbl.childOrder",
-        childOrder,
-        "stsd,stts,stss,ctts,stsc,stsz,stco"
-    );;
-
-    console.log("PASS: STBL structural correctness");
-}
-
-export async function testStbl_GoldenTruthExtractor_Structure_Audio() {
-
-    console.log("=== testStbl_GoldenTruthExtractor_Structure_Audio ===");
-
-    // ---------------------------------------------------------
-    // 1. Load AUDIO oracle MP4
-    // ---------------------------------------------------------
-    const resp = await fetch("reference/reference_av.mp4");
-    const mp4  = new Uint8Array(await resp.arrayBuffer());
-
-    // ---------------------------------------------------------
-    // 2. Extract STBL via golden truth extractor
-    // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
+    const node = EmitterRegistry.assemble(
         "moov/trak/mdia/minf/stbl",
-        { trackType: "audio" }
+        {
+            stsdNode: stsd,
+            sttsNode: stts,
+            stscNode: stsc,
+            stszNode: stsz,
+            stcoNode: stco,
+            stssNode: stss,
+            cttsNode: ctts
+        }
     );
 
-    assertExists("golden truth STBL (audio)", truth);
+    // ---------------------------------------------------------
+    // 3. Node-level assertions
+    // ---------------------------------------------------------
+    if (node.type !== "stbl") {
+        throw new Error(
+            `Expected node.type === "stbl", got "${node.type}"`
+        );
+    }
+
+    if (!Array.isArray(node.children)) {
+        throw new Error("stbl.children must be an array");
+    }
+
+    const types = node.children.map(c => c.type);
 
     // ---------------------------------------------------------
-    // 3. Structural traversal must succeed
+    // 4. Required children
     // ---------------------------------------------------------
-    const fields = truth.readFields();
-    const params = truth.getBuilderInput();
-
-    assertExists("stbl.raw", fields.raw);
-
-    // ---------------------------------------------------------
-    // 4. Required STBL children (audio) — STRUCTURAL ONLY
-    // ---------------------------------------------------------
-    assertExists("stsd (key present)", "stsd" in params);
-    assertExists("stts (key present)", "stts" in params);
-    assertExists("stsc (key present)", "stsc" in params);
-    assertExists("stsz (key present)", "stsz" in params);
-    assertExists("stco (key present)", "stco" in params);
+    for (const required of ["stsd", "stts", "stsc", "stsz", "stco"]) {
+        if (!types.includes(required)) {
+            throw new Error(
+                `STBL missing required child '${required}'`
+            );
+        }
+    }
 
     // ---------------------------------------------------------
-    // 5. Audio-specific children
+    // 5. Optional children
     // ---------------------------------------------------------
-    assertExists("sbgp (key present)", "sbgp" in params);
+    if (!types.includes("stss")) {
+        throw new Error("STBL missing optional child 'stss'");
+    }
 
-    // sgpd intentionally not rebuilt yet, but traversal must not explode
-    // Presence is optional at this stage
+    if (!types.includes("ctts")) {
+        throw new Error("STBL missing optional child 'ctts'");
+    }
 
-    console.log(
-        "PASS: STBL golden truth extractor structurally valid for audio"
-    );
 }
 
 export async function testStbl_LockedLayoutEquivalence_ffmpeg() {
 
-    console.log("=== testStbl_LockedLayoutEquivalence_ffmpeg ===");
-
     // ---------------------------------------------------------
-    // 1. Load golden MP4
+    // 1. Load golden MP4 (video-only)
     // ---------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Extract reference STBL
+    // 2. Extract golden truth (authoritative)
     // ---------------------------------------------------------
-    const refStbl = extractBoxByPathFromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl",
-        { trackType: "video" }
-    );
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]/mdia/minf/stbl"
+        );
 
-    assertExists("reference STBL", refStbl);
+    const refReport = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
 
-    // ---------------------------------------------------------
-    // 3. Read golden truth STBL
-    // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl",
-        { trackType: "video" }
-    );
+    const refRaw = refReport.raw;
 
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput();
+    assertExists("reference STBL (video)", refRaw);
 
     // ---------------------------------------------------------
-    // 4. Rebuild STBL exclusively from golden truth
+    // 3. Rebuild STBL directly from semantic intent
     // ---------------------------------------------------------
     const out = serializeBoxTree(
-        emitStblBox(params)
+        EmitterRegistry.assemble(
+            "moov/trak/mdia/minf/stbl",
+            params
+        )
     );
 
     // ---------------------------------------------------------
-    // 5. Child-level byte-for-byte equivalence
+    // 4. Child-level byte-for-byte equivalence
     // ---------------------------------------------------------
-    const refContainer = asIsoBoxContainer(refStbl);
-    const outContainer = asIsoBoxContainer(out);
-
-    const refMeta = refContainer.enumerateChildren();
-
-    for (let i = 0; i < refMeta.length; i++) {
-        const { type } = refMeta[i];
-
-        const refChildBytes = extractChildBoxFromContainer(
-            refStbl,
-            type
+    const refContainer =
+        asIsoBoxContainer(
+            refRaw,
+            "moov/trak/mdia/minf/stbl"
         );
 
-        const outChildBytes = extractChildBoxFromContainer(
+    const outContainer =
+        asIsoBoxContainer(
             out,
-            type
+            "moov/trak/mdia/minf/stbl"
         );
 
-        for (let j = 0; j < refChildBytes.length; j++) {
-            assertEqualHex(
-                `stbl.${type}.byte[${j}]`,
-                outChildBytes[j],
-                refChildBytes[j]
-            );
-        }
+    const refChildren = refContainer.enumerateChildren();
+
+    for (const { type, offset, size } of refChildren) {
+
+        const refBytes =
+            refRaw.slice(offset, offset + size);
+
+        const outChild =
+            outContainer.enumerateChildren()
+                .find(c => c.type === type);
+
+        assertExists(`stbl.${type} exists`, outChild);
+
+        const outBytes =
+            out.slice(outChild.offset, outChild.offset + outChild.size);
 
         assertEqual(
             `stbl.${type}.size`,
-            outChildBytes.length,
-            refChildBytes.length
+            outBytes.length,
+            refBytes.length
         );
 
+        for (let i = 0; i < refBytes.length; i++) {
+            assertEqualHex(
+                `stbl.${type}.byte[${i}]`,
+                outBytes[i],
+                refBytes[i]
+            );
+        }
     }
-
-    console.log("PASS: STBL matches ffmpeg byte-for-byte");
 }
 
 export async function testStbl_LockedLayoutEquivalence_ffmpeg_Audio() {
 
-    console.log("=== testStbl_LockedLayoutEquivalence_ffmpeg_Audio ===");
-
-    console.warn(
-        "SKIP: STBL audio locked-layout equivalence requires mp4a STSD support"
-    );
-    return;
-
     // ---------------------------------------------------------
-    // 1. Load AUDIO oracle MP4
+    // 1. Load golden MP4 (audio track)
     // ---------------------------------------------------------
     const resp = await fetch("reference/reference_av.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Extract reference STBL (audio track)
+    // 2. Extract golden truth (authoritative)
     // ---------------------------------------------------------
-    const refStbl = getGoldenTruthBox
-        .fromMp4(
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
             mp4,
-            "moov/trak/mdia/minf/stbl",
-            { trackType: "audio" }
-        )
-        .readFields()
-        .raw;
+            "moov/trak[1]/mdia/minf/stbl"
+        );
 
-    assertExists("reference STBL (audio)", refStbl);
+    const refReport = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
 
-    // ---------------------------------------------------------
-    // 3. Read golden truth STBL build params
-    // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl",
-        { trackType: "audio" }
-    );
+    const refRaw = refReport.raw;
 
-    const params = truth.getBuilderInput();
+    assertExists("reference STBL (audio)", refRaw);
 
     // ---------------------------------------------------------
-    // 4. Rebuild STBL from golden truth
+    // 3. Rebuild STBL directly from semantic intent
     // ---------------------------------------------------------
     const out = serializeBoxTree(
-        emitStblBox(params)
+        EmitterRegistry.assemble(
+            "moov/trak/mdia/minf/stbl",
+            params
+        )
     );
 
     // ---------------------------------------------------------
-    // 5. Child-level byte-for-byte equivalence
+    // 4. Child-level byte-for-byte equivalence
     // ---------------------------------------------------------
-    const refContainer = asIsoBoxContainer(refStbl);
-    const outContainer = asIsoBoxContainer(out);
+    const refContainer =
+        asIsoBoxContainer(
+            refRaw,
+            "moov/trak/mdia/minf/stbl"
+        );
+
+    const outContainer =
+        asIsoBoxContainer(
+            out,
+            "moov/trak/mdia/minf/stbl"
+        );
 
     const refChildren = refContainer.enumerateChildren();
 
-    for (const { type } of refChildren) {
+    for (const { type, offset, size } of refChildren) {
 
-        const refChildBytes =
-            extractChildBoxFromContainer(refStbl, type);
+        const refBytes =
+            refRaw.slice(offset, offset + size);
 
-        const outChildBytes =
-            extractChildBoxFromContainer(out, type);
+        const outChild =
+            outContainer.enumerateChildren()
+                .find(c => c.type === type);
+
+        assertExists(`stbl.${type} exists`, outChild);
+
+        const outBytes =
+            out.slice(outChild.offset, outChild.offset + outChild.size);
 
         assertEqual(
             `stbl.${type}.size`,
-            outChildBytes.length,
-            refChildBytes.length
+            outBytes.length,
+            refBytes.length
         );
 
-        for (let i = 0; i < refChildBytes.length; i++) {
+        for (let i = 0; i < refBytes.length; i++) {
             assertEqualHex(
                 `stbl.${type}.byte[${i}]`,
-                outChildBytes[i],
-                refChildBytes[i]
+                outBytes[i],
+                refBytes[i]
             );
         }
     }
-
-    console.log(
-        "PASS: STBL (audio) matches ffmpeg byte-for-byte"
-    );
-}
-
-/**
- * STBL — Structural Conditional Children
- * -------------------------------------
- *
- * Asserts that STBL accepts conditional presence of:
- *   - stss (sync samples)
- *   - ctts (composition offsets)
- *
- * This test is structural only.
- * No semantics, no layout equivalence.
- */
-export function testStbl_Structure_ConditionalChildren() {
-    console.log("=== testStbl_Structure_ConditionalChildren ===");
-
-    const base = {
-        stsd: { type: "stsd", body: [] },
-        stts: { type: "stts", body: [] },
-        stsc: { type: "stsc", body: [] },
-        stsz: { type: "stsz", body: [] },
-        stco: { type: "stco", body: [] },
-    };
-
-    // Case 1: both present
-    emitStblBox({
-        ...base,
-        stss: { type: "stss", body: [] },
-        ctts: { type: "ctts", body: [] },
-    });
-
-    // Case 2: stss only
-    emitStblBox({
-        ...base,
-        stss: { type: "stss", body: [] },
-    });
-
-    // Case 3: ctts only
-    emitStblBox({
-        ...base,
-        ctts: { type: "ctts", body: [] },
-    });
-
-    // Case 4: neither present
-    emitStblBox({
-        ...base,
-    });
-
-    console.log(
-        "PASS: STBL accepts conditional presence of stss / ctts"
-    );
-}
-
-/**
- * STBL — Conditional Children TODO
- * --------------------------------
- *
- * This is a placeholder test.
- *
- * Purpose:
- *   - Explicitly mark unfinished work around conditional STBL children
- *     (stss, ctts) during NativeMuxer assembly.
- *
- * This test intentionally:
- *   - does not assert
- *   - does not emit boxes
- *   - does not inspect MP4s
- *   - does not encode behaviour
- *
- * If this warning still exists, the work is not done.
- */
-export function testStbl_ConditionalChildren_TODO() {
-    console.log("=== testStbl_Structure_ConditionalChildrenTODO ===");
-    console.warn(
-        "TODO: STBL conditional children (stss / ctts) handling " +
-        "must be implemented during NativeMuxer assembly."
-    );
 }

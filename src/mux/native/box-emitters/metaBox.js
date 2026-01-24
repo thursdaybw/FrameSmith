@@ -25,8 +25,7 @@
  *
  * This box is a pure structural boundary.
  */
-export function emitMetaBox(params) {
-
+function emitMetaBox(params) {
     // ---------------------------------------------------------
     // Parameter validation
     // ---------------------------------------------------------
@@ -63,4 +62,11 @@ export function emitMetaBox(params) {
             ilst
         ]
     };
+}
+
+export function registerMetaEmitter(registry) {
+    registry.registerEmitter(
+        "moov/udta/meta",
+        emitMetaBox
+    );
 }
