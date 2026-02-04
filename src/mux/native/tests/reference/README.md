@@ -142,6 +142,54 @@ ffmpeg \
   reference_av.mp4
 ```
 
+## **Generate the audio with Opus codec reference MP4 with FFmpeg**
+
+```
+ffmpeg -f lavfi -i sine=frequency=440:duration=5 \
+  -c:a libopus \
+  -ar 48000 \
+  -ac 2 \
+  -movflags +faststart \
+  opus_oracle.mp4
+
+```
+
+## **Generate the video & audio with Opus codec reference MP4 with FFmpeg**
+```
+ffmpeg \
+  -f lavfi -i color=c=black:s=128x128:r=30:d=5 \
+  -f lavfi -i sine=frequency=440:sample_rate=48000:d=5 \
+  -c:v libx264 \
+  -pix_fmt yuv420p \
+  -profile:v baseline \
+  -level 3.0 \
+  -g 30 \
+  -keyint_min 30 \
+  -sc_threshold 0 \
+  -c:a libopus \
+  -ar 48000 \
+  -ac 2 \
+  -b:a 128k \
+  -movflags +faststart \
+  -shortest \
+  reference_av_opus.mp4
+```
+
+Normalize the Opus packetization so STCO can be derived from WebCodecs-shaped access units
+This modifies the layout fo the STSZ to produce a constant sample size.
+```
+# extract the audio track (opus) as PCM/WAV
+ffmpeg -i reference_av_opus.mp4 -map 0:a:0 -c:a pcm_s16le reference_av_opus.wav
+
+# re-encode opus with fixed-size packets (WebCodecs-friendly)
+opusenc --framesize 20 --hard-cbr reference_av_opus.wav reference_av_opus.opus 
+
+# now mux the rencoded opus audio into the reference mp4
+ffmpeg -y -i reference_av_opus.mp4 -i reference_av_opus.opus -map 0:v:0 -map 1:a:0 -c:v copy -c:a copy -movflags +faststart reference_av_opus_remuxed.mp4
+
+# now replace the original oracle.
+mv reference_av_opus_remuxed.mp4 reference_av_opus.mp4
+```
 ---
 
 ## **Step 2 — Extract each box into fixtures**

@@ -73,4 +73,9 @@ export function registerBtrtEmitter(registry) {
         "moov/trak/mdia/minf/stbl/stsd|mp4a/btrt",
         emitBtrtBox
     );
+
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsd|Opus/btrt",
+        emitBtrtBox
+    );
 }

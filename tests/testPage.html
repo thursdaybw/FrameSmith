@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<button id="go">Generate H264</button>
+
+<script>
+function downloadBlob(blob, filename) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+document.getElementById("go").onclick = async () => {
+
+    const width = 320;
+    const height = 240;
+
+    // Create an OffscreenCanvas for drawing
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext("2d");
+
+    // Prepare encoder
+    const encoder = new VideoEncoder({
+        output: handleChunk,
+        error: (e) => console.error("ENCODER ERROR:", e)
+    });
+
+    encoder.configure({
+        codec: "avc1.42E01E",   // Baseline H.264
+        width,
+        height,
+        bitrate: 500000,
+        framerate: 2,
+        avc: { format: "annexb" }   // CRITICAL: ffmpeg wants Annex B NALU format
+    });
+
+    const chunks = [];
+
+    function handleChunk(chunk) {
+        const u8 = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(u8);
+        chunks.push(u8);
+    }
+
+    let timestamp = 0;
+
+    // Generate a few test frames with numbers on them
+    for (let i = 0; i < 30; i++) {
+        ctx.fillStyle = "rgb(" + (i*8 % 255) + ", 50, 120)";
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.fillStyle = "white";
+        ctx.font = "40px sans-serif";
+        ctx.fillText("Frame " + i, 50, 120);
+
+        const frame = new VideoFrame(canvas, { timestamp });
+        encoder.encode(frame);
+        frame.close();
+
+        timestamp += 33333; // 30fps in microseconds
+    }
+
+    await encoder.flush();
+
+    // Build final H.264 file
+    const blob = new Blob(chunks, { type: "video/h264" });
+    downloadBlob(blob, "simple_test.h264");
+};
+</script>
+
+</body>
+</html>

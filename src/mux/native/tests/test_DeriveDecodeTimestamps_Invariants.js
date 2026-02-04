@@ -1,7 +1,6 @@
 import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
 
-import { deriveDecodeTimestampsInPlace }
-    from "../derivers/deriveDecodeTimestampsInPlace.js";
+import { deriveDecodeTimestampsInPlace } from "../derivers/deriveDecodeTimestampsInPlace.js";
 
 import { DecodeOrderStrategies }
     from "../derivers/strategies/decodeOrderStrategies.js";

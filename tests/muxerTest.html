@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h1>Mp4BoxMuxer Test</h1>
+<button id="run">Run Test</button>
+
+<script src="../vendor/mp4box.js/dist/mp4box.all.global.js"></script>
+
+
+<script type="module">
+import { runMuxerTest } from "./muxerTest.js";
+
+document.getElementById("run").onclick = () => {
+    runMuxerTest();
+};
+</script>
+
+</body>
+</html>

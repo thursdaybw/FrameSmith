@@ -9,7 +9,8 @@ export async function runWebCodecsRunner({
     height,
     bitrate,
     framerate,
-    frames
+    frames,
+    mediaRecorderSink // OPTIONAL
 }) {
     const encodedChunks = [];
     let decoderConfig = null;
@@ -42,11 +43,39 @@ export async function runWebCodecsRunner({
     // Pass totalFrames explicitly when calling runWebCodecsRunner
     const totalFrames = frames.totalFrames;
 
+    let frameDurationMs;
+    let lastFrameWallClockMs;
+
+    if (mediaRecorderSink) {
+        frameDurationMs = 1000 / framerate;
+        lastFrameWallClockMs = performance.now();
+    }
+
     for (const frame of frames) {
+
+        if (mediaRecorderSink) {
+            const nowMs = performance.now();
+            const elapsedMs = nowMs - lastFrameWallClockMs;
+
+            if (elapsedMs < frameDurationMs) {
+                await new Promise(r =>
+                    setTimeout(r, frameDurationMs - elapsedMs)
+                );
+            }
+
+            lastFrameWallClockMs = performance.now();
+        }
 
         // --- backpressure ---
         while (encoder.encodeQueueSize > 30) {
             await new Promise(r => setTimeout(r, 0));
+        }
+
+        // -------------------------------------------------
+        // OPTIONAL parallel sink (e.g. MediaRecorder)
+        // -------------------------------------------------
+        if (mediaRecorderSink) {
+            mediaRecorderSink.draw(frame);
         }
 
         encoder.encode(frame);

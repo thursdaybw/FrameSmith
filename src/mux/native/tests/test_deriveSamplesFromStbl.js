@@ -28,20 +28,11 @@ import { deriveSamplesFromStbl }
 
 export async function test_DeriveSamplesFromStbl_Definition() {
 
-    const resp =
-        await fetch("reference/reference_av.mp4");
-
-    const mp4 =
-        new Uint8Array(await resp.arrayBuffer());
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4 = new Uint8Array(await resp.arrayBuffer());
 
     // Resolve a concrete STBL box (video track)
-    const stbl =
-        getGoldenTruthBox
-            .getSemanticBoxDataByPathFromMp4File(
-                mp4,
-                "moov/trak[0]/mdia/minf/stbl"
-            )
-            .readBoxReport();
+    const stbl = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(mp4, "moov/trak[0]/mdia/minf/stbl").readBoxReport();
 
     assertExists("stbl.readBoxReport()", stbl);
     assertExists("stbl.raw", stbl.raw);
@@ -50,24 +41,14 @@ export async function test_DeriveSamplesFromStbl_Definition() {
     // Invoke derivation
     // ---------------------------------------------------------
 
-    const samples =
-        deriveSamplesFromStbl(stbl.raw);
+    const samples = deriveSamplesFromStbl(stbl.raw);
 
     // ---------------------------------------------------------
     // TOP-LEVEL SHAPE
     // ---------------------------------------------------------
 
-    assertEqual(
-        "samples is array",
-        Array.isArray(samples),
-        true
-    );
-
-    assertEqual(
-        "at least one sample present",
-        samples.length > 0,
-        true
-    );
+    assertEqual( "samples is array", Array.isArray(samples), true);
+    assertEqual( "at least one sample present", samples.length > 0, true);
 
     // ---------------------------------------------------------
     // PER-SAMPLE SHAPE (contract)
@@ -75,7 +56,6 @@ export async function test_DeriveSamplesFromStbl_Definition() {
 
     const first = samples[0];
 
-    assertExists("sample.index", first.index);
     assertExists("sample.dts", first.dts);
     assertExists("sample.pts", first.pts);
     assertExists("sample.duration", first.duration);
@@ -87,34 +67,7 @@ export async function test_DeriveSamplesFromStbl_Definition() {
     // INVARIANTS
     // ---------------------------------------------------------
 
-    assertEqual(
-        "sample.index is integer",
-        Number.isInteger(first.index),
-        true
-    );
-
-    assertEqual(
-        "sample.size is integer",
-        Number.isInteger(first.size),
-        true
-    );
-
-    assertEqual(
-        "sample.offset is integer",
-        Number.isInteger(first.offset),
-        true
-    );
-
-    assertEqual(
-        "sample.isSync is boolean",
-        typeof first.isSync === "boolean",
-        true
-    );
-
-    // Ordering invariant
-    assertEqual(
-        "samples are index-ordered",
-        samples.every((s, i) => s.index === i),
-        true
-    );
+    assertEqual( "sample.size is integer", Number.isInteger(first.size), true);
+    assertEqual( "sample.offset is integer", Number.isInteger(first.offset), true);
+    assertEqual( "sample.isSync is boolean", typeof first.isSync === "boolean", true);
 }

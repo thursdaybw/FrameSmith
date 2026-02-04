@@ -1,3 +1,15 @@
+
+import {
+    applyAvcCContainerPolicySemantic,
+    applyAvcCContainerPolicyContainerComplete
+} from "../policies/applyAvcCContainerPolicy.js";
+
+import { applyPaspContainerPolicy } from "../policies/applyPaspContainerPolicy.js";
+
+import { applyBtrtContainerPolicy } from "../policies/applyBtrtContainerPolicy.js";
+
+import { applyCompressorNamePolicy } from "../policies/applyCompressorNamePolicy.js";
+
 export function adaptCodecConfigurationToStsdParams(codecConfiguration) {
 
     // ---------------------------------------------------------
@@ -91,35 +103,49 @@ export function adaptCodecConfigurationToStsdParams(codecConfiguration) {
     }
 
     // ---------------------------------------------------------
-    // codec → MP4 sample entry mapping
+    // AVC1 container policy (adapter-owned)
     // ---------------------------------------------------------
-    let sampleEntryType;
+    let avcCOut;
 
-    if (codecConfiguration.codec.startsWith("avc1")) {
-        sampleEntryType = "avc1";
+    if (codecConfiguration.avcCCompleteness === "semantic") {
+        avcCOut = applyAvcCContainerPolicySemantic({
+            avcC: codecConfiguration.avcC,
+            profileIndication: codecConfiguration.avcC[1],
+        });
     } else {
-        throw new Error(
-            [
-                "adaptCodecConfigurationToStsdParams: unsupported codec",
-                "",
-                `Received: ${codecConfiguration.codec}`,
-                "",
-                "Expected an RFC 6381 codec string compatible with MP4 emission.",
-                "Currently supported:",
-                "  - avc1 (H.264)"
-            ].join("\n")
-        );
+        avcCOut = applyAvcCContainerPolicyContainerComplete({
+            avcC: codecConfiguration.avcC,
+        });
     }
 
+    const pasp = applyPaspContainerPolicy({
+        pasp: codecConfiguration.pasp,
+    });
+
+    const btrt = applyBtrtContainerPolicy({ btrt: codecConfiguration?.btrt })
+
+    // =====================================================================
+    // Tier 4 — Container Policies (declared early for adapter consumption)
+    // =====================================================================
+    const compressorName = applyCompressorNamePolicy({ compressorName: codecConfiguration.compressorName });
+
     // ---------------------------------------------------------
-    // Emit-ready params (container-facing)
+    // Emit-ready STSD params (container-facing)
     // ---------------------------------------------------------
     return {
-        codec: sampleEntryType,
+        codec: "avc1",
+
         width: codecConfiguration.width,
         height: codecConfiguration.height,
-        compressorName: codecConfiguration.compressorName,
-        avcC: new Uint8Array(codecConfiguration.avcC)
+        compressorName: compressorName, 
+
+        // Optional container compatibility
+        pasp: pasp,
+
+        btrt: btrt,
+
+        // Mandatory AVC container compatibility
+        avcC: avcCOut,
     };
 
 }

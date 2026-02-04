@@ -37,6 +37,7 @@ import { registerUdtaGoldenTruthExtractor } from "./udta.goldenTruthExtractor.js
 import { registerMoovGoldenTruthExtractor } from "./moov.goldenTruthExtractor.js";
 import { registerFreeGoldenTruthExtractor } from "./free.goldenTruthExtractor.js";
 import { registerEsdsGoldenTruthExtractor } from "./esds.goldenTruthExtractor.js";
+import { registerDOpsGoldenTruthExtractor } from "./dOps.goldenTruthExtractor.js";
 import { registerSbgpGoldenTruthExtractor } from "./sbgp.goldenTruthExtractor.js";
 import { registerSgpdGoldenTruthExtractor } from "./sgpd.goldenTruthExtractor.js";
 import { registerSmhdGoldenTruthExtractor } from "./smhd.goldenTruthExtractor.js";
@@ -46,6 +47,7 @@ import { registerStsdGoldenTruthExtractor } from "./stsd.goldenTruthExtractor.js
 
 import { registerAvc1SampleEntryGoldenTruthExtractor } from "./avc1-sample-entry.goldenTruthExtractor.js";
 import { registerMp4aSampleEntryGoldenTruthExtractor } from "./mp4a-sample-entry.goldenTruthExtractor.js";
+import { registerOpusSampleEntryGoldenTruthExtractor } from "./Opus-sample-entry.goldenTruthExtractor.js";
 
 export const EXTRACTOR_WIRING = [
     ["mdat",                                    registerMdatGoldenTruthExtractor],
@@ -85,6 +87,7 @@ export const EXTRACTOR_WIRING = [
     // SampleEntry roots (SampleEntry schema space)
     ["moov/trak/mdia/minf/stbl/stsd|avc1", registerAvc1SampleEntryGoldenTruthExtractor],
     ["moov/trak/mdia/minf/stbl/stsd|mp4a", registerMp4aSampleEntryGoldenTruthExtractor],
+    ["moov/trak/mdia/minf/stbl/stsd|Opus", registerOpusSampleEntryGoldenTruthExtractor],
 
     // SampleEntry child boxes (ISO boxes under SampleEntry schema)
     ["moov/trak/mdia/minf/stbl/stsd|avc1/avcC", registerAvcCGoldenTruthExtractor],
@@ -92,6 +95,8 @@ export const EXTRACTOR_WIRING = [
     ["moov/trak/mdia/minf/stbl/stsd|avc1/pasp", registerPaspGoldenTruthExtractor],
     ["moov/trak/mdia/minf/stbl/stsd|mp4a/esds", registerEsdsGoldenTruthExtractor],
     ["moov/trak/mdia/minf/stbl/stsd|mp4a/btrt", registerBtrtGoldenTruthExtractor],
+    ["moov/trak/mdia/minf/stbl/stsd|Opus/dOps", registerDOpsGoldenTruthExtractor],
+    ["moov/trak/mdia/minf/stbl/stsd|Opus/btrt", registerBtrtGoldenTruthExtractor],
 
     // ---------------------------------------------------------------------------
     // NON-TRAVERSABLE SEMANTIC REGISTRATIONS

@@ -238,7 +238,7 @@ function assertReadFieldsShape(result, path) {
         );
     }
 
-    const allowedKeys = ["raw", "box", "derived"];
+    const allowedKeys = ["raw", "box", "derived", "diagnostics"];
     const actualKeys = Object.keys(result);
 
     for (const key of actualKeys) {

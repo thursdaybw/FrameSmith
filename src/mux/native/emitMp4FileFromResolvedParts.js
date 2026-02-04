@@ -2,8 +2,6 @@ import { serializeBoxTree } from "./serializer/serializeBoxTree.js";
 import { EmitterRegistry } from "./box-emitters/EmitterRegistry.js";
 import { assertEqual, assertEqualHex } from "./tests/assertions.js";
 
-
-
 const ALLOWED_KEYS = [
     "ftypNode",
     "committedMoovNode",
@@ -150,6 +148,7 @@ export function emitMp4FileFromResolvedParts(params) {
 
         if (boxType === "moov") {
 
+            console.log("moov DSL node", ); 
             parts.push(serializeBoxTree(committedMoovNode));
             continue;
         }

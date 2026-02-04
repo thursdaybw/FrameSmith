@@ -1,7 +1,10 @@
 import { extractSemanticAccessUnitsFromMp4 } from "../reference/extractSemanticAccessUnitsFromMp4.js";
 
-import { extractAccessUnitPayloadsFromMp4 }
-    from "../reference/extractAccessUnitPayloadsFromMp4.js";
+import { extractAccessUnitPayloadsFromMp4 } from "../reference/extractAccessUnitPayloadsFromMp4.js";
+
+import { extractTrackDurationFromOracleStts }
+    from "../reference/extractTrackDurationFromOracleStts.js";
+
 
 import {
     extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex
@@ -30,14 +33,17 @@ export async function runGoldenMp4AVTestClient({ mp4Bytes }) {
         throw new Error("GoldenMp4AVTestClient: mp4Bytes must be Uint8Array");
     }
 
+    const audioCodecConfiguration = extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 1 });
+
     const videoTrack = extractVideoTrackFromMp4({ mp4Bytes });
     const audioTrack = extractAudioTrackFromMp4({ mp4Bytes });
 
     const buildHints = {};
-/*
- * todo: this is supported, just need a decisoin here. this
- * is a testinig policy desicion, pass in opaque udta (remux style)
- * or pass ion the semantics
+
+    /*
+     * todo: this is supported, just need a decisoin here. this
+     * is a testinig policy desicion, pass in opaque udta (remux style)
+     * or pass ion the semantics
     const udtaBytes = extractOpaqueUserDataFromMp4UsingRootContainer({
         mp4Bytes
     });
@@ -45,7 +51,7 @@ export async function runGoldenMp4AVTestClient({ mp4Bytes }) {
     if (udtaBytes instanceof Uint8Array) {
         buildHints.udtaBytes = udtaBytes;
     }
-*/
+    */
 
     const udtaIntent = extractUdtaIntentFromMp4({ mp4Bytes });
 
@@ -55,9 +61,28 @@ export async function runGoldenMp4AVTestClient({ mp4Bytes }) {
 
     const semanticHints = extractMovieTimingHintsFromMp4({ mp4Bytes });
 
-    buildHints.compressorName = getGoldenTruthBox
-            .getSemanticBoxDataByPathFromMp4File(mp4Bytes, "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]")
-            .getEmitterInput().compressorName;
+    /* This is not good, out of context, there is no mp4CompilerState or tracks available directly.
+     * and there is already an  extractMovieTimingHintsFromMp4.
+    mp4CompilerState.semanticHints = mp4CompilerState.semanticHints ?? {};
+    mp4CompilerState.semanticHints.movieDuration = mp4CompilerState.tracks[0]?.semanticHints?.inputTrackDurationInTrackTimescale;
+
+    if (!Number.isInteger(mp4CompilerState.semanticHints.movieDuration)) {
+        throw new Error(
+            "runGoldenMp4AVTestClient: missing inputTrackDurationInTrackTimescale"
+        );
+    }
+    */
+
+    if ( audioTrack.semanticCore.codec.codec == "opus") {
+        const trackDurationInTrackTimescale = extractTrackDurationFromOracleStts({ mp4Bytes, zeroBasedTrackIndex: 0 });
+
+        videoTrack.semanticHints.inputTrackDurationInMovieTimescale =
+            Math.round(
+                trackDurationInTrackTimescale *
+                semanticHints.movieTimescale /
+                videoTrack.buildParameters.trackTimescale
+            );
+    }
 
     return {
         tracks: [
@@ -84,17 +109,10 @@ function extractUdtaIntentFromMp4({ mp4Bytes }) {
 // Track extraction helpers
 // -----------------------------------------------------------------------------
 
-function extractVideoTrackFromMp4({ mp4Bytes }) {
+function extractVideoTrackFromMp4({ mp4Bytes, audioCodecName }) {
 
-    const accessUnits = extractSemanticAccessUnitsFromMp4({
-        mp4Bytes,
-        trackIndex: 0
-    });
-
-    const accessUnitPayloads = extractAccessUnitPayloadsFromMp4({
-        mp4Bytes,
-        trackIndex: 0
-    });
+    const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes, trackIndex: 0 });
+    const accessUnitPayloads = extractAccessUnitPayloadsFromMp4({ mp4Bytes, trackIndex: 0 });
 
     if (!Array.isArray(accessUnits) || accessUnits.length === 0) {
         throw new Error("GoldenMp4AVTestClient: no video accessUnits extracted");
@@ -108,32 +126,25 @@ function extractVideoTrackFromMp4({ mp4Bytes }) {
         throw new Error("GoldenMp4AVTestClient: video sample/payload count mismatch");
     }
 
-    const codec = extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({
-            mp4Bytes,
-            zeroBasedTrackIndex: 0
-        });
 
-    const buildParameters = extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex({
-            mp4Bytes,
-            zeroBasedTrackIndex: 0
-        });
+    const codec = extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 0 });
+
+    const buildParameters = extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 0 });
 
     const buildHints = {};
 
-    const syncRepresentation = extractSyncRepresentationBuildHint({
-            mp4Bytes,
-            zeroBasedTrackIndex: 0
-        });
+    buildHints.compressorName = getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(mp4Bytes, "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]")
+            .getEmitterInput().compressorName;
+
+    const syncRepresentation = extractSyncRepresentationBuildHint({ mp4Bytes, zeroBasedTrackIndex: 0 });
 
     if (syncRepresentation !== undefined) {
         buildHints.syncRepresentation = syncRepresentation;
     }
 
     // Optional container compatibility hints (oracle passthrough)
-    const pasp = extractPixelAspectRatioFromMp4UsingZeroBasedTrackIndex({
-        mp4Bytes,
-        zeroBasedTrackIndex: 0
-    });
+    const pasp = extractPixelAspectRatioFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 0 });
 
     if (pasp !== undefined) {
         buildHints.pasp = pasp;
@@ -145,8 +156,17 @@ function extractVideoTrackFromMp4({ mp4Bytes }) {
         buildHints.btrt = btrt;
     }
 
+    const semanticHints = {};
+
+    semanticHints.edits = {
+        elst: getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4Bytes,
+            `moov/trak[0]/edts/elst`
+        ).getEmitterInput()
+    };
+
     // HARD-CODE oracle chunking for now
-    buildHints.chunkingStrategy = "one-sample-per-chunk";
+    //buildHints.chunkingStrategy = "one-sample-per-chunk";
 
     return {
         semanticCore: {
@@ -160,34 +180,25 @@ function extractVideoTrackFromMp4({ mp4Bytes }) {
 
         buildParameters,
 
-        buildHints
+        buildHints,
+
+        semanticHints,
     };
 }
 
 function extractAudioTrackFromMp4({ mp4Bytes }) {
 
-    const accessUnits = extractSemanticAccessUnitsFromMp4({
-        mp4Bytes,
-        trackIndex: 1
-    });
+    const codecConfig = extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 1 });
+    const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes, trackIndex: 1, });
+    const accessUnitPayloads = extractAccessUnitPayloadsFromMp4({ mp4Bytes, trackIndex: 1, });
 
-    const accessUnitPayloads = extractAccessUnitPayloadsFromMp4({
-        mp4Bytes,
-        trackIndex: 1
-    });
-
-    if (!Array.isArray(accessUnits) || accessUnits.length === 0) {
+    if (!Array.isArray(accessUnits) || accessUnits.length === 0 || accessUnits == undefined) {
         throw new Error("GoldenMp4AVTestClient: no audio accessUnits extracted");
     }
 
-    if (accessUnits.length !== accessUnitPayloads.length) {
+    if (accessUnits.length !== accessUnitPayloads.length || accessUnitPayloads == undefined) {
         throw new Error("GoldenMp4AVTestClient: audio sample/payload count mismatch");
     }
-
-    const codecConfig = extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({
-            mp4Bytes,
-            zeroBasedTrackIndex: 1
-        });
 
     const buildParameters = extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 1 });
 
@@ -202,7 +213,7 @@ function extractAudioTrackFromMp4({ mp4Bytes }) {
 
     const semanticHints = {};
 
-    semanticHints.packetRuns = derivePacketRunsFromOracleStsc({ mp4Bytes, zeroBasedTrackIndex: 1 });
+    semanticHints.inputTrackDurationInTrackTimescale = extractTrackDurationFromOracleStts({ mp4Bytes, zeroBasedTrackIndex: 1 });
 
     /**
      * You can override the hdlr nameBytes for a track
@@ -230,19 +241,49 @@ function extractAudioTrackFromMp4({ mp4Bytes }) {
         buildHints.btrt = btrt;
     }
 
-    // HARD-CODE oracle chunking for now
-    //buildHints.chunkingStrategy = "all-samples-one-chunk";
-    buildHints.chunkingStrategy = "packetized";
+    semanticHints.edits = {
+        elst: getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4Bytes,
+            `moov/trak[1]/edts/elst`
+        ).getEmitterInput()
+    }
 
-    buildHints.sttsPolicy = "oracle-faithful";
+    const codec = { codec: codecConfig.codec, }  
+
+    if (codecConfig.codec == "opus") { 
+
+        buildHints.chunkingStrategy      = "ffmpeg-opus-packet-grouped";
+        buildHints.packetizationStrategy = "ffmpeg-opus-packetization";
+
+        semanticHints.authoritativeStszRepresentation = getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4Bytes,
+                "moov/trak[1]/mdia/minf/stbl/stsz"
+            )
+            .getEmitterInput();
+
+        codec.dOps = codecConfig.dOps;
+
+        semanticHints.encoderDelaySamples = deriveOpusEncoderDelaySamples({ accessUnits, codecConfig });
+
+    }
+    else if (codecConfig.codec == "mp4a") {
+        semanticHints.codecPacketRuns = deriveExpandedChunkSampleCounts({ mp4Bytes, zeroBasedTrackIndex: 1 });
+        codec.esds = codecConfig.esds;
+        semanticHints.encoderDelaySamples = extractAacEncoderDelaySamples(codecConfig.esds);
+
+    }
+    else {
+        throw new Error(
+            "extractAudioTrackFromMp4: Invalid codec" +
+            `Recieved ${codecConfig}`
+        );
+    }
 
     return {
         semanticCore: {
             accessUnits,
-            codec: {
-                codec: codecConfig.codec,
-                esds: codecConfig.esds
-            }
+            codec
         },
 
         payloads: {
@@ -442,11 +483,58 @@ function extractOptionalBtrtBuildHint({
     return btrt !== undefined ? btrt : undefined;
 }
 
-function derivePacketRunsFromOracleStsc({
+function deriveSttsFromOracleStts({
     mp4Bytes,
     zeroBasedTrackIndex
 }) {
 
+    if (!(mp4Bytes instanceof Uint8Array)) {
+        throw new Error("deriveSttsFromOracleStts: mp4Bytes must be Uint8Array");
+    }
+
+    if (!Number.isInteger(zeroBasedTrackIndex) || zeroBasedTrackIndex < 0) {
+        throw new Error(
+            "deriveSttsFromOracleStts: zeroBasedTrackIndex must be non-negative integer"
+        );
+    }
+
+    const sttsPath = `moov/trak[${zeroBasedTrackIndex}]/mdia/minf/stbl/stts`;
+
+    const sttsBox =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4Bytes,
+                sttsPath
+            )
+            .readBoxReport()
+            .box;
+
+    if (
+        !sttsBox.fields ||
+        !Array.isArray(sttsBox.fields.entries)
+    ) {
+        throw new Error(
+            "deriveSttsFromOracleStts: stts entries missing or invalid"
+        );
+    }
+
+    // Pass through verbatim — no interpretation
+    return {
+        entries: sttsBox.fields.entries.map(e => ({
+            sampleCount: e.sampleCount,
+            sampleDelta: e.sampleDelta
+        }))
+    };
+}
+
+function deriveExpandedChunkSampleCounts({
+    mp4Bytes,
+    zeroBasedTrackIndex
+}) {
+
+    // ---------------------------------------------------------
+    // 1. Read STSC
+    // ---------------------------------------------------------
     const stscPath =
         `moov/trak[${zeroBasedTrackIndex}]/mdia/minf/stbl/stsc`;
 
@@ -460,7 +548,50 @@ function derivePacketRunsFromOracleStsc({
             .box;
 
     const entries = stscBox.fields.entries;
-    const packetRuns = [];
+
+    // ---------------------------------------------------------
+    // 2. Read STCO / CO64 to get total chunk count
+    // ---------------------------------------------------------
+    const stcoPath =
+        `moov/trak[${zeroBasedTrackIndex}]/mdia/minf/stbl/stco`;
+    const co64Path =
+        `moov/trak[${zeroBasedTrackIndex}]/mdia/minf/stbl/co64`;
+
+    let totalChunkCount;
+
+    const stcoProbe =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4Bytes,
+                stcoPath
+            );
+
+    if (stcoProbe) {
+        totalChunkCount =
+            stcoProbe.readBoxReport().box.fields.chunkOffsets.length;
+    }
+    else {
+        const co64Probe =
+            getGoldenTruthBox
+                .getSemanticBoxDataByPathFromMp4File(
+                    mp4Bytes,
+                    co64Path
+                );
+
+        if (!co64Probe) {
+            throw new Error(
+                "deriveExpandedChunkSampleCounts: neither stco nor co64 found"
+            );
+        }
+
+        totalChunkCount =
+            co64Probe.readBoxReport().box.fields.chunkOffsets.length;
+    }
+
+    // ---------------------------------------------------------
+    // 3. Expand STSC → per-chunk sample counts
+    // ---------------------------------------------------------
+    const expanded = [];
 
     for (let i = 0; i < entries.length; i++) {
 
@@ -469,17 +600,70 @@ function derivePacketRunsFromOracleStsc({
 
         const firstChunk = entry.firstChunk;
         const nextFirstChunk =
-            nextEntry ? nextEntry.firstChunk : firstChunk + 1;
+            nextEntry ? nextEntry.firstChunk : (totalChunkCount + 1);
 
         const chunkCount = nextFirstChunk - firstChunk;
         const samplesPerChunk = entry.samplesPerChunk;
 
-        for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++) {
-            packetRuns.push({
-                samplesPerChunk
-            });
+        for (let j = 0; j < chunkCount; j++) {
+            expanded.push({ samplesPerChunk });
         }
     }
 
-    return packetRuns;
+    // ---------------------------------------------------------
+    // 4. Sanity check
+    // ---------------------------------------------------------
+    if (expanded.length !== totalChunkCount) {
+        throw new Error(
+            "deriveExpandedChunkSampleCounts: expanded chunk count mismatch\n" +
+            `expected=${totalChunkCount}, actual=${expanded.length}`
+        );
+    }
+
+    return expanded;
+}
+
+function extractAacEncoderDelaySamples(esdsBytes) {
+
+    if (!(esdsBytes instanceof Uint8Array)) {
+        throw new Error(
+            "extractAacEncoderDelaySamples: esdsBytes must be Uint8Array"
+        );
+    }
+
+    // ---------------------------------------------------------
+    // FFmpeg / AAC-LC observed behavior:
+    //
+    // - AAC-LC uses 1024 samples per frame
+    // - FFmpeg expresses this as encoder delay via ELST
+    //
+    // For the purposes of this compiler (oracle fidelity),
+    // this value is treated as a semantic fact.
+    // ---------------------------------------------------------
+
+    return 1024;
+}
+
+export function deriveOpusEncoderDelaySamples({ accessUnits, codecConfig }) {
+
+    // MP4 Opus: encoder delay comes from dOps.preSkip
+    if (codecConfig?.dOps instanceof Uint8Array) {
+        const preSkip =
+            (codecConfig.dOps[2] << 8) | codecConfig.dOps[3];
+
+        if (Number.isInteger(preSkip)) {
+            return preSkip;
+        }
+    }
+
+    // Legacy / fallback path (WebM-style)
+    const first = accessUnits?.[0];
+
+    if (Number.isInteger(first?.prerollSamples)) {
+        return first.prerollSamples;
+    }
+
+    throw new Error(
+        "deriveOpusEncoderDelaySamples: missing dOps.preSkip and prerollSamples"
+    );
 }

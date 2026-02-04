@@ -147,6 +147,21 @@ import { HEADER_LAYOUTS } from "./headerLayouts.js";
 * - Most terminal boxes rely on the default behavior and do not declare it
 * - Boxes like 'free' and 'skip' do not require this override, as they
 *   declare no fields and therefore forbid payload by default
+*
+| Schema type | Size (bytes) | DSL token | Notes                               |
+| ----------- | ------------ | --------- | ----------------------------------- |
+| `uint8`     | 1            | `byte`    | ✅ direct                            |
+| `int8`      | 1            | `byte`    | signedness irrelevant at byte level |
+| `uint16`    | 2            | `short`   | big-endian                          |
+| `int16`     | 2            | `short`   | big-endian                          |
+| `uint32`    | 4            | `int`     | big-endian                          |
+| `int32`     | 4            | `int`     | big-endian                          |
+| `fourcc`    | 4            | `type`    | literal `{ type: "abcd" }`          |
+| ----------- | ------------ | --------------------------------------------------------------- |
+| `uint8[]`   | 1            | `{ array: "byte", values }`                                     |
+| `uint16[]`  | 2            | `{ array: "short", values }`                                    |
+| `uint32[]`  | 4            | `{ array: "int", values }`                                      |
+| `opaque[]`  | 1 (bytes)    | `{ array: "byte", values }` (container-opaque, not interpreted) |
 */
 export const BOX_SCHEMAS = {
 
@@ -507,6 +522,11 @@ export const BOX_SCHEMAS = {
         headerLayout: "Basic",
         structuralRole: "container",
 
+        sampleEntry: {
+            fixedFieldsSize: 28,
+            childrenOffset: 36 // 8 (box header) + 28 (fixed fields)
+        },
+
         fields: {
             // reserved[6]
             reserved1: "uint8",
@@ -533,7 +553,7 @@ export const BOX_SCHEMAS = {
             sampleRate: "uint32"
         },
 
-        children: ["esds", "btrt?"]
+        children: ["esds?", "dOps?", "btrt?"]
     },
 
     "moov/trak/mdia/minf/stbl/stsd|mp4a/btrt": {
@@ -546,10 +566,208 @@ export const BOX_SCHEMAS = {
         }
     },
 
+    "moov/trak/mdia/minf/stbl/stsd|Opus/btrt": {
+        headerLayout: "Basic",
+        structuralRole: "terminal",
+        fields: {
+            bufferSizeDB: "uint32",
+            maxBitrate:   "uint32",
+            avgBitrate:   "uint32"
+        }
+    },
+
+    "moov/trak/mdia/minf/stbl/stsd|Opus": {
+        headerLayout: "Basic",
+        structuralRole: "container",
+
+        // Opus AudioSampleEntry uses the same fixed field layout as mp4a
+        sampleEntryFixedFieldsSize: 8,
+
+        sampleEntry: {
+            fixedFieldsSize: 28,
+            childrenOffset: 36   // 8 (box header) + 28 (fixed fields)
+        },
+/*
+
+| Field                | Size | Offset (from box body start) |
+| -------------------- | ---- | ---------------------------- |
+| reserved[6]          | 6    | 0                            |
+| data_reference_index | 2    | 6                            |
+| reserved[8]          | 8    | 8                            |
+| channelcount         | 2    | 16                           |
+| samplesize           | 2    | 18                           |
+| pre_defined          | 2    | 20                           |
+| reserved             | 2    | 22                           |
+| samplerate           | 4    | 24                           |
+*/
+        fieldsoff: {
+            reserved1:  "uint8",
+            f1:  "uint8",
+            f2:  "uint8",
+            f3:  "uint8",
+            f4:  "uint8",
+            f5:  "uint8",
+            f6:  "uint8",
+            f7:  "uint8",
+            f8:  "uint8",
+            f9:  "uint8",
+            f10: "uint8",
+            f11: "uint8",
+            f12: "uint8",
+            f13: "uint8",
+            f14: "uint8",
+            f15: "uint8",
+            f16: "uint8",
+            f17: "uint8",
+            f18: "uint8",
+            f19: "uint8",
+            f20: "uint8",
+            f21: "uint8",
+            f22: "uint8",
+            f23: "uint8",
+            f24: "uint8",
+            f25: "uint8",
+            f26: "uint8",
+            f27: "uint8",
+        },
+
+        fieldsOrigin: {
+            f0:  "uint8",
+            f1:  "uint8",
+            f2:  "uint8",
+            f3:  "uint8",
+            f4:  "uint8",
+            f5:  "uint8",
+            f6:  "uint8",
+            f7:  "uint8",
+            f8:  "uint8",
+            f9:  "uint8",
+            f10: "uint8",
+            f11: "uint8",
+            f12: "uint8",
+            f13: "uint8",
+            f14: "uint8",
+            f15: "uint8",
+            f16: "uint8",
+            f17: "uint8",
+            f18: "uint8",
+            f19: "uint8",
+            f20: "uint8",
+            f21: "uint8",
+            f22: "uint8",
+            f23: "uint8",
+            f24: "uint8",
+            f25: "uint8",
+            f26: "uint8",
+            f27: "uint8",
+        },
+
+/*
+| Schema type | Size (bytes) | DSL token | Notes                               |
+| ----------- | ------------ | --------- | ----------------------------------- |
+| `uint8`     | 1            | `byte`    | ✅ direct                            |
+| `int8`      | 1            | `byte`    | signedness irrelevant at byte level |
+| `uint16`    | 2            | `short`   | big-endian                          |
+| `int16`     | 2            | `short`   | big-endian                          |
+| `uint32`    | 4            | `int`     | big-endian                          |
+| `int32`     | 4            | `int`     | big-endian                          |
+| `fourcc`    | 4            | `type`    | literal `{ type: "abcd" }`          |
+*/
+
+        fieldsold: {
+            // reserved[6]
+            reserved1: "uint8",
+            reserved2: "uint8",
+            reserved3: "uint8",
+            reserved4: "uint8",
+            reserved5: "uint8",
+            reserved6: "uint8",
+            dataReferenceIndex: "uint16",
+            f8:  "uint8",
+            f9:  "uint8",
+            f10: "uint8",
+            f11: "uint8",
+            f12: "uint8",
+            f13: "uint8",
+            f14: "uint8",
+            f15: "uint8",
+            f16: "uint8",
+            f17: "uint8",
+            f18: "uint8",
+            f19: "uint8",
+            f20: "uint8",
+            f21: "uint8",
+            f22: "uint8",
+            f23: "uint8",
+            f24: "uint8",
+            f25: "uint8",
+            f26: "uint8",
+            f27: "uint8",
+        },
+        fields: {
+            // SampleEntry
+            reserved1: "uint8",
+            reserved2: "uint8",
+            reserved3: "uint8",
+            reserved4: "uint8",
+            reserved5: "uint8",
+            reserved6: "uint8",
+
+            dataReferenceIndex: "uint16",
+
+            // AudioSampleEntry reserved / pre_defined
+            reserved7: "uint32",
+            reserved8: "uint32",
+
+            // AudioSampleEntry fields
+            channelCount: "uint16",
+            sampleSize:   "uint16",
+            preDefined1:  "uint16",
+            preDefined2:  "uint16",
+
+            // sampleRate (16.16)
+            sampleRate: "uint32"
+        },
+
+        fieldsoff: {
+            reserved1: "uint8", // byte
+            reserved2: "uint8", // byte
+            reserved3: "uint8", // byte
+            reserved4: "uint8", // byte
+            reserved5: "uint8", // byte
+            reserved6: "uint8", // byte
+
+            // data_reference_index
+            dataReferenceIndex: "uint16", // short 
+
+            // reserved / pre_defined
+            reserved7: "uint32", // int
+            reserved8: "uint32", // int
+
+            // AudioSampleEntry fields
+            channelCount: "uint16", // short 
+            sampleSize:   "uint16", // short 
+            preDefined1:  "uint16", // short 
+            preDefined2:  "uint16", // short 
+
+            // sampleRate (16.16 fixed-point)
+            sampleRate: "uint32" // int
+        },
+
+
+
+        children: ["dOps?", "btrt?"]
+    },
 
     "moov/trak/mdia/minf/stbl/stsd|avc1": {
         headerLayout: "Basic",
         structuralRole: "container",
+
+        sampleEntry: {
+            fixedFieldsSize: 78,
+            childrenOffset: 86 // 8 (box header) + 78 (fixed fields)
+        },
+
         children: [
             "avcC",
             "btrt",
@@ -631,6 +849,14 @@ export const BOX_SCHEMAS = {
         }
     },
 
+    "moov/trak/mdia/minf/stbl/stsd|Opus/dOps": {
+        headerLayout: "Full",
+        structuralRole: "terminal",
+        opaque: true,
+        fields: {
+            opaquePayloadBytes: "uint8[]"
+        }
+    },
 
     // ---------------------------------------------------------------------
     // STBL terminal boxes (counted tables)
@@ -676,12 +902,10 @@ export const BOX_SCHEMAS = {
     },
 
     /**
-     * STSZ — Sample Size Box
+     * STSZ — Sample Size Box (extractor envelope)
      *
-     * Layout:
-     *   uint32 sampleSize
-     *   uint32 sampleCount
-     *   uint32[sampleCount] sizes
+     * This schema exists ONLY for extractor validation.
+     * Actual layout is selected via |fixed or |variable variants.
      */
     "moov/trak/mdia/minf/stbl/stsz": {
         headerLayout: "Full",
@@ -689,7 +913,33 @@ export const BOX_SCHEMAS = {
         fields: {
             sampleSize:  "uint32",
             sampleCount: "uint32",
+            sizes:       "opaque" // union envelope
+        }
+    },
+
+    // ---------------------------------------------------------
+    // STSZ — variable-size form (sampleSize == 0)
+    // ---------------------------------------------------------
+    "moov/trak/mdia/minf/stbl/stsz|variable": {
+        headerLayout: "Full",
+        structuralRole: "terminal",
+        fields: {
+            sampleSize:  "uint32",   // must be 0
+            sampleCount: "uint32",
             sizes:       "uint32[]"
+        }
+    },
+
+    // ---------------------------------------------------------
+    // STSZ — fixed-size form (sampleSize != 0)
+    // ---------------------------------------------------------
+    "moov/trak/mdia/minf/stbl/stsz|fixed": {
+        headerLayout: "Full",
+        structuralRole: "terminal",
+        fields: {
+            sampleSize:  "uint32",   // constant sample size
+            sampleCount: "uint32"
+            // no sizes table
         }
     },
 

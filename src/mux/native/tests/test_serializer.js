@@ -1,8 +1,8 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { readFourCC } from "../box-schema/boxLayoutReaders.js";
+
 export async function testSerializer() {
-    console.log("=== testSerializer ===");
 
     // -----------------------------------------------------------
     // 1. int field
@@ -259,5 +259,69 @@ export async function testSerializer() {
         );
     }
 
-    console.log("PASS: Serializer tests");
+    // -----------------------------------------------------------
+    // 12. accept opaque numeric flags ONLY when explicitly allowed
+    // -----------------------------------------------------------
+    //
+    // Some codec-owned FullBoxes (e.g. dOps) carry flags that are
+    // meaningful to the codec but opaque to MP4.
+    //
+    // The serializer must:
+    // - reject multi-bit numeric flags by default
+    // - accept them ONLY when the box explicitly opts in
+    //
+
+    let acceptedOpaqueFlags = false;
+
+    try {
+        serializeBoxTree({
+            type: "dOps",
+            version: 0,
+
+            // Codec-owned flags (not MP4 semantics)
+            flags: 0x020108,
+
+            // Explicit opt-in marker (to be implemented)
+            opaqueFlags: true,
+
+            body: [
+                { array: "byte", values: [1, 2, 3] }
+            ]
+        });
+
+        acceptedOpaqueFlags = true;
+    } catch (err) {
+        acceptedOpaqueFlags = false;
+    }
+
+    if (!acceptedOpaqueFlags) {
+        throw new Error(
+            "FAIL: serializer rejected opaque codec-owned flags " +
+            "despite explicit opt-in"
+        );
+    }
+
+    // -----------------------------------------------------------
+    // Control: still reject opaque flags without opt-in
+    // -----------------------------------------------------------
+
+    let rejectedWithoutOptIn = false;
+
+    try {
+        serializeBoxTree({
+            type: "dOps",
+            version: 0,
+            flags: 0x020108,
+            body: []
+        });
+    } catch {
+        rejectedWithoutOptIn = true;
+    }
+
+    if (!rejectedWithoutOptIn) {
+        throw new Error(
+            "FAIL: serializer accepted opaque flags without explicit opt-in"
+        );
+    }
+
 }

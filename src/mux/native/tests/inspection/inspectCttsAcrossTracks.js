@@ -8,7 +8,7 @@ export async function inspectCttsAcrossTracks() {
     console.log("=== CTTS TRACK PROBE ===");
 
     // Hard upper bound to avoid infinite probing
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 2; i++) {
 
         const trakPath = `moov/trak[${i}]`;
 
@@ -20,7 +20,7 @@ export async function inspectCttsAcrossTracks() {
         try {
             const hdlr =
                 getGoldenTruthBox
-                    .fromMp4(mp4, `${trakPath}/mdia/hdlr`)
+                    .getSemanticBoxDataByPathFromMp4File(mp4, `${trakPath}/mdia/hdlr`)
                     .readBoxReport();
 
             handlerType = hdlr.box.fields.handlerType;
@@ -29,9 +29,9 @@ export async function inspectCttsAcrossTracks() {
                 `trak[${i}] handler = ${handlerType}`
             );
 
-        } catch {
+        } catch (err) {
             console.log(
-                `trak[${i}] handler = <none>`
+                `trak[${i}] handler = <none>`, err
             );
             continue;
         }
@@ -42,7 +42,7 @@ export async function inspectCttsAcrossTracks() {
         try {
             const ctts =
                 getGoldenTruthBox
-                    .fromMp4(
+                    .getSemanticBoxDataByPathFromMp4File(
                         mp4,
                         `${trakPath}/mdia/minf/stbl/ctts`
                     )
@@ -54,7 +54,7 @@ export async function inspectCttsAcrossTracks() {
 
         } catch (err) {
             console.log(
-                `  ✘ CTTS absent`
+                `  ✘ CTTS absent`, err
             );
         }
     }

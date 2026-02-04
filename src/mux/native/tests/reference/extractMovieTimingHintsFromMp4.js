@@ -44,8 +44,8 @@ extractMovieTimingHintsFromMp4({
             )
             .readBoxReport();
 
-    const movieTimescale =
-        report?.box?.fields?.timescale;
+    const movieTimescale = report?.box?.fields?.timescale;
+    const movieDuration = report?.box?.fields?.duration;
 
     if (!Number.isInteger(movieTimescale)) {
         throw new Error(
@@ -54,6 +54,7 @@ extractMovieTimingHintsFromMp4({
     }
 
     return {
-        movieTimescale
+        movieTimescale,
+        movieDuration 
     };
 }

@@ -1,11 +1,8 @@
+//import { convertSampleDurationsIntoSttsTableEntries } from "../adapters/adaptSttsFromSamples.js";
 import { adaptSttsFromSamples } from "../adapters/adaptSttsFromSamples.js";
 import { assertEqual } from "./assertions.js";
 
 export function testNativeMuxer_AdaptSttsFromSamples_CFR() {
-
-    console.log(
-        "=== testNativeMuxer_AdaptSttsFromSamples_CFR ==="
-    );
 
     const samples = [
         { duration: 512 },
@@ -29,16 +26,9 @@ export function testNativeMuxer_AdaptSttsFromSamples_CFR() {
         512
     );
 
-    console.log(
-        "PASS: STTS adapter derives constant-duration input"
-    );
 }
 
 export function testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups() {
-
-    console.log(
-        "=== testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups ==="
-    );
 
     const samples = [
         { duration: 100 },
@@ -62,7 +52,4 @@ export function testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups() {
     assertEqual("entry 2 count", result.entries[2].sampleCount, 1);
     assertEqual("entry 2 delta", result.entries[2].sampleDelta, 100);
 
-    console.log(
-        "PASS: STTS adapter groups variable-duration samples"
-    );
 }

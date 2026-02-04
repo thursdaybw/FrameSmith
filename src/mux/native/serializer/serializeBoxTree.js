@@ -267,13 +267,24 @@ function normalizeFlags(node) {
     }
 
     if (typeof flags === "number") {
+
+        // ---------------------------------------------------------
+        // Explicit opt-in: opaque codec-owned flags
+        // ---------------------------------------------------------
+        if (node.opaqueFlags === true) {
+            return flags & 0xFFFFFF;
+        }
+
+        // ---------------------------------------------------------
+        // Default: only binary flags allowed
+        // ---------------------------------------------------------
         if (flags === 0 || flags === 1) {
             return flags;
         }
 
         throw new Error(
             `Box ${type}: numeric flags must be 0 or 1. ` +
-            `Use named flags for multi-bit values.`
+            `Use named flags or set opaqueFlags: true for codec-owned flags.`
         );
     }
 
@@ -521,8 +532,7 @@ function validateBoxNode(node, path) {
     // RAW BOX NODE VALIDATION (box-level passthrough)
     // ------------------------------------------------------------
 
-    const hasBytes =
-        Object.prototype.hasOwnProperty.call(node, "bytes");
+    const hasBytes = Object.prototype.hasOwnProperty.call(node, "bytes");
 
     if (hasBytes) {
 

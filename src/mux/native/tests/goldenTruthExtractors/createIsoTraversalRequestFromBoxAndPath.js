@@ -101,39 +101,6 @@ export function createIsoTraversalRequestFromBoxAndPath({
         );
     }
 
-    // If we are at or below stsd, forbid sample[n] above it
-    if ( sourceRegistryKey.includes("stsd") && /\/sample\[\d+\]/.test(targetBoxPath)) {
-        throw new Error(
-            [
-                "Invalid path for the current context.",
-                "",
-                "You are already inside a specific sample entry, so selecting another sample by index is not allowed.",
-                "",
-                "Current context:",
-                `  sourceRegistryKey = "${sourceRegistryKey}"`,
-                "",
-                "Invalid path:",
-                `  ${targetBoxPath}`,
-                "",
-                "Why this is invalid:",
-                "  sample[n] can only be used when starting from 'stsd'.",
-                "  Once you have the bytes for a single sample entry, there is no such thing as sample[0], sample[1], etc.",
-                "",
-                "Correct examples:",
-                "  From stsd:",
-                "    moov/trak/mdia/minf/stbl/stsd/sample[0]",
-                "    moov/trak/mdia/minf/stbl/stsd/sample[0]/avcC",
-                "",
-                "  From an existing sample entry:",
-                "    moov/trak/mdia/minf/stbl/stsd|avc1",
-                "    moov/trak/mdia/minf/stbl/stsd|avc1/avcC",
-                "",
-                "Fix:",
-                "  Either drop the sample index, or resolve the path starting from stsd."
-            ].join("\n")
-        );
-    }
-
     // Reject bare sample selector (sample without [n])
     if (
         /\/sample(\/|$)/.test(targetBoxPath) &&

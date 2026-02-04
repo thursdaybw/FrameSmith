@@ -47,20 +47,15 @@
  * No other outcomes are permitted.
  */
 
-
 /**
  * applyUdtaPolicy
  * ===============
  *
  * Container-level policy for MP4 user data (udta).
  *
- * This policy operates strictly within the Mp4BuildInput contract
- * defined by `createMp4FromInputs`.
- *
- * It does NOT define that contract.
+ * This policy produces **emit-ready intent**, not box nodes.
+ * Emission is the responsibility of the compiler via EmitterRegistry.
  */
-
-
 export function applyUdtaPolicy({
     opaqueUdta,
     encoderIdentity
@@ -104,38 +99,32 @@ export function applyUdtaPolicy({
     // ---------------------------------------------------------
     if (typeof encoderIdentity === "string") {
 
-        // Encode encoder identity as UTF-8 payload
-        const payload = new TextEncoder().encode(encoderIdentity);
-
-        const data = emitDataBox({
-            version: 0,
-            flags: 0,
-            dataType: 1,   // UTF-8 string
-            locale: 0,
-            payload
-        });
-
-        const ilstItem = emitIlstItemBox({
-            type: "©too",
-            data
-        });
-
-        const ilst = emitIlstBox({
-            items: [ ilstItem ]
-        });
-
-        const hdlr = emitMetaHdlrBox({
-            nameBytes: new TextEncoder().encode("mdir\0")
-        });
-
-        const meta = emitMetaBox({
-            hdlr,
-            ilst
-        });
-
-        return emitUdtaBox({
-            children: [ meta ]
-        });
+        return {
+            type: "udta",
+            children: [
+                {
+                    type: "meta",
+                    hdlr: {
+                        handlerType: "mdir",
+                        nameBytes: new TextEncoder().encode("mdir\0")
+                    },
+                    ilst: {
+                        items: [
+                            {
+                                type: "©too",
+                                data: {
+                                    version: 0,
+                                    flags: 0,
+                                    dataType: 1,
+                                    locale: 0,
+                                    payload: new TextEncoder().encode(encoderIdentity)
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        };
     }
 
     // ---------------------------------------------------------

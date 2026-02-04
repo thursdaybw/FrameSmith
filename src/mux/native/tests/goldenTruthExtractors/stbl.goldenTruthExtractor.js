@@ -1,6 +1,7 @@
 import { getGoldenTruthBox } from "./index.js";
 import { asIsoBoxContainer } from "../../box-model/Box.js";
 import { deriveSamplesFromStbl } from "./stbl/deriveSamplesFromStbl.js";
+import { deriveSamplesOnePerPacketFromStbl } from "./stbl/deriveSamplesOnePerPacketFromStbl.js";
 
 // ---------------------------------------------------------------------------
 // readBoxReport
@@ -12,22 +13,16 @@ function readStblFields(boxBytes) {
         throw new Error("stbl.readBoxReport: expected Uint8Array");
     }
 
-    const container =
-        asIsoBoxContainer(
-            boxBytes,
-            "moov/trak/mdia/minf/stbl"
-        );
-
+    const container = asIsoBoxContainer( boxBytes, "moov/trak/mdia/minf/stbl");
     const children = container.enumerateChildren();
-
     const childrenMap = {};
 
     for (const child of children) {
         childrenMap[child.type] = { type: child.type };
     }
 
-    const samples =
-        deriveSamplesFromStbl(boxBytes);
+    const samplesOneSamplePerFrame          = deriveSamplesFromStbl(boxBytes);
+    const samplesOneSamplePerPacket         = deriveSamplesOnePerPacketFromStbl(boxBytes);
 
     return {
         raw: boxBytes,
@@ -39,7 +34,8 @@ function readStblFields(boxBytes) {
         },
 
         derived: {
-            samples
+            samplesOneSamplePerFrame,
+            samplesOneSamplePerPacket 
         }
     };
 }

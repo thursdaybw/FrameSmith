@@ -1,54 +1,69 @@
 /**
- * STTS Adapter
- * ===========
+ * adaptSttsFromSamples
+ * ====================
  *
- * Purpose
- * -------
- * Collapse semantic sample durations into STTS run-length entries.
+ * Build STTS entries from semantic samples.
  *
- * This adapter:
- * - derives meaning
- * - preserves real-world timing variance
- * - performs no policy decisions
- * - does NOT emit bytes
+ * Rules:
+ * 1. Always collapse consecutive equal durations
+ * 2. If inputTrackDurationInTrackTimescale is provided and the total
+ *    does not match, adjust the final sample duration (tail)
  *
- * Output shape matches STTS semantics directly.
+ * TESTS
+ *   testNativeMuxer_DeriveSamplesOnePerPacketFromStbl_OpusOracle
+ *   testNativeMuxer_AdaptSttsFromSamples_CFR
+ *   testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups
  */
-export function adaptSttsFromSamples({ samples, sttsPolicy = "canonical" }) {
+export function adaptSttsFromSamples({
+    samples,
+    inputTrackDurationInTrackTimescale
+}) {
 
-    if (!Array.isArray(samples)) {
-        throw new Error(
-            "adaptSttsFromSamples: samples must be an array"
-        );
-    }
+    assertSamples(samples);
 
     if (samples.length === 0) {
         return { entries: [] };
     }
 
-    if (sttsPolicy === "oracle-faithful") {
-        return adaptSttsOracleFaithful({ samples });
-    }
-
-    const entries = [];
-
-    let currentDelta = samples[0].duration;
-    let currentCount = 1;
-
-    if (!Number.isInteger(currentDelta) || currentDelta < 0) {
-        throw new Error(
-            "adaptSttsFromSamples: invalid sample duration"
-        );
-    }
-
-    for (let i = 1; i < samples.length; i++) {
-        const delta = samples[i].duration;
-
-        if (!Number.isInteger(delta) || delta < 0) {
+    // ---------------------------------------------------------
+    // Extract per-sample durations
+    // ---------------------------------------------------------
+    const durations = samples.map((s, i) => {
+        if (!Number.isInteger(s.duration) || s.duration < 0) {
             throw new Error(
-                "adaptSttsFromSamples: invalid sample duration"
+                `adaptSttsFromSamples: invalid duration at index ${i}`
             );
         }
+        return s.duration;
+    });
+
+    // ---------------------------------------------------------
+    // Reconcile tail if authoritative track duration supplied
+    // ---------------------------------------------------------
+    if (Number.isInteger(inputTrackDurationInTrackTimescale)) {
+
+        let accumulated = 0;
+        for (let i = 0; i < durations.length - 1; i++) {
+            accumulated += durations[i];
+        }
+
+        const tail = inputTrackDurationInTrackTimescale - accumulated;
+
+        if (tail > 0) {
+            durations[durations.length - 1] = tail;
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Collapse consecutive equal durations into STTS runs
+    // ---------------------------------------------------------
+    const entries = [];
+
+    let currentDelta = durations[0];
+    let currentCount = 1;
+
+    for (let i = 1; i < durations.length; i++) {
+        const delta = durations[i];
 
         if (delta === currentDelta) {
             currentCount++;
@@ -57,7 +72,6 @@ export function adaptSttsFromSamples({ samples, sttsPolicy = "canonical" }) {
                 sampleCount: currentCount,
                 sampleDelta: currentDelta
             });
-
             currentDelta = delta;
             currentCount = 1;
         }
@@ -68,40 +82,12 @@ export function adaptSttsFromSamples({ samples, sttsPolicy = "canonical" }) {
         sampleDelta: currentDelta
     });
 
+    // ---------------------------------------------------------
     return { entries };
 }
 
-function adaptSttsOracleFaithful({ samples }) {
-    // Oracle behaviour:
-    // - preserve run boundaries as observed
-    // - do not over-collapse identical deltas
-
-    const entries = [];
-
-    let currentDelta = samples[0].duration;
-    let currentCount = 1;
-
-    for (let i = 1; i < samples.length; i++) {
-        const delta = samples[i].duration;
-
-        if (delta === currentDelta) {
-            currentCount++;
-            continue;
-        }
-
-        entries.push({
-            sampleCount: currentCount,
-            sampleDelta: currentDelta
-        });
-
-        currentDelta = delta;
-        currentCount = 1;
+function assertSamples(samples) {
+    if (!Array.isArray(samples)) {
+        throw new Error("adaptSttsFromSamples: samples must be an array");
     }
-
-    entries.push({
-        sampleCount: currentCount,
-        sampleDelta: currentDelta
-    });
-
-    return { entries };
 }

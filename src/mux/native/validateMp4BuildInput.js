@@ -2,7 +2,7 @@
  * validateMp4BuildInput
  * =====================
  *
- * Grammar validator for Mp4BuildInput.
+ * Grammads validator for Mp4BuildInput.
  *
  * PURPOSE
  * -------
@@ -120,7 +120,8 @@ function validateMp4TrackInput(track, trackIndex) {
             "codec",
             "avcC",
             "avcCCompleteness",
-            "esds"
+            "esds",
+            "dOps",
         ]
     );
 
@@ -251,6 +252,7 @@ function validateMp4TrackInput(track, trackIndex) {
                 "syncRepresentation",
                 "chunkingStrategy",
                 "sttsPolicy",
+                "packetizationStrategy",
             ]
         );
 

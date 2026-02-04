@@ -337,7 +337,7 @@ import { compileMp4 } from "./compileMp4.js";
  * @returns {Uint8Array}
  *   The final MP4 file bytes.
  */
-export function createMp4FromInputs(mp4BuildInput) {
+export function createMp4FromInputs(mp4BuildInput, goldenMp4) {
    
     // ---------------------------------------------------------
     // Validation (grammar only):
@@ -349,6 +349,7 @@ export function createMp4FromInputs(mp4BuildInput) {
     validateCompilerAdmissibility(mp4BuildInput);
 
     return compileMp4({
-        mp4CompilerState: mp4BuildInput
+        mp4CompilerState: mp4BuildInput,
+        goldenMp4 // pass through - tempoary diagnostic, must remove
     });
 }

@@ -82,51 +82,96 @@ export async function testCtts_Structure() {
 
 export async function testCtts_LockedLayoutEquivalence_ffmpeg() {
 
-    // ---------------------------------------------------------
-    // 1. Load golden MP4
-    // ---------------------------------------------------------
-    const resp = await fetch("reference/reference_visual.mp4");
-    const mp4  = new Uint8Array(await resp.arrayBuffer());
+    const fixtures = [
+        {
+            label: "reference_visual",
+            path: "reference/reference_visual.mp4",
+            trackIndices: [0]
+        },
+        {
+            label: "reference_av",
+            path: "reference/reference_av.mp4",
+            trackIndices: [0, 1]
+        },
+        {
+            label: "reference_av_opus",
+            path: "reference/reference_av_opus.mp4",
+            trackIndices: [0, 1]
+        }
+    ];
 
-    // ---------------------------------------------------------
-    // 2. Parse reference CTTS via parser registry
-    // ---------------------------------------------------------
-    const parsed = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
-        mp4,
-        "moov/trak[0]/mdia/minf/stbl/ctts",
-    );
+    for (const fixture of fixtures) {
 
-    const refFields = parsed.readBoxReport();
-    const buildParams = parsed.getEmitterInput();
+        // ---------------------------------------------------------
+        // 1. Load oracle MP4
+        // ---------------------------------------------------------
+        const resp = await fetch(fixture.path);
+        const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    // ---------------------------------------------------------
-    // 3. Rebuild CTTS via Framesmith
-    // ---------------------------------------------------------
-    const outCtts = serializeBoxTree(
-        EmitterRegistry.emit(
-            "moov/trak/mdia/minf/stbl/ctts",
-            buildParams
-        )
-    );
+        for (const trackIndex of fixture.trackIndices) {
 
-    // ---------------------------------------------------------
-    // 4. Byte-for-byte equivalence
-    // ---------------------------------------------------------
-    const refRaw = refFields.raw;
+            const cttsPath =
+                `moov/trak[${trackIndex}]/mdia/minf/stbl/ctts`;
 
-    assertEqual(
-        "ctts.size",
-        outCtts.length,
-        refRaw.length
-    );
+            let parsed;
 
-    for (let i = 0; i < refRaw.length; i++) {
-        assertEqual(
-            `ctts.byte[${i}]`,
-            outCtts[i],
-            refRaw[i]
-        );
+            try {
+                parsed =
+                    getGoldenTruthBox
+                        .getSemanticBoxDataByPathFromMp4File(
+                            mp4,
+                            cttsPath
+                        );
+            } catch (e) {
+                // CTTS not present — this is a valid outcome
+                console.log(
+                    `[CTTS] ${fixture.label} track ${trackIndex}: ABSENT`
+                );
+                continue;
+            }
+
+            // ---------------------------------------------------------
+            // 2. Diagnostic log
+            // ---------------------------------------------------------
+            console.log(
+                `[CTTS] ${fixture.label} track ${trackIndex}: PRESENT`
+            );
+
+            // ---------------------------------------------------------
+            // 3. Parse oracle CTTS
+            // ---------------------------------------------------------
+            const refReport = parsed.readBoxReport();
+            const buildParams = parsed.getEmitterInput();
+
+            // ---------------------------------------------------------
+            // 4. Re-emit CTTS
+            // ---------------------------------------------------------
+            const outCtts =
+                serializeBoxTree(
+                    EmitterRegistry.emit(
+                        "moov/trak/mdia/minf/stbl/ctts",
+                        buildParams
+                    )
+                );
+
+            const refRaw = refReport.raw;
+
+            // ---------------------------------------------------------
+            // 5. Byte-for-byte equivalence
+            // ---------------------------------------------------------
+            assertEqual(
+                `[${fixture.label} t${trackIndex}] ctts.size`,
+                outCtts.length,
+                refRaw.length
+            );
+
+            for (let i = 0; i < refRaw.length; i++) {
+                assertEqual(
+                    `[${fixture.label} t${trackIndex}] ctts.byte[${i}]`,
+                    outCtts[i],
+                    refRaw[i]
+                );
+            }
+        }
     }
-
 }
-

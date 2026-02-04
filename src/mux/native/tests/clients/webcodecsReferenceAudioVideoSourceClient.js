@@ -110,8 +110,9 @@ import {
 }
 from "../webcodecs/createDeterministicAudioSource.js";
 
-export async function runWebCodecsAudioVideoTestClient() {
-
+export async function runWebCodecsAudioVideoTestClient({
+    mediaRecorderSink
+} = {}) {
 
     const trackTimescale = 1_000_000;
 
@@ -135,14 +136,14 @@ export async function runWebCodecsAudioVideoTestClient() {
     // Video encode (WebCodecs)
     // ---------------------------------------------------------
 
-    const videoEncodeResult =
-        await runWebCodecsRunner({
+    const videoEncodeResult = await runWebCodecsRunner({
             codec: codecString, 
             width: codedWidth,
             height: codedHeight,
             bitrate: 500_000,
             framerate: fps,
-            frames
+            frames,
+            mediaRecorderSink, // ← pass-through
         });
 
     const videoTrack = buildVideoTrackFromWebCodecs({
@@ -154,8 +155,7 @@ export async function runWebCodecsAudioVideoTestClient() {
         }
     });
 
-    const audioBuffer =
-        await renderOscillatorAudioBuffer({
+    const audioBuffer = await renderOscillatorAudioBuffer({
             sampleRate: 48000,
             numberOfChannels: 2,
             durationSeconds: 10,
@@ -255,8 +255,6 @@ function buildVideoTrackFromWebCodecs({
 function buildAudioTrackFromWebCodecs({
     webcodecsOutput,
     buildParameters,
-    semanticHints,
-    buildHints
 }) {
     const { encodedChunks, decoderConfig } = webcodecsOutput;
 
@@ -274,13 +272,24 @@ function buildAudioTrackFromWebCodecs({
         });
     }
 
+    console.log(`webcodecs supplied access units`, accessUnits);
+
+    const dOps = new Uint8Array(decoderConfig.description);
+    console.log("webcodecs supplied dOps", dOps);
+
+    let buildHints = {}
+    
+    buildHints.chunkingStrategy = "packetized";
+
+    let semanticHints = {}
+   
     return {
 
         semanticCore: {
             accessUnits,
             codec: {
                 codec: decoderConfig.codec, // "opus"
-                esds: new Uint8Array(decoderConfig.description)
+                dOps 
             }
         },
 

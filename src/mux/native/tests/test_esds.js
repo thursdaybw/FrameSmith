@@ -1,4 +1,5 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+import { readFourCC } from "../box-schema/boxLayoutReaders.js";
 import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { assertEqual, assertExists } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";

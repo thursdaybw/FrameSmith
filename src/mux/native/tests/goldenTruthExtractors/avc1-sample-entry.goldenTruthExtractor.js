@@ -21,10 +21,7 @@ import {
     readUint32
 } from "../../bytes/mp4ByteReader.js";
 
-import {
-    SampleEntryReader,
-    getSampleEntryHeaderSize
-} from "../../reference/SampleEntryReader.js";
+import { SampleEntryReader } from "../../reference/SampleEntryReader.js";
 
 import {
     getPayloadOffsetForPath
@@ -78,8 +75,7 @@ function readBoxReport(box) {
     const depth       = readUint16(box, cursor); cursor += 2;
     const preDefined5 = readUint16(box, cursor); cursor += 2;
 
-    const reader =
-        new SampleEntryReader(box, getSampleEntryHeaderSize("avc1"));
+    const reader = new SampleEntryReader(box, "avc1");
 
     const children = {};
     for (const { type, offset, size } of reader.enumerateChildren()) {

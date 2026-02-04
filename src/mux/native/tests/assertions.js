@@ -21,6 +21,19 @@ export function assertEqualHex(name, actual, expected) {
     }
 }
 
+export function assertEqualHexCollect(diffs, name, actual, expected) {
+    if (actual !== expected) {
+        diffs.push({
+            name,
+            expected: expected === undefined
+                ? "undef"
+                : `0x${expected.toString(16).padStart(2, "0")}`,
+            actual: actual === undefined
+                ? "undef"
+                : `0x${actual.toString(16).padStart(2, "0")}`,
+        });
+    }
+}
 export function assertExists(name, value) {
     if (value === undefined || value === null) {
         throw new Error(`FAIL: missing required ${name}`);
@@ -52,11 +65,17 @@ export function assertNoRawBytes(node, path = "root") {
 
 export function assertArrayEqual(message, actual, expected) {
 
-    if (!Array.isArray(actual) || !Array.isArray(expected)) {
+    const actualIsArray   = Array.isArray(actual);
+    const expectedIsArray = Array.isArray(expected);
+
+    if (!actualIsArray || !expectedIsArray) {
         throw new Error(
             `FAIL: ${message}\n` +
-            `Expected array, got:\n${pretty(expected)}\n` +
-            `Actual array, got:\n${pretty(actual)}`
+            `Array assertion failed\n` +
+            `Expected type: array, got: ${typeof expected}\n` +
+            `Actual type:   array, got: ${typeof actual}\n\n` +
+            `Expected value:\n${pretty(expected)}\n\n` +
+            `Actual value:\n${pretty(actual)}`
         );
     }
 
@@ -65,20 +84,18 @@ export function assertArrayEqual(message, actual, expected) {
             `FAIL: ${message}\n` +
             `Array length mismatch\n` +
             `Expected length: ${expected.length}\n` +
-            `Actual length:   ${actual.length}`
+            `Actual length:   ${actual.length}\n\n` +
+            `Expected:\n${pretty(expected)}\n\n` +
+            `Actual:\n${pretty(actual)}`
         );
     }
 
     for (let i = 0; i < actual.length; i++) {
-        try {
-            assertEqual(
-                `${message}[${i}]`,
-                actual[i],
-                expected[i]
-            );
-        } catch (err) {
-            throw err;
-        }
+        assertEqual(
+            `${message}[${i}]`,
+            actual[i],
+            expected[i]
+        );
     }
 }
 
@@ -114,6 +131,10 @@ export function assertNotExists(name, value) {
             `Actual: ${JSON.stringify(value)}`
         );
     }
+}
+
+export function assertObjectEqual(message, actual, expected) {
+    assertEqual(message, actual, expected);
 }
 
 function pretty(value) {

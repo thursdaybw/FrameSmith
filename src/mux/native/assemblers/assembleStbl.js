@@ -1,5 +1,4 @@
-// STBL — Sample Table Assembly
-// ============================
+// STBL — Sample Table Assembly ============================
 //
 // This module performs *pure structural assembly* of an STBL box.
 //
@@ -99,11 +98,20 @@ function assembleStbl(intent, { emitContainer }) {
             intent.stsc
         );
 
+    if (!intent.stsz || typeof intent.stsz !== "object") {
+        throw new Error(
+            "assembleStbl: intent.stsz is required and must be an object"
+        );
+    }
+
+    const stszVariant = intent.stsz.sampleSize === 0 ? "variable" : "fixed";
+
     children.stsz =
         EmitterRegistry.emit(
-            "moov/trak/mdia/minf/stbl/stsz",
+            `moov/trak/mdia/minf/stbl/stsz|${stszVariant}`,
             intent.stsz
         );
+
 
     children.stco =
         EmitterRegistry.emit(

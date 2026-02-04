@@ -89,11 +89,7 @@ function readBoxReport(box) {
     // Child boxes (SampleEntry structural exception)
     // ---------------------------------------------------------------------
 
-    const reader =
-        new SampleEntryReader(
-            box,
-            getSampleEntryHeaderSize("mp4a")
-        );
+    const reader = new SampleEntryReader( box, "mp4a");
 
     const children = {};
 

@@ -93,9 +93,8 @@
  * If this policy changes output bytes, tests MUST change with it.
  * Silent behavioral drift is not permitted.
  */
-export function applyAvcCContainerPolicy({
+export function applyAvcCContainerPolicySemantic({
     avcC,
-    avcCCompleteness,
     profileIndication
 }) {
     // ---------------------------------------------------------
@@ -103,51 +102,31 @@ export function applyAvcCContainerPolicy({
     // ---------------------------------------------------------
     if (!(avcC instanceof Uint8Array)) {
         throw new Error(
-            "applyAvcCContainerPolicy: avcC must be Uint8Array"
+            "applyAvcCContainerPolicySemantic: avcC must be Uint8Array"
         );
     }
 
-    if (
-        avcCCompleteness !== "semantic" &&
-        avcCCompleteness !== "container-complete"
-    ) {
+    if (!Number.isInteger(profileIndication)) {
         throw new Error(
-            "applyAvcCContainerPolicy: avcCCompleteness must be " +
-            `"semantic" or "container-complete"`
+            "applyAvcCContainerPolicySemantic: profileIndication is required"
         );
     }
 
-    if (avcCCompleteness === "semantic") {
-        if (!Number.isInteger(profileIndication)) {
-            throw new Error(
-                "applyAvcCContainerPolicy: profileIndication is required " +
-                "when avcCCompleteness is 'semantic'"
-            );
-        }
-
-        if (profileIndication < 0 || profileIndication > 255) {
-            throw new Error(
-                "applyAvcCContainerPolicy: profileIndication must be 0–255"
-            );
-        }
+    if (profileIndication < 0 || profileIndication > 255) {
+        throw new Error(
+            "applyAvcCContainerPolicySemantic: profileIndication must be 0–255"
+        );
     }
 
     // ---------------------------------------------------------
-    // Case 1 — Preserve historical container decisions
-    // ---------------------------------------------------------
-    if (avcCCompleteness === "container-complete") {
-        return new Uint8Array(avcC);
-    }
-
-    // ---------------------------------------------------------
-    // Case 2 — Semantic, NOT High Profile → no-op
+    // Case 1 — NOT High Profile → no-op
     // ---------------------------------------------------------
     if (profileIndication < 100) {
         return new Uint8Array(avcC);
     }
 
     // ---------------------------------------------------------
-    // Case 3 — Semantic + High Profile → append extension
+    // Case 2 — High Profile → append extension
     // ---------------------------------------------------------
     const extension = new Uint8Array([
         0xFC | 1, // chroma_format_idc = 1 (4:2:0)
@@ -161,4 +140,22 @@ export function applyAvcCContainerPolicy({
     out.set(extension, avcC.length);
 
     return out;
+}
+
+export function applyAvcCContainerPolicyContainerComplete({
+    avcC
+}) {
+    // ---------------------------------------------------------
+    // Validation
+    // ---------------------------------------------------------
+    if (!(avcC instanceof Uint8Array)) {
+        throw new Error(
+            "applyAvcCContainerPolicyContainerComplete: avcC must be Uint8Array"
+        );
+    }
+
+    // ---------------------------------------------------------
+    // Preserve historical container decision verbatim
+    // ---------------------------------------------------------
+    return new Uint8Array(avcC);
 }

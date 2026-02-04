@@ -1,18 +1,11 @@
-import { extractBoxByPathFromMp4 } from "./BoxExtractor.js";
-import { readUint32 } from "../../bytes/mp4ByteReader.js";
-
-/**
- * Extract access-unit byte payloads from a golden MP4.
- *
- * Output:
- *   Uint8Array[]  // index === sampleIndex
- */
 import { getGoldenTruthBox } from "../goldenTruthExtractors/index.js";
 
-export function extractAccessUnitPayloadsFromMp4({
-    mp4Bytes,
-    trackIndex = 0
-}) {
+export function extractAccessUnitPayloadsFromMp4({ mp4Bytes, trackIndex = 0, }) {
+
+    if (!(mp4Bytes instanceof Uint8Array)) {
+        throw new Error("expected Uint8Array mp4Bytes");
+    }
+
     const stbl =
         getGoldenTruthBox
             .getSemanticBoxDataByPathFromMp4File(
@@ -21,7 +14,16 @@ export function extractAccessUnitPayloadsFromMp4({
             )
             .readBoxReport();
 
-    const samples = stbl.derived.samples;
+    const derived = stbl?.derived;
+    if (!derived) {
+        throw new Error("stbl.readBoxReport().derived missing");
+    }
+
+    const samples = derived.samplesOneSamplePerFrame;
+
+    if (!Array.isArray(samples)) {
+        throw new Error(`extractAccessUnitPayloadsFromMp4: derived samples missing.'`);
+    }
 
     return samples.map(sample =>
         mp4Bytes.slice(

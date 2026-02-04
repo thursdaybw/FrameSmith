@@ -46,6 +46,8 @@ export const GoldenTruthFinalizer = {
         }
 
         return {
+            
+            raw: bytes, 
 
             readBoxReport() {
                 return extractor.readBoxReport(bytes);

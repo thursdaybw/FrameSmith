@@ -143,6 +143,15 @@ export function normalizeEmitterNodeToSchemaBox(node, registryPath) {
         }
 
         // ----------------------------------------------
+        // Field-level opaque union (envelope field)
+        // ----------------------------------------------
+        if (fieldSpec === "opaque") {
+            box.fields[fieldName] = undefined;
+            // do NOT consume node.body
+            continue;
+        }
+
+        // ----------------------------------------------
         // Scalar field (uint32, etc)
         // ----------------------------------------------
         if (isScalarField(fieldSpec)) {

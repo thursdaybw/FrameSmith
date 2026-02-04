@@ -1,0 +1,284 @@
+import { assertExists, assertEqual, assertEqualHex, assertEqualHexCollect, } from "../../tests/assertions.js";
+
+export function getSamplesChunkedInFfmpegOpusFormat({ samples }) {
+
+    if (!samples.every(s => Number.isInteger(s.packetIndex))) {
+        throw new Error(
+            "FFMPEG_OPUS_PACKET_GROUPED requires packetIndex on all samples"
+        );
+    }
+
+    const firstFourChunks = getFirstFourChunks(samples);
+
+    const packetsPerChunk = firstFourChunks.map(chunk => {
+        return new Set(
+            chunk.samples.map(s => s.sample.packetIndex)
+        ).size;
+    });
+
+    assertEqual("chunk count", packetsPerChunk.length, 4);
+
+    assertEqual("chunk[0] packets", packetsPerChunk[0], 1);
+    assertEqual("chunk[1] packets", packetsPerChunk[1], 1);
+    assertEqual("chunk[2] packets", packetsPerChunk[2], 2);
+    assertEqual("chunk[3] packets", packetsPerChunk[3], 2);
+
+    const remainingSamples = getRemainingSamples(samples, firstFourChunks);
+
+    const remainingChunks = chunkRemainingSamplesWithStablePattern(remainingSamples);
+
+    return [
+        ...firstFourChunks,
+        ...remainingChunks
+    ];
+
+}
+
+function getFirstFourChunks(samples) {
+
+    const chunks = [];
+
+    // chunk 0 → 1 packet
+    chunks.push(extractNextChunkByPacketCount(samples, chunks, 1));
+
+    // chunk 1 → 1 packet
+    chunks.push(extractNextChunkByPacketCount(samples, chunks, 1));
+
+    // chunk 2 → 2 packets
+    chunks.push(extractNextChunkByPacketCount(samples, chunks, 2));
+
+    // chunk 3 → 2 packets
+    chunks.push(extractNextChunkByPacketCount(samples, chunks, 2));
+
+    return chunks;
+}
+
+function getRemainingSamples(samples, chunks) {
+
+    if (chunks.length === 0) {
+        return samples;
+    }
+
+    const lastChunk = chunks[chunks.length - 1];
+    const lastSample =
+        lastChunk.samples[lastChunk.samples.length - 1];
+
+    const nextIndex = lastSample.sampleIndex + 1;
+
+    return samples.slice(nextIndex);
+}
+
+
+export function chunkRemainingSamplesWithStablePattern(samples) {
+
+    const packetPattern = [1, 2, 2];
+    let patternIndex = 0;
+
+    const packets = groupSamplesByPacket(samples);
+
+    // ---------------------------------------------------------
+    // DIAGNOSTIC: verify packetization assumptions
+    // ---------------------------------------------------------
+
+
+    const packetIndices = packets.map(p => p.packetIndex);
+
+    for (let i = 1; i < packets.length; i++) {
+        if (packetIndices[i] !== packetIndices[i - 1] + 1) {
+            throw new Error(
+                "chunkRemainingSamplesWithStablePattern: non-contiguous packetIndex sequence\n" +
+                `at packetCursor=${i}\n` +
+                `prev=${packetIndices[i - 1]}, current=${packetIndices[i]}`
+            );
+        }
+    }
+
+    const chunks = [];
+
+    let packetCursor = 0;
+
+    while (packetCursor < packets.length) {
+
+        const requestedPacketCount = packetPattern[patternIndex];
+
+        const remainingPacketCount = packets.length - packetCursor;
+
+        const packetsToTake = Math.min(requestedPacketCount, remainingPacketCount);
+
+        const chunkPackets = packets.slice(packetCursor, packetCursor + packetsToTake);
+
+        const chunkSamples = chunkPackets.flatMap(packet => packet.samples);
+
+        // INLINE ASSERTION — now it is bulletproof
+        if (chunkPackets.length !== packetsToTake) {
+            throw new Error(
+                "chunkRemainingSamplesWithStablePattern: packet grouping mismatch\n" +
+                `expectedPackets=${packetsToTake}\n` +
+                `actualPackets=${chunkPackets.length}\n` +
+                `patternIndex=${patternIndex}\n` +
+                `packetCursor=${packetCursor}`
+            );
+        }
+
+        // ---------------------------------------------------------
+        // DIAGNOSTIC: chunk composition
+        // ---------------------------------------------------------
+
+        const chunkPacketIndices =
+            chunkPackets.map(packet => packet.packetIndex);
+
+        chunks.push(
+            materializeChunk(samples, chunkSamples)
+        );
+
+        packetCursor += packetsToTake;
+        patternIndex = (patternIndex + 1) % packetPattern.length;
+    }
+
+    return chunks;
+}
+
+function groupSamplesByPacket(samples) {
+
+    const packets = [];
+    let currentPacket = null;
+
+    for (const sample of samples) {
+
+        if (
+            currentPacket === null ||
+            sample.packetIndex !== currentPacket.packetIndex
+        ) {
+            currentPacket = {
+                packetIndex: sample.packetIndex,
+                samples: []
+            };
+            packets.push(currentPacket);
+        }
+
+        currentPacket.samples.push(sample);
+    }
+
+    return packets;
+}
+
+function countPacketsInSamples(samples) {
+    const packetIndices = new Set(
+        samples.map(sample => sample.packetIndex)
+    );
+    return packetIndices.size;
+}
+
+function takeSamplesCoveringNextNPackets(samples, packetCount) {
+
+    const chunkSamples = [];
+
+    let packetsSeen = 0;
+    let currentPacketIndex = null;
+
+    for (let index = 0; index < samples.length; index++) {
+
+        const sample = samples[index];
+
+        if (currentPacketIndex === null) {
+            currentPacketIndex = sample.packetIndex;
+            packetsSeen = 1;
+        }
+        else if (sample.packetIndex !== currentPacketIndex) {
+            packetsSeen++;
+            currentPacketIndex = sample.packetIndex;
+        }
+
+        chunkSamples.push(sample);
+
+        const atPacketBoundary =
+            index === samples.length - 1 ||
+            samples[index + 1].packetIndex !== currentPacketIndex;
+
+        if (packetsSeen === packetCount && atPacketBoundary) {
+            break;
+        }
+    }
+
+    return chunkSamples;
+}
+
+
+/**
+ * Extracts the next chunk containing exactly `packetCount` packets,
+ * starting immediately after the last chunk.
+ */
+function extractNextChunkByPacketCount(allSamples, existingChunks, packetCount) {
+
+    const startIndex = getNextSampleStartIndex(existingChunks);
+    const chunkSamples = [];
+
+    let packetsSeen = 0;
+    let currentPacketIndex = null;
+
+    for (let i = startIndex; i < allSamples.length; i++) {
+
+        const sample = allSamples[i];
+
+        if (currentPacketIndex === null) {
+            currentPacketIndex = sample.packetIndex;
+            packetsSeen = 1;
+        }
+        else if (sample.packetIndex !== currentPacketIndex) {
+            packetsSeen++;
+            currentPacketIndex = sample.packetIndex;
+        }
+
+        chunkSamples.push(sample);
+
+        if (packetsSeen === packetCount && isEndOfPacket(allSamples, i, currentPacketIndex)) {
+            break;
+        }
+    }
+
+    return materializeChunk(allSamples, chunkSamples);
+}
+
+
+function getNextSampleStartIndex(existingChunks) {
+
+    if (existingChunks.length === 0) {
+        return 0;
+    }
+
+    const lastChunk = existingChunks[existingChunks.length - 1];
+    const lastSample = lastChunk.samples[lastChunk.samples.length - 1];
+
+    return lastSample.sampleIndex + 1;
+}
+
+
+function materializeChunk(allSamples, chunkSamples) {
+
+    const samples = [];
+
+    for (const accessUnit of chunkSamples) {
+        samples.push({
+            sample: accessUnit,
+            sampleIndex: allSamples.indexOf(accessUnit)
+        });
+    }
+
+    return { samples };
+}
+
+
+function isEndOfPacket(samples, index, currentPacketIndex) {
+
+    if (index === samples.length - 1) {
+        return true;
+    }
+
+    if (samples[index + 1].packetIndex !== currentPacketIndex) {
+        return true;
+    }
+
+    return false;
+}
+
+

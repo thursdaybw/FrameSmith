@@ -1,99 +1,164 @@
-export function adaptAudioCodecConfigurationToStsdParams(codecConfiguration) {
 
-    if (codecConfiguration === undefined) {
-        throw new Error(
-            "adaptAudioCodecConfigurationToStsdParams: codecConfiguration is missing"
-        );
-    }
+import {
+    normalizeWebCodecsDopsToFfmpegCompact,
+    NotWebCodecsOpusHeadError
+} from "../normalization/codecs/dOps/normalizeWebCodecsDOpsToMp4Payload.js";
 
-    if (codecConfiguration === null || typeof codecConfiguration !== "object") {
-        throw new Error(
-            "adaptAudioCodecConfigurationToStsdParams: codecConfiguration must be an object"
-        );
-    }
+import { applyBtrtContainerPolicy } from "../policies/applyBtrtContainerPolicy.js";
 
-    // ---------------------------------------------------------
-    // codec
-    // ---------------------------------------------------------
-    if (codecConfiguration.codec === undefined) {
-        throw new Error(
-            "adaptAudioCodecConfigurationToStsdParams: codec is missing"
-        );
-    }
+import { parseAudioSpecificConfigFromEsds } from "../codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 
-    if (typeof codecConfiguration.codec !== "string") {
-        throw new Error(
-            "adaptAudioCodecConfigurationToStsdParams: codec must be a string"
-        );
-    }
+/**
+ * adaptAudioCodecConfigurationToStsdParams
+ * ========================================
+ *
+ * Tier 3 adapter.
+ *
+ * Translates semantic audio codec configuration into
+ * emit-ready STSD sample entry parameters.
+ *
+ * This adapter:
+ * - derives audio shape from codec configuration
+ * - normalizes WebCodecs OpusHead → FFmpeg-compatible dOps
+ * - applies only single-valid defaults
+ *
+ * This adapter does NOT:
+ * - apply container compatibility policy
+ * - invent flags
+ * - touch btrt
+ */
+export function adaptAudioCodecConfigurationToStsdParams({ codecConfiguration }) {
 
-    // ---------------------------------------------------------
-    // esds
-    // ---------------------------------------------------------
-    if (codecConfiguration.esds === undefined) {
-        throw new Error(
-            "adaptAudioCodecConfigurationToStsdParams: esds is missing"
-        );
-    }
+    let stsdParams = {};
 
-    if (!(codecConfiguration.esds instanceof Uint8Array)) {
-        throw new Error(
-            "adaptAudioCodecConfigurationToStsdParams: esds must be a Uint8Array"
-        );
-    }
+    if (codecConfiguration.codec === "opus") {
 
-    // ---------------------------------------------------------
-    // codec → MP4 sample entry mapping
-    // ---------------------------------------------------------
-    let sampleEntryType;
+        if (!(codecConfiguration.dOps instanceof Uint8Array)) {
+            throw new Error(
+                "adaptAudioCodecConfigurationToStsdParams: opus requires dOps Uint8Array"
+            );
+        }
 
-    if (codecConfiguration.codec.startsWith("mp4a")) {
-        sampleEntryType = "mp4a";
+        // ---------------------------------------------------------
+        // Normalize WebCodecs OpusHead → MP4 compact dOps (7 bytes)
+        // ---------------------------------------------------------
+
+        let normalizedPayload
+
+        try {
+            normalizedPayload = normalizeWebCodecsDopsToFfmpegCompact(codecConfiguration.dOps);
+        } catch (err) {
+            if (err instanceof NotWebCodecsOpusHeadError) {
+                normalizedPayload = codecConfiguration.dOps;
+            } else {
+                throw err;
+            }
+        }
+
+        if (normalizedPayload.length !== 7) {
+            throw new Error(
+                "adaptAudioCodecConfigurationToStsdParams: normalized dOps must be 7 bytes"
+            );
+        }
+
+        if (!Number.isInteger(codecConfiguration.channelCount) || codecConfiguration.channelCount <= 0) {
+            throw new Error(
+                "adaptAudioCodecConfigurationToStsdParams: invalid channelCount from dOps"
+            );
+        }
+
+        if (!Number.isInteger(codecConfiguration.sampleRate) || codecConfiguration.sampleRate <= 0) {
+            throw new Error(
+                "adaptAudioCodecConfigurationToStsdParams: invalid sampleRate from dOps"
+            );
+        }
+
+        // ---------------------------------------------------------
+        // Emit-ready STSD params (policy-free)
+        // ---------------------------------------------------------
+        stsdParams = {
+            codec: "opus",
+
+            channelCount: codecConfiguration.channelCount,
+            sampleRate:   (codecConfiguration.sampleRate << 16) >>> 0,
+
+            //sampleRate: 0xbb800000, // 48000 << 16
+            // MP4 single-valid defaults
+            sampleSize: 16,
+            dataReferenceIndex: 1,
+
+            // dOps (container policy, hard-coded)
+            dOps: {
+                payload: normalizedPayload,
+                version: 0,
+                flags: 131384, 
+            },
+
+            btrt: {
+            }
+        };
+
+    } else if (codecConfiguration.codec.startsWith("mp4a")) {
+
+            if (!(codecConfiguration.esds instanceof Uint8Array)) {
+                throw new Error(
+                    "adaptAudioCodecConfigurationToStsdParams: mp4a requires esds Uint8Array"
+                );
+            }
+
+            let channelCount;
+            let sampleRate;
+
+            const asc = parseAudioSpecificConfigFromEsds({
+                    esds: codecConfiguration.esds
+                });
+
+            if (asc !== null) {
+
+                const samplingFrequencyTable = [
+                    96000, 88200, 64000, 48000,
+                    44100, 32000, 24000, 22050,
+                    16000, 12000, 11025, 8000,
+                    7350
+                ];
+
+                channelCount = asc.channelConfiguration;
+                sampleRate   = samplingFrequencyTable[asc.samplingFrequencyIndex];
+
+            } else {
+
+                channelCount = codecConfiguration.channelCount;
+                sampleRate   = codecConfiguration.sampleRate;
+            }
+
+            if (!Number.isInteger(channelCount) ||
+                !Number.isInteger(sampleRate)) {
+                throw new Error(
+                    "adaptAudioCodecConfigurationToStsdParams: unable to resolve channelCount/sampleRate"
+                );
+            }
+
+         stsdParams = {
+                codec: "mp4a",
+                esds: new Uint8Array(codecConfiguration.esds),
+                channelCount,
+                sampleRate,
+                sampleSize: 16,
+                dataReferenceIndex: 1,
+            };
+
     } else {
+
         throw new Error(
-            [
-                "adaptAudioCodecConfigurationToStsdParams: unsupported codec",
-                "",
-                `Received: ${codecConfiguration.codec}`,
-                "",
-                "Expected an RFC 6381 audio codec compatible with MP4 emission.",
-                "Currently supported:",
-                "  - mp4a (AAC)"
-            ].join("\n")
+            `adaptAudioCodecConfigurationToStsdParams: unsupported codec ${codec}`
         );
     }
 
+    // - sourced ONLY from buildHints
+    // - validated and passed through verbatim
+    // - omitted if not supplied
+    stsdParams.btrt = applyBtrtContainerPolicy({ btrt: codecConfiguration?.btrt })
 
-    // ---------------------------------------------------------
-    // Required audio properties
-    // ---------------------------------------------------------
-
-    if (!Number.isInteger(codecConfiguration.channelCount)) {
-        throw new Error(
-            "adaptAudioCodecConfigurationToStsdParams: channelCount is missing or invalid"
-        );
-    }
-
-    if (!Number.isInteger(codecConfiguration.sampleRate)) {
-        throw new Error(
-            "adaptAudioCodecConfigurationToStsdParams: sampleRate is missing or invalid"
-        );
-    }
-
-    const sampleSize =
-        Number.isInteger(codecConfiguration.sampleSize)
-        ? codecConfiguration.sampleSize
-        : 16;
-
-    // ---------------------------------------------------------
-    // Emit-ready params
-    // ---------------------------------------------------------
-    return {
-        codec: sampleEntryType,
-        channelCount: codecConfiguration.channelCount,
-        sampleRate:   codecConfiguration.sampleRate,
-        sampleSize,
-        esds: new Uint8Array(codecConfiguration.esds)
-    };
+    return stsdParams;
 
 }

@@ -36,6 +36,8 @@ function readMdatFieldsFromBoxBytes(boxBytes) {
         );
     }
 
+    let diagnosticsCache = undefined;
+
     return {
         raw: boxBytes,
 
@@ -44,7 +46,14 @@ function readMdatFieldsFromBoxBytes(boxBytes) {
             fields: {}
         },
 
-        derived: {}
+        derived: {},
+        
+        get diagnostics() {
+            if (diagnosticsCache === undefined) {
+                diagnosticsCache = decodeMdatPayload("MDAT", boxBytes);
+            }
+            return diagnosticsCache;
+        }
     };
 }
 
@@ -70,6 +79,47 @@ function getMdatBuilderInputFromBoxReport(boxBytes) {
         )
     };
 }
+
+export function decodeMdatPayload(label, boxBytes) {
+
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("decodeMdatPayload: expected Uint8Array");
+    }
+
+    if (boxBytes.length < 8) {
+        throw new Error(
+            "decodeMdatPayload: boxBytes too small for mdat box"
+        );
+    }
+
+    const size =
+        (boxBytes[0] << 24) |
+        (boxBytes[1] << 16) |
+        (boxBytes[2] << 8)  |
+        boxBytes[3];
+
+    const payloadOffset = 8;
+    const payloadLength = size - payloadOffset;
+
+    if (payloadLength < 0) {
+        throw new Error(
+            "decodeMdatPayload: invalid mdat size"
+        );
+    }
+
+    return [
+        {
+            label,
+            bytes: `8–${size - 1}`,
+            field: "mdatPayloadBytes",
+            value: {
+                offset: payloadOffset,
+                length: payloadLength
+            }
+        }
+    ];
+}
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------

@@ -223,7 +223,10 @@ import { createIsoTraversalRequestFromBoxAndPath} from "./createIsoTraversalRequ
 import { getSampleEntryTableFromStsdAsList } from "../../reference/getSampleEntryTableFromStsdAsList.js";
 
 import { SampleEntryCursor } from "../..//reference/SampleEntryCursor.js";
-import { getSampleEntryHeaderSize } from "../..//reference/SampleEntryReader.js";
+import {
+    getSampleEntryHeaderSize,
+    SampleEntryReader
+} from "../../reference/SampleEntryReader.js";
 
 // -----------------------------------------------------------------------------
 // Registry population (composition root)
@@ -324,7 +327,7 @@ export const getGoldenTruthBox = {
             targetBoxPath.startsWith("free") ||
             targetBoxPath.startsWith("mdat");
 
-        if (!isAbsoluteMp4Path) {
+        if (sourceRegistryKey === "$mp4" && !isAbsoluteMp4Path) {
             throw new Error(
                 "Relative traversal is not supported.\n" +
                 "Traversal paths must be absolute and start at an MP4 root box\n" +
@@ -381,6 +384,21 @@ export const getGoldenTruthBox = {
             trakBytes = resolveTrakBytesFromTraversalRequest(traversalRequest);
         }
 
+        // Exact-context stsd: reuse provided bytes
+        if (
+            traversalRequest.sampleIndex !== null &&
+            sourceRegistryKey === "moov/trak/mdia/minf/stbl/stsd"
+        ) {
+            stsdBytes = boxBytes;
+        }
+        else if (trakBytes && traversalRequest.sampleIndex !== null) {
+            stsdBytes = getGoldenTruthBox.getSemanticBoxDataFromBox({
+                boxBytes: trakBytes,
+                sourceRegistryKey: "moov/trak",
+                targetBoxPath: "moov/trak/mdia/minf/stbl/stsd"
+            }).readBoxReport().raw;
+        }
+
         if (trakBytes && traversalRequest.sampleIndex !== null) {
             stsdBytes = getGoldenTruthBox.getSemanticBoxDataFromBox({
                 boxBytes: trakBytes,
@@ -401,6 +419,44 @@ export const getGoldenTruthBox = {
         // Nothing above this line mutates identity.
         // Nothing below this line does discovery.
         resolveTargetBoxIdentityFromStructure(traversalRequest, { stsdBytes });
+
+        const isAbsoluteMp4Path2 =
+            targetBoxPath.startsWith("moov") ||
+            targetBoxPath.startsWith("ftyp") ||
+            targetBoxPath.startsWith("free") ||
+            targetBoxPath.startsWith("mdat");
+
+        // ---------------------------------------------------------
+        // Semantic guard: forbid sample[n] after sample-entry boundary
+        // ---------------------------------------------------------
+        if (
+            traversalRequest.sampleIndex !== null &&
+            registryKeyCrossesSampleEntryBoundary(traversalRequest.targetBoxIdentity.key) &&
+            !isAbsoluteMp4Path2
+        ) {
+            throw new Error(
+                [
+                    "Invalid path for the current context.",
+                    "",
+                    "You are already inside a specific sample entry, so selecting another sample by index is not allowed.",
+                    "",
+                    "Current context:",
+                    `  sourceRegistryKey = "${traversalRequest.targetBoxIdentity.key}"`,
+                    "",
+                    "Invalid path:",
+                    `  ${targetBoxPath}`,
+                    "",
+                    "Why this is invalid:",
+                    "  sample[n] can only be used when starting from 'stsd'.",
+                    "  Once you have crossed into a SampleEntry, indexing no longer applies.",
+                    "",
+                    "Correct examples:",
+                    "  moov/trak/mdia/minf/stbl/stsd/sample[0]/dOps",
+                    "  moov/trak/mdia/minf/stbl/stsd/sample[0]/avcC",
+                ].join("\n")
+            );
+        }
+
 
         if (registryKeyCrossesSampleEntryBoundary(traversalRequest.targetBoxIdentity.key)) {
             return resolveSampleEntryBoundaryFromTraversalRequest({
@@ -1128,6 +1184,7 @@ export function resolveTrakFromMoov(moovBytes, trackIndex) {
     );
 }
 
+
 function materializeSampleEntryBytesFromTraversalRequest({ traversalRequest, stsdBytes }) {
     // Preconditions:
     // - traversalRequest.sampleIndex !== null
@@ -1159,24 +1216,25 @@ function materializeSampleEntryBytesFromTraversalRequest({ traversalRequest, sts
         remainingTraversalPath.replace(/^.*stsd\/sample\[\d+\]\/?/, "");
 
     if (afterSample === "") {
-        // Terminal sample entry (avc1, mp4a, etc.)
+        // Terminal sample entry (avc1, mp4a, Opus, etc.)
         return sampleEntryBytes;
     }
 
     // ---------------------------------------------------------
     // 2. Materialize child box inside SampleEntry
+    //    (Schema-driven via SampleEntryReader)
     // ---------------------------------------------------------
     const codec = entry.type;
     const childFourCC = afterSample;
 
-    const cursor = new SampleEntryCursor(sampleEntryBytes);
-    const headerSize = getSampleEntryHeaderSize(codec);
+    let childBoxBytes;
 
-    const childBoxBytes =
-        cursor.getChildBox({
-            headerSize,
-            fourcc: childFourCC
-        });
+    try {
+        const reader = new SampleEntryReader(sampleEntryBytes, codec);
+        childBoxBytes = reader.getChild(childFourCC);
+    } catch {
+        childBoxBytes = null;
+    }
 
     if (!childBoxBytes) {
         throw new Error(

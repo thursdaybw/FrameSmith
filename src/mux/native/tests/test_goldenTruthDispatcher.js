@@ -917,7 +917,7 @@ export async function testDispatcher_TrakIndexIsAuthoritative() {
     );
 
     assertEqual(
-        `error indicates invalid child for selected track: ${message}`,
+        `error indicates invalid child for selected track. error was: ${message}`,
         message.includes("SampleEntry") ||
         message.includes("not found in stsd"),
         true
@@ -942,10 +942,17 @@ export async function testDispatcher_TrakIndexIsAuthoritative() {
  *   - Non-existent indices fail immediately
  *   - No codec inference or cross-track fallback occurs
  */
+import{
+  getSampleEntryHeaderSize
+}
+from "../reference/SampleEntryReader.js";
+
 export async function testDispatcher_SampleEntryTraversal() {
 
     const resp = await fetch("reference/reference_av.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    getSampleEntryHeaderSize("avc1")
 
     // ---------------------------------------------------------
     // 1. Resolve first sample entry
@@ -3244,3 +3251,159 @@ export async function test_FromRawBytes_AllowsAbsoluteTraversal() {
     }
 }
 
+export async function testDispatcher_FromBox_ExactContext_DoesNotReResolveAncestors() {
+
+    // ---------------------------------------------------------
+    // Load oracle MP4
+    // ---------------------------------------------------------
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // ---------------------------------------------------------
+    // Extract STSD bytes authoritatively
+    // ---------------------------------------------------------
+    const stsdTruth =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[1]/mdia/minf/stbl/stsd"
+            );
+
+    const stsdBytes =
+        stsdTruth.readBoxReport().raw;
+
+    assertExists(
+        "stsdBytes resolved",
+        stsdBytes
+    );
+
+    // ---------------------------------------------------------
+    // Attempt traversal FROM stsd bytes using absolute path
+    // ---------------------------------------------------------
+    let threw = false;
+    let result = null;
+    let thrown_exception = null;
+    try {
+        result =
+            getGoldenTruthBox
+                .getSemanticBoxDataFromBox({
+                    boxBytes: stsdBytes,
+                    sourceRegistryKey: "moov/trak/mdia/minf/stbl/stsd",
+                    targetBoxPath: "moov/trak/mdia/minf/stbl/stsd/sample[0]"
+                });
+    } catch (err) {
+        console.log("caught exception:", err);
+        threw = true;
+    }
+
+    // ---------------------------------------------------------
+    // Assertions
+    // ---------------------------------------------------------
+    assertEqual(
+        `absolute traversal from exact-context box does not throw`,
+        threw,
+        false
+    );
+
+    assertExists(
+        "sample[0] resolved",
+        result
+    );
+
+    const report = result.readBoxReport();
+
+    assertExists(
+        "sample entry box report exists",
+        report
+    );
+
+    assertExists(
+        "sample entry box type exists",
+        report.box && report.box.type
+    );
+
+    assertEqual(
+        "resolved box is a SampleEntry (not stsd, not moov)",
+        report.box.type !== "stsd" &&
+        report.box.type !== "moov",
+        true
+    );
+}
+
+export async function testDispatcher_FromBox_ExactContext_ResolvesSampleEntry_dOps() {
+
+    // ---------------------------------------------------------
+    // Load oracle MP4 that contains Opus + dOps
+    // ---------------------------------------------------------
+    const resp = await fetch("reference/reference_av_opus.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // ---------------------------------------------------------
+    // Extract STSD bytes authoritatively
+    // ---------------------------------------------------------
+    const stsdTruth =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[1]/mdia/minf/stbl/stsd"
+            );
+
+    const stsdBytes =
+        stsdTruth.readBoxReport().raw;
+
+    assertExists(
+        "stsdBytes resolved",
+        stsdBytes
+    );
+
+    // ---------------------------------------------------------
+    // Attempt traversal FROM stsd bytes to sample[0]/dOps
+    // ---------------------------------------------------------
+    let threw = false;
+    let result = null;
+
+    try {
+        result =
+            getGoldenTruthBox
+                .getSemanticBoxDataFromBox({
+                    boxBytes: stsdBytes,
+                    sourceRegistryKey: "moov/trak/mdia/minf/stbl/stsd",
+                    targetBoxPath: "moov/trak/mdia/minf/stbl/stsd/sample[0]/dOps"
+                });
+    } catch (err) {
+        console.log("caught exception:", err);
+        threw = true;
+    }
+
+    // ---------------------------------------------------------
+    // Assertions
+    // ---------------------------------------------------------
+    assertEqual(
+        "absolute traversal from exact-context stsd to dOps does not throw",
+        threw,
+        false
+    );
+
+    assertExists(
+        "dOps resolved",
+        result
+    );
+
+    const report = result.readBoxReport();
+
+    assertExists(
+        "dOps box report exists",
+        report
+    );
+
+    assertExists(
+        "dOps box exists",
+        report.box
+    );
+
+    assertEqual(
+        "resolved box type is dOps",
+        report.box.type,
+        "dOps"
+    );
+}

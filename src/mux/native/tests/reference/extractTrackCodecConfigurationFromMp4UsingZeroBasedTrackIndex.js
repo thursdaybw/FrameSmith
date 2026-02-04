@@ -142,6 +142,17 @@ extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({
 
     }
 
+
+    // ---------------------------------------------------------
+    // Audio: Opus (Opus)
+    // ---------------------------------------------------------
+
+    if (sampleEntryType === "Opus") {
+
+        return normaliseOpusSampleEntry(sampleEntryReport);
+
+    }
+
     // ---------------------------------------------------------
     // Unsupported codec
     // ---------------------------------------------------------
@@ -150,4 +161,28 @@ extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({
         "extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex: " +
         `unsupported SampleEntry type '${sampleEntryType}'`
     );
+}
+
+function normaliseOpusSampleEntry(sampleEntryReport) {
+
+    if (!(sampleEntryReport.derived.dOps instanceof Uint8Array)) {
+        throw new Error(
+            "extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex: " +
+            "dOps missing from Opus SampleEntry"
+        );
+    }
+
+
+    const channelCount = sampleEntryReport.box?.fields?.channelCount;
+    const sampleRateRaw = sampleEntryReport.box?.fields?.sampleRate;
+    const sampleRate = sampleRateRaw >>> 16;
+
+    const dOps = sampleEntryReport.derived.dOps;
+
+    return {
+        codec: "opus",
+        dOps: dOps, 
+        channelCount: channelCount,
+        sampleRate
+    };
 }

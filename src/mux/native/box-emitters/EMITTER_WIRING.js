@@ -5,15 +5,21 @@ import { registerAvcCEmitter } from "../box-emitters/stsdBox/avcCBox.js";
 import { registerBtrtEmitter } from "../box-emitters/stsdBox/btrtBox.js";
 import { registerPaspEmitter } from "../box-emitters/stsdBox/paspBox.js";
 import { registerEsdsEmitter } from "../box-emitters/stsdBox/esdsBox.js";
+import { registerDOpsEmitter } from "../box-emitters/stsdBox/dOpsBox.js";
 import { registerAvc1SampleEntryEmitter } from "../box-emitters/stsdBox/avc1SampleEntryBox.js";
 import { registerMp4aSampleEntryEmitter } from "../box-emitters/stsdBox/mp4aSampleEntryBox.js";
+import { registerOpusSampleEntryEmitter } from "../box-emitters/stsdBox/opusSampleEntry.js";
 import { registerStsdEmitter } from "../box-emitters/stsdBox.js";
 import { registerSbgpEmitter } from "../box-emitters/sbgpBox.js";
 import { 
     registerSgpdFixedEmitter,
     registerSgpdVariableEmitter
 } from "../box-emitters/sgpdBox.js";
-import { registerStszEmitter } from "../box-emitters/stszBox.js";
+import {
+    registerStszFixedEmitter,
+    registerStszVariableEmitter
+} from "../box-emitters/stszBox.js";
+
 import { registerSttsEmitter } from "../box-emitters/sttsBox.js";
 import { registerStscEmitter } from "../box-emitters/stscBox.js";
 import { registerStcoEmitter } from "../box-emitters/stcoBox.js";
@@ -48,6 +54,7 @@ import { registerMdatEmitter } from "../box-emitters/mdatBox.js";
 // import { registerAvc1Assembler } from "../assemblers/stsdBox/assembleAvc1.js";
 import { registerMp4aSampleEntryAssembler } from "../assemblers/stsdBox/assembleMp4aSampleEntry.js";
 import { registerAvc1SampleEntryAssembler } from "../assemblers/stsdBox/assembleAvc1SampleEntry.js";
+import { registerOpusSampleEntryAssembler } from "../assemblers/stsdBox/assembleOpusSampleEntry.js";
 import { registerStsdAssembler } from "../assemblers/assembleStsd.js";
 import { registerStblAssembler } from "../assemblers/assembleStbl.js";
 import { registerIlstItemAssembler } from "../assemblers/assembleIlstItem.js";
@@ -127,13 +134,15 @@ import { registerMoovAssembler } from "../assemblers/assembleMoov.js";
 export const EMITTER_WIRING = [
     // Mp4 Box Emitters
     ["moov/trak/mdia/minf/stbl/stsd|avc1/avcC",         registerAvcCEmitter],
-    ["moov/trak/mdia/minf/stbl/stsd|{avc1|mp4a}/btrt",  registerBtrtEmitter],
     ["moov/trak/mdia/minf/stbl/stsd|avc1/pasp",         registerPaspEmitter],
     ["moov/trak/mdia/minf/stbl/stsd|mp4a/esds",         registerEsdsEmitter],
+    ["moov/trak/mdia/minf/stbl/stsd|Opus/dOps",         registerDOpsEmitter],
     ["moov/trak/mdia/minf/stbl/stsd",                   registerStsdEmitter],
     ["moov/trak/mdia/minf/stbl/sbgp",                   registerSbgpEmitter],
     ["moov/trak/mdia/minf/stbl/sgpd|fixed",        registerSgpdFixedEmitter],
     ["moov/trak/mdia/minf/stbl/sgpd|variable",  registerSgpdVariableEmitter],
+    ["moov/trak/mdia/minf/stbl/stsz|fixed",        registerStszFixedEmitter],
+    ["moov/trak/mdia/minf/stbl/stsz|variable",  registerStszVariableEmitter],
     ["moov/trak/mdia/minf/stbl/stts",                   registerSttsEmitter],
     ["moov/trak/mdia/minf/stbl/stsc",                   registerStscEmitter],
     ["moov/trak/mdia/minf/stbl/stco",                   registerStcoEmitter],
@@ -164,10 +173,15 @@ export const EMITTER_WIRING = [
     ["free",                                            registerFreeEmitter],
     ["mdat",                                            registerMdatEmitter],
 
+    // NOTE: {avc1|mp4a} here is NOT expanded or interpreted.
+    // This entry just points to an installer that registers
+    // concrete paths (…/avc1/btrt, …/mp4a/btrt) internally.
+    ["moov/trak/mdia/minf/stbl/stsd|{avc1|mp4a|Opus}/btrt",  registerBtrtEmitter],
+
     // Sample Entry Emitters
     ["moov/trak/mdia/minf/stbl/stsd|mp4a",   registerMp4aSampleEntryEmitter],
     ["moov/trak/mdia/minf/stbl/stsd|avc1",   registerAvc1SampleEntryEmitter],
-    ["moov/trak/mdia/minf/stbl/stsz",                   registerStszEmitter],
+    ["moov/trak/mdia/minf/stbl/stsd|Opus",   registerOpusSampleEntryEmitter],
 
 ];
 
@@ -182,6 +196,7 @@ export const ASSEMBLER_WIRING = [
     // Sample Entry Assemblers 
     ["moov/trak/mdia/minf/stbl/stsd|mp4a",  registerMp4aSampleEntryAssembler],
     ["moov/trak/mdia/minf/stbl/stsd|avc1",  registerAvc1SampleEntryAssembler],
+    ["moov/trak/mdia/minf/stbl/stsd|Opus",  registerOpusSampleEntryAssembler],
     ["moov/trak/mdia/minf/stbl",                       registerStblAssembler],
     ["moov/trak/mdia/minf/dinf/dref",                  registerDrefAssembler],
     ["moov/trak/mdia/minf/dinf",                       registerDinfAssembler],

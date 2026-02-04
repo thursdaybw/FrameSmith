@@ -126,3 +126,68 @@ export function readFourCC(bytes, offset) {
         bytes[offset + 3]
     );
 }
+
+export function decodeFullBoxHeader(label, boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("decodeFullBoxHeader: expected Uint8Array");
+    }
+
+    return {
+        label,
+
+        // ISO BMFF base box
+        size:
+        (boxBytes[0] << 24) |
+        (boxBytes[1] << 16) |
+        (boxBytes[2] << 8)  |
+        boxBytes[3],
+
+        type:
+        String.fromCharCode(
+            boxBytes[4],
+            boxBytes[5],
+            boxBytes[6],
+            boxBytes[7]
+        ),
+
+        // FullBox header
+        boxVersion: boxBytes[8],
+
+        boxFlags:
+        (boxBytes[9]  << 16) |
+        (boxBytes[10] << 8)  |
+        boxBytes[11],
+    };
+}
+
+export function decodeBasicBoxHeader(label, boxBytes) {
+
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("decodeBasicBoxHeader: expected Uint8Array");
+    }
+
+    if (boxBytes.length < 8) {
+        throw new Error(
+            "decodeBasicBoxHeader: boxBytes too small for basic box header"
+        );
+    }
+
+    return {
+        label,
+
+        // ISO BMFF base box header
+        size:
+        (boxBytes[0] << 24) |
+        (boxBytes[1] << 16) |
+        (boxBytes[2] << 8)  |
+        boxBytes[3],
+
+        type:
+        String.fromCharCode(
+            boxBytes[4],
+            boxBytes[5],
+            boxBytes[6],
+            boxBytes[7]
+        ),
+    };
+}

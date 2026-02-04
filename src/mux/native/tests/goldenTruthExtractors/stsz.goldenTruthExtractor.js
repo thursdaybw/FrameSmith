@@ -44,17 +44,19 @@ function readBoxReport(box) {
     const sampleSize  = readUint32(box, payloadOffset);
     const sampleCount = readUint32(box, payloadOffset + UINT32);
 
-    if (sampleSize !== 0) {
-        throw new Error(
-            `stsz.readBoxReport: constant sample_size ${sampleSize} not supported`
-        );
-    }
+    let sizes;
 
-    const sizes = readUint32ArrayFromOffset({
-        box,
-        payloadOffset: payloadOffset + UINT32, // shared helper expects count first
-        count: sampleCount
-    });
+    if (sampleSize !== 0) {
+        // constant-size samples: expand deterministically
+        sizes = new Array(sampleCount).fill(sampleSize);
+    } else {
+        // variable-size samples: read table
+        sizes = readUint32ArrayFromOffset({
+            box,
+            payloadOffset: payloadOffset + UINT32,
+            count: sampleCount
+        });
+    }
 
     return {
         raw: box,
@@ -76,12 +78,25 @@ function readBoxReport(box) {
 // ---------------------------------------------------------------------------
 // getEmitterInput (compiler intent)
 // ---------------------------------------------------------------------------
-
 function getEmitterInput(boxBytes) {
     const read = readBoxReport(boxBytes);
 
+    const sampleSize  = read.box.fields.sampleSize;
+    const sampleCount = read.box.fields.sampleCount;
+
+    if (sampleSize === 0) {
+        // Variable-size STSZ
+        return {
+            sampleSize: 0,
+            sampleCount,
+            sizes: read.box.fields.sizes.slice()
+        };
+    }
+
+    // Fixed-size STSZ
     return {
-        sizes: read.box.fields.sizes.slice()
+        sampleSize,
+        sampleCount
     };
 }
 

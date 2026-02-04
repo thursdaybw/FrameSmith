@@ -29,7 +29,7 @@ async function inspectResolve(label, mp4Bytes) {
 
     try {
         const box =
-            getGoldenTruthBox.fromMp4(
+            getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
                 mp4Bytes,
                 "moov/trak[0]/mdia/minf/stbl/ctts"
             );
@@ -50,12 +50,15 @@ async function inspectResolve(label, mp4Bytes) {
 
 export async function inspectCttsResolver() {
 
-    const visResp = await fetch("reference/reference_visual.mp4");
-    const avResp  = await fetch("reference/reference_av.mp4");
+    const visResp     = await fetch("reference/reference_visual.mp4");
+    const avResp      = await fetch("reference/reference_av.mp4");
+    const avOpusResp  = await fetch("reference/reference_av_opus.mp4");
 
-    const visBytes = new Uint8Array(await visResp.arrayBuffer());
-    const avBytes  = new Uint8Array(await avResp.arrayBuffer());
+    const visBytes     = new Uint8Array(await visResp.arrayBuffer());
+    const avBytes      = new Uint8Array(await avResp.arrayBuffer());
+    const avOpusBytes  = new Uint8Array(await avOpusResp.arrayBuffer());
 
     await inspectResolve("VISUAL", visBytes);
     await inspectResolve("AV", avBytes);
+    await inspectResolve("AV_OPUS", avOpusBytes);
 }

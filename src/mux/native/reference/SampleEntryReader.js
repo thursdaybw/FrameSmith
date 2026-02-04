@@ -18,6 +18,7 @@
 // - returns raw child box bytes
 
 import { readFourCC } from "../box-schema/boxLayoutReaders.js";
+import { getBoxSchemaForPath, getPayloadOffsetForPath } from "../box-schema/boxSchemas.js";
 
 /**
  * Return the fixed header size for a SampleEntry type.
@@ -25,20 +26,70 @@ import { readFourCC } from "../box-schema/boxLayoutReaders.js";
  * This is codec-defined structural knowledge.
  */
 export function getSampleEntryHeaderSize(sampleType) {
-    switch (sampleType) {
-        case "avc1":
-        case "hev1":
-        case "hvc1":
-            return 78;
+    console.warn(
+        "getSampleEntryHeaderSize(sampleType) is transitional.\n" +
+        "It now returns sampleEntry.childrenOffset.\n" +
+        "Use SampleEntryReader or schema.sampleEntry.childrenOffset directly."
+    );
 
-        case "mp4a":
-            return 28;
+    const schema = getSampleEntrySchemaByType(sampleType);
 
-        default:
-            throw new Error(
-                `Unknown SampleEntry type '${sampleType}'`
-            );
+    if (
+        !schema.sampleEntry ||
+        !Number.isInteger(schema.sampleEntry.childrenOffset)
+    ) {
+        throw new Error(
+            `SampleEntry schema missing sampleEntry.childrenOffset for ${sampleType}`
+        );
     }
+
+    return schema.sampleEntry.childrenOffset;
+}
+
+function getSampleEntryFixedFieldsSize(sampleType) {
+
+    if (typeof sampleType !== "string" || sampleType.length !== 4) {
+        throw new Error(
+            `getSampleEntryFixedFieldsSize: invalid sampleType '${sampleType}'`
+        );
+    }
+
+    const path = sampleEntryTypeToPath(sampleType);
+    const schema = getBoxSchemaForPath(path);
+
+    if (!Number.isInteger(schema.sampleEntry.fixedFieldsSize)) {
+        throw new Error(
+            [
+                "SampleEntry schema is missing required information.",
+                "",
+                `What happened:`,
+                `  The schema for '${path}' was found,`,
+                "  but it does not define 'sampleEntryFixedFieldsSize'.",
+                "",
+                "Why this matters:",
+                "  SampleEntry child boxes do NOT start immediately after the ISO header.",
+                "  They start after a codec-defined block of fixed fields.",
+                "",
+                "What this function expected:",
+                "  schema.sampleEntryFixedFieldsSize = <number of fixed bytes>",
+                "",
+                "How to fix it:",
+                "  Add 'sampleEntryFixedFieldsSize' to the SampleEntry schema",
+                "  for this codec (for example avc1 or mp4a)."
+            ].join("\n")
+        );
+    }
+
+    return schema.sampleEntryFixedFieldsSize;
+}
+
+export function getSampleEntrySchemaByType(sampleType) {
+    const path = sampleEntryTypeToPath(sampleType);
+    return getBoxSchemaForPath(path);
+}
+
+function sampleEntryTypeToPath(sampleType) {
+    return `moov/trak/mdia/minf/stbl/stsd|${sampleType}`;
 }
 
 /**
@@ -46,27 +97,36 @@ export function getSampleEntryHeaderSize(sampleType) {
  */
 export class SampleEntryReader {
 
-    constructor(sampleEntryBytes, headerSize) {
+    constructor(sampleEntryBytes, sampleEntryType) {
         if (!(sampleEntryBytes instanceof Uint8Array)) {
-            throw new Error("SampleEntryReader: expected Uint8Array");
+            throw new Error(
+                "SampleEntryReader: expected Uint8Array\n" +
+                `Recieved: ${sampleEntryBytes}`
+            );
         }
 
-        if (!Number.isInteger(headerSize) || headerSize <= 0) {
-            throw new Error("SampleEntryReader: invalid headerSize");
+        if (typeof sampleEntryType !== "string" || sampleEntryType.length !== 4) {
+            throw new Error(`SampleEntryReader: invalid sampleEntryType (${sampleEntryType})`);
+        }
+
+        const schema = getSampleEntrySchemaByType(sampleEntryType);
+
+        if (
+            !schema.sampleEntry ||
+            !Number.isInteger(schema.sampleEntry.childrenOffset)
+        ) {
+            throw new Error(
+                `SampleEntryReader: schema missing sampleEntry.childrenOffset for ${sampleEntryType}`
+            );
         }
 
         this.bytes = sampleEntryBytes;
-        this.headerSize = headerSize;
+        this.childrenOffset = schema.sampleEntry.childrenOffset;
     }
 
-    /**
-     * Enumerate child boxes inside the SampleEntry.
-     *
-     * @returns {Array<{ type: string, offset: number, size: number }>}
-     */
     enumerateChildren() {
         const children = [];
-        let offset = 8 + this.headerSize;
+        let offset = this.childrenOffset;
 
         while (offset + 8 <= this.bytes.length) {
             const size =
@@ -75,17 +135,11 @@ export class SampleEntryReader {
                 (this.bytes[offset + 2] << 8)  |
                 this.bytes[offset + 3];
 
-            if (size < 8) {
-                break;
-            }
+            if (size < 8) break;
 
             const type = readFourCC(this.bytes, offset + 4);
 
-            children.push({
-                type,
-                offset,
-                size
-            });
+            children.push({ type, offset, size });
 
             offset += size;
         }
@@ -93,26 +147,14 @@ export class SampleEntryReader {
         return children;
     }
 
-    /**
-     * Extract a specific child box by FourCC.
-     *
-     * @param {string} fourcc
-     * @returns {Uint8Array}
-     */
     getChild(fourcc) {
-        const children = this.enumerateChildren();
-
-        const match = children.find(c => c.type === fourcc);
+        const match =
+            this.enumerateChildren().find(c => c.type === fourcc);
 
         if (!match) {
-            throw new Error(
-                `SampleEntry does not contain child '${fourcc}'`
-            );
+            throw new Error(`SampleEntry does not contain child '${fourcc}'`);
         }
 
-        return this.bytes.slice(
-            match.offset,
-            match.offset + match.size
-        );
+        return this.bytes.slice(match.offset, match.offset + match.size);
     }
 }

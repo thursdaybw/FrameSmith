@@ -1,7 +1,6 @@
 export function addAccessUnitDurationsInPlace({
     accessUnits,
     codec,
-    trackDuration
 }) {
 
     assertNonEmptyArray(accessUnits);
@@ -10,7 +9,6 @@ export function addAccessUnitDurationsInPlace({
     addDurationsByPtsAdjacency({
         accessUnits,
         codec,
-        trackDuration
     });
 
     const total = accessUnits.reduce((s, u) => s + u.duration, 0);
@@ -49,7 +47,6 @@ function assertPtsPresent(accessUnits) {
 function addDurationsByPtsAdjacency({
     accessUnits,
     codec,
-    trackDuration
 }) {
 
     // ---------------------------------------------------------
@@ -104,29 +101,6 @@ function addDurationsByPtsAdjacency({
         durationByIndex.set(currentIndex, duration);
     }
 
-
-    // ---------------------------------------------------------
-    // AAC tail reconciliation (semantic fix)
-    // ---------------------------------------------------------
-    if ( typeof trackDuration === "number" && codec && codec.startsWith("mp4a")) {
-
-        let accumulated = 0;
-
-        const indices = Array.from(durationByIndex.keys())
-            .sort((a, b) => accessUnits[a].pts - accessUnits[b].pts);
-
-        for (let i = 0; i < indices.length - 1; i++) {
-            accumulated += durationByIndex.get(indices[i]);
-        }
-
-        const lastIndex = indices[indices.length - 1];
-        const reconciled =
-            trackDuration - accumulated;
-
-        if (reconciled > 0) {
-            durationByIndex.set(lastIndex, reconciled);
-        }
-    }
 
     // ---------------------------------------------------------
     // Apply durations back to original access units

@@ -33,11 +33,7 @@ export async function test_ExtractorEmitter_StructuralAgreement_stsz() {
     // Resolve stsz via Golden Truth dispatcher
     // ---------------------------------------------------------
 
-    const truth =
-        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
-            mp4,
-            "moov/trak[0]/mdia/minf/stbl/stsz"
-        );
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File( mp4, "moov/trak[0]/mdia/minf/stbl/stsz");
 
     // ---------------------------------------------------------
     // Extract structural truth
@@ -51,22 +47,23 @@ export async function test_ExtractorEmitter_StructuralAgreement_stsz() {
     // ---------------------------------------------------------
 
     const input = truth.getEmitterInput();
-    const node  =
-        EmitterRegistry.emit(
-            "moov/trak/mdia/minf/stbl/stsz",
-            input
-        );
+    let stszEmitterPath;
+
+    if (input.sampleSize === 0) {
+        stszEmitterPath = "moov/trak/mdia/minf/stbl/stsz|variable";
+    } else {
+        stszEmitterPath = "moov/trak/mdia/minf/stbl/stsz|fixed";
+    }
+
+    const node = EmitterRegistry.emit( stszEmitterPath, input);
 
     // ---------------------------------------------------------
     // Structural agreement assertion
     // ---------------------------------------------------------
     assertBoxStructuralEqual(
         "emitStszBox(input) structure matches readBoxReport().box",
-        normalizeEmitterNodeToSchemaBox(
-            node,
-            "moov/trak/mdia/minf/stbl/stsz"
-        ),
+        normalizeEmitterNodeToSchemaBox( node, stszEmitterPath),
         box,
-        "moov/trak/mdia/minf/stbl/stsz"
+        stszEmitterPath
     );
 }

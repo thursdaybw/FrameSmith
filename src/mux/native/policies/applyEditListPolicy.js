@@ -148,68 +148,91 @@
  *
  * It encodes a single, explicit, documented container decision.
  */
-export function applyEditListPolicy({
-    trackDuration,
-    trackTimescale,
-    movieTimescale,
-    mediaStartTime
-}) {
+const OPUS_FRAME_SIZE = 960;
 
-    // ---------------------------------------------------------------------
-    // Defensive validation (grammar + intent)
-    // ---------------------------------------------------------------------
+export function applyEditListPolicy({ track, mvhd }) {
 
-    if (!Number.isInteger(trackDuration) || trackDuration < 0) {
-        throw new Error(
-            "applyEditListPolicy: trackDuration must be a non-negative integer"
-        );
+    console.log("========================================");
+    console.log("applyEditListPolicy BEGIN");
+    console.log("trackId:", track.trackId);
+    console.log("codec:", track.semanticCore?.codec?.codec);
+
+    const codec = track.semanticCore?.codec?.codec;
+
+    const trackTimescale = track.buildParameters.trackTimescale;
+    const movieTimescale = mvhd.timescale;
+
+    const trackDecodedDuration = track.trackDuration;
+
+    const encoderDelaySamples =
+        track.semanticHints?.encoderDelaySamples ?? 0;
+
+    const encoderDelayRemainder =
+        track.semanticHints?.encoderDelayRemainderSamples ?? 0;
+
+    const effectiveEncoderDelaySamples =
+        encoderDelaySamples + encoderDelayRemainder;
+
+    const inferredTailPaddingSamples =
+        track.semanticHints?.inferredTailPaddingSamples ?? 0;
+
+    const effectiveDecodedDuration =
+        trackDecodedDuration + inferredTailPaddingSamples;
+
+    const trimmedTrackDurationSamples =
+        effectiveDecodedDuration - effectiveEncoderDelaySamples;
+
+    // ---------------------------------------------------------
+    // editDuration (movie timescale)
+    // ---------------------------------------------------------
+    const editDuration = mvhd.duration;
+
+    // ---------------------------------------------------------
+    // mediaTime
+    // ---------------------------------------------------------
+    let mediaTime;
+
+    if (codec === "opus") {
+
+        // FFmpeg: frame-quantised encoder delay
+        const encoderDelayFrames =
+            Math.floor(encoderDelaySamples / OPUS_FRAME_SIZE);
+
+        const encoderDelaySeconds =
+            encoderDelayFrames * (OPUS_FRAME_SIZE / trackTimescale);
+
+        const encoderDelayMovieUnits =
+            Math.round(encoderDelaySeconds * movieTimescale);
+
+        mediaTime =
+            Math.round(
+                encoderDelayMovieUnits
+                * trackTimescale
+                / movieTimescale
+            );
+
+        console.log("OPUS_FRAME_SIZE:", OPUS_FRAME_SIZE);
+        console.log("encoderDelayFrames:", encoderDelayFrames);
+        console.log("encoderDelaySeconds:", encoderDelaySeconds);
+        console.log("encoderDelayMovieUnits:", encoderDelayMovieUnits);
+
+    } else {
+
+        // Spec-straight path (video, mp4a)
+        mediaTime = effectiveEncoderDelaySamples;
     }
 
-    if (!Number.isInteger(trackTimescale) || trackTimescale <= 0) {
-        throw new Error(
-            "applyEditListPolicy: trackTimescale must be a positive integer"
-        );
-    }
-
-    if (!Number.isInteger(movieTimescale) || movieTimescale <= 0) {
-        throw new Error(
-            "applyEditListPolicy: movieTimescale must be a positive integer"
-        );
-    }
-
-    if (!Number.isInteger(mediaStartTime)) {
-        throw new Error(
-            "applyEditListPolicy: mediaStartTime must be an integer"
-        );
-    }
-
-    // ---------------------------------------------------------------------
-    // ORACLE RULE (ffmpeg)
-    // ---------------------------------------------------------------------
-    //
-    // Empirically observed behavior:
-    //
-    //   elst.editDuration === mvhd.duration
-    //
-    // NOT:
-    //   trackDuration * movieTimescale / trackTimescale
-    //
-    // This avoids fractional durations when track timescales differ
-    // and matches ffmpeg byte-for-byte for single-track and AV muxes.
-    //
-    // This is an explicit container policy choice.
-    //
-    const editDuration = trackDuration
-        * movieTimescale
-        / trackTimescale === trackDuration
-        ? trackDuration
-        : Math.round(
-            trackDuration * movieTimescale / trackTimescale
-        );
-
-    // ---------------------------------------------------------------------
-    // ffmpeg-compatible single-entry edit list
-    // ---------------------------------------------------------------------
+    console.log("trackTimescale:", trackTimescale);
+    console.log("movieTimescale:", movieTimescale);
+    console.log("trackDecodedDuration:", trackDecodedDuration);
+    console.log("encoderDelaySamples:", encoderDelaySamples);
+    console.log("encoderDelayRemainder:", encoderDelayRemainder);
+    console.log("effectiveEncoderDelaySamples:", effectiveEncoderDelaySamples);
+    console.log("inferredTailPaddingSamples:", inferredTailPaddingSamples);
+    console.log("trimmedTrackDurationSamples:", trimmedTrackDurationSamples);
+    console.log("editDuration:", editDuration);
+    console.log("mediaTime:", mediaTime);
+    console.log("========================================");
 
     return {
         elst: {
@@ -217,13 +240,8 @@ export function applyEditListPolicy({
             flags: 0,
             entries: [
                 {
-                    // duration in MOVIE timescale units
                     editDuration,
-
-                    // start time in TRACK timescale units
-                    mediaTime: mediaStartTime,
-
-                    // normal playback rate (1.0×)
+                    mediaTime,
                     mediaRateInteger: 1,
                     mediaRateFraction: 0
                 }

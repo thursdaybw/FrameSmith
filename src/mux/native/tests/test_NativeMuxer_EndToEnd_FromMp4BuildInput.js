@@ -14,6 +14,10 @@ import {
 
 import { readFourCC } from "../box-schema/boxLayoutReaders.js";
 
+import {
+    getHeaderLayoutForPath,
+} from "../box-schema/boxSchemas.js";
+
 import { describeMp4Byte } from "./reference/Mp4ByteContext.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 import { EXTRACTOR_WIRING} from "./goldenTruthExtractors/GoldenTruthExtractorWiring.js";
@@ -133,7 +137,8 @@ import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 // TEST A
 export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
 
-    const resp = await fetch("reference/reference_av.mp4");
+    //const resp = await fetch("reference/reference_av.mp4");
+    const resp = await fetch("reference/reference_av_opus.mp4");
     const goldenMp4 = new Uint8Array(await resp.arrayBuffer());
 
     const mp4BuildInput = await runGoldenMp4AVTestClient({ mp4Bytes: goldenMp4 });
@@ -141,8 +146,104 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
     // ---------------------------------------------------------
     // Compile MP4 (debug object temporarily enabled)
     // ---------------------------------------------------------
-    const result = createMp4FromInputs(mp4BuildInput);
+    const result = createMp4FromInputs(mp4BuildInput, goldenMp4);
     const outBytes = result.bytes;
+
+
+    const goldT1Stts = getGoldenTruthBox .getSemanticBoxDataFromBox(
+        {
+            boxBytes: goldenMp4,
+            sourceRegistryKey: "$mp4",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stts"
+        }
+    ).readBoxReport();
+
+    const prodT1Stts = getGoldenTruthBox .getSemanticBoxDataFromBox(
+        {
+            boxBytes: outBytes,
+            sourceRegistryKey: "$mp4",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stts"
+        }
+    ).readBoxReport();
+
+    console.log(
+        "=============================================\n",
+        "goldT1Stts", goldT1Stts.box, 
+        "\nprodT1Stts", prodT1Stts.box, 
+        "\n=============================================\n",
+    );
+
+    const goldT1Stco = getGoldenTruthBox .getSemanticBoxDataFromBox(
+        {
+            boxBytes: goldenMp4,
+            sourceRegistryKey: "$mp4",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stco"
+        }
+    ).readBoxReport();
+
+    const prodT1Stco = getGoldenTruthBox .getSemanticBoxDataFromBox(
+        {
+            boxBytes: outBytes,
+            sourceRegistryKey: "$mp4",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stco"
+        }
+    ).readBoxReport();
+
+
+    console.log(
+        "=============================================\n",
+        "goldT1Stco", goldT1Stco.box, 
+        "\nprodT1Stco", prodT1Stco.box, 
+        "\n=============================================\n",
+    );
+
+    const goldT1Stsz = getGoldenTruthBox .getSemanticBoxDataFromBox(
+        {
+            boxBytes: goldenMp4,
+            sourceRegistryKey: "$mp4",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stsz"
+        }
+    ).readBoxReport();
+
+    const prodT1Stsz = getGoldenTruthBox .getSemanticBoxDataFromBox(
+        {
+            boxBytes: outBytes,
+            sourceRegistryKey: "$mp4",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stsz"
+        }
+    ).readBoxReport();
+
+    console.log(
+        "=============================================\n",
+        "goldT1Stsz", goldT1Stsz.box, 
+        "\nprodT1Stsz", prodT1Stsz.box, 
+        "\n=============================================\n",
+    );
+
+
+    const goldT1Stsc = getGoldenTruthBox .getSemanticBoxDataFromBox(
+        {
+            boxBytes: goldenMp4,
+            sourceRegistryKey: "$mp4",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stsc"
+        }
+    ).readBoxReport();
+
+    const prodT1Stsc = getGoldenTruthBox .getSemanticBoxDataFromBox(
+        {
+            boxBytes: outBytes,
+            sourceRegistryKey: "$mp4",
+            targetBoxPath: "moov/trak[1]/mdia/minf/stbl/stsc"
+        }
+    ).readBoxReport();
+
+    console.log(
+        "=============================================\n",
+        "goldT1Stsc", goldT1Stsc.box, 
+        "\nprodT1Stsc", prodT1Stsc.box, 
+        "\n=============================================\n",
+    );
+
 
     console.log("ORACLE ftyp bytes:", goldenMp4.slice(0, 64));
     console.log("PRODUCED ftyp bytes:", outBytes.slice(0, 64));
@@ -202,7 +303,6 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
         }
     ).readBoxReport();
 
-
     const mdatBoxProd = getGoldenTruthBox .getSemanticBoxDataFromBox(
         {
             boxBytes: outBytes,
@@ -211,14 +311,23 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
         }
     ).readBoxReport();
 
-    console.log("mdatBoxGold.box.fields", mdatBoxGold.box.fields); 
-    console.log("mdatBoxProd.box.fields", mdatBoxProd.box.fields); 
+    console.log("mdatBoxGold.box.fields", mdatBoxGold.box); 
+    console.log("mdatBoxProd.box.fields", mdatBoxProd.box); 
     console.log(
         "mdat[1] length:",
         "oracle =", mdatBoxGold.raw.length,
         "produced =", mdatBoxProd.raw.length
     );
 
+    console.log(
+        "gold mdat slice:",
+        Array.from(mdatBoxGold.raw.slice(8, 24))
+    );
+
+    console.log(
+        "prod mdat slice:",
+        Array.from(mdatBoxProd.raw.slice(8, 24))
+    );
     const ftypBoxGold = getGoldenTruthBox .getSemanticBoxDataFromBox(
         {
             boxBytes: goldenMp4,
@@ -271,49 +380,36 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
         );
     }
 
-    const moovBoxGold = getGoldenTruthBox .getSemanticBoxDataFromBox(
-        {
-            boxBytes: goldenMp4,
-            sourceRegistryKey: "$mp4",
-            targetBoxPath: "moov"
-        }
-    ).readBoxReport();
-
-    const moovBoxProd = getGoldenTruthBox .getSemanticBoxDataFromBox(
+    // -----------------------------------------------------
+    // mDat header  
+    // -----------------------------------------------------
+    const mdatBytes = getGoldenTruthBox .getSemanticBoxDataFromBox(
         {
             boxBytes: outBytes,
             sourceRegistryKey: "$mp4",
-            targetBoxPath: "moov"
+            targetBoxPath: "mdat"
         }
-    ).readBoxReport();
-/*
-    for (let i = 0; i < moovBoxGold.raw.length; i++) {
-        assertEqualHex(
-            `moov.byte[${i}]`,
-            moovBoxGold.raw[i],
-            moovBoxProd.raw[i]
-        );
-    }
+    ).readBoxReport().raw;
+
+    dumpHeaderAscii({boxBytes: mdatBytes, path:"mdat"});
+
     // -----------------------------------------------------
-    // File eqivalence 
+    // Full MP4 byte-for-byte equivalence
     // -----------------------------------------------------
     if (outBytes.length !== goldenMp4.length) {
-        console.log(
-            "file[1] length mismatch:",
-            "oracle =", outBytes.length,
-            "produced =", goldenMp4.length
+        throw new Error(
+            `MP4 length mismatch: oracle=${goldenMp4.length}, produced=${outBytes.length}`
         );
     }
 
     for (let i = 0; i < goldenMp4.length; i++) {
         assertEqualHex(
-            `file.byte[${i}]`,
+            `mp4.byte[${i}]`,
             outBytes[i],
             goldenMp4[i]
         );
     }
 
-*/
     // ---------------------------------------------------------
     // Optional download (manual inspection)
     // ---------------------------------------------------------
@@ -325,14 +421,19 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
 }
 
 export const SELECTORS = [
+    "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]/dOps",
     "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]/esds",
     "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]/btrt",
+    "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]/pasp",
+    "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]/avcC",
     "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]",
     "moov/trak[1]/mdia/minf/stbl/stsd",
     "moov/trak[1]/mdia/minf/stbl/stco",
     "moov/trak[1]/mdia/minf/stbl/stsz",
+    "moov/trak[1]/mdia/minf/stbl/stss",
     "moov/trak[1]/mdia/minf/stbl/stsc",
     "moov/trak[1]/mdia/minf/stbl/stts",
+    "moov/trak[1]/mdia/minf/stbl/ctts",
     "moov/trak[1]/mdia/minf/stbl/sgpd",
     "moov/trak[1]/mdia/minf/stbl/sbgp",
     "moov/trak[1]/mdia/minf/stbl",
@@ -347,6 +448,8 @@ export const SELECTORS = [
     "moov/trak[1]/edts",
     "moov/trak[1]/tkhd",
     "moov/trak[1]",
+    "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/dOps",
+    "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/esds",
     "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/pasp",
     "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/btrt",
     "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/avcC",
@@ -463,6 +566,41 @@ function probeOracleSelectors({ bytes, selectors }) {
     return results;
 }
 
+function dumpHeaderAscii({ boxBytes, path }) {
+
+    // Ask the schema how big the header for this box is
+    const headerLayout = getHeaderLayoutForPath(path);
+    const headerSize = headerLayout.headerSize;
+
+    // Walk through each byte in the header
+    for (let offset = 0; offset < headerSize; offset++) {
+
+        // Read the raw byte value (0–255)
+        const byteValue = boxBytes[offset];
+
+        // Convert the byte to a character
+        const character = String.fromCharCode(byteValue);
+
+        // Decide if this character is a normal, readable ASCII character.
+        // Printable ASCII characters live between space (32) and tilde (126).
+        let printableCharacter;
+
+        if (byteValue >= 32 && byteValue <= 126) {
+            printableCharacter = character;
+        } else {
+            // Anything else is control data or binary, so show a dot
+            printableCharacter = ".";
+        }
+
+        // Print the offset, decimal value, and printable character
+        console.log(
+            "offset " + offset +
+            " | dec " + byteValue +
+            " | '" + printableCharacter + "'"
+        );
+    }
+}
+
 
 // ============================================================
 // STRUCTURAL COMPARISON (container + child layout)
@@ -482,3 +620,5 @@ function downloadMp4(bytes, filename) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
+
+

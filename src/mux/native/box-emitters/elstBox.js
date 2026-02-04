@@ -165,18 +165,3 @@ export function registerElstEmitter(registry) {
         emitElstBox
     );
 }
-/*
-export function registerElstV0Emitter(registry) {
-    registry.registerEmitter(
-        "moov/trak/edts/elst|v0",
-        emitElstBox
-    );
-}
-
-export function registerElstV1Emitter(registry) {
-    registry.registerEmitter(
-        "moov/trak/edts/elst|v1",
-        emitElstBox
-    );
-}
-*/

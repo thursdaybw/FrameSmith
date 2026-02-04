@@ -258,14 +258,9 @@ export async function  testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg() {
 
     const sampleEntryRaw = avc1.readBoxReport().raw;
 
-    const headerSize =
-        getSampleEntryHeaderSize("avc1");
+    const headerSize = getSampleEntryHeaderSize("avc1");
 
-    const reader =
-        new SampleEntryReader(
-            sampleEntryRaw,
-            headerSize
-        );
+    const reader = new SampleEntryReader( sampleEntryRaw, "avc1");
 
     const refBtrt = reader.getChild("btrt");
 

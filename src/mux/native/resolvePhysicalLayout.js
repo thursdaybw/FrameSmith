@@ -95,6 +95,8 @@ export function resolvePhysicalLayout({
         }
     }
 
+    // Load oracle and extract STCO intent (getEmitterInput) here. 
+
     return {
         fileBoxOrder,
         chunkOffsetType,

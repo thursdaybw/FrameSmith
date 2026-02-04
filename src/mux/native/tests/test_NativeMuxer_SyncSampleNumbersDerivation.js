@@ -47,10 +47,16 @@ export function testNativeMuxer_DeriveSyncSampleNumbers_Simple() {
         "present"
     );
 
-    assertEqual("count", result.sampleNumbers.length, 3);
-    assertEqual("sample[0]", result.sampleNumbers[0], 1);
-    assertEqual("sample[1]", result.sampleNumbers[1], 4);
-    assertEqual("sample[2]", result.sampleNumbers[2], 6);
+    assertEqual("count", result.syncSampleNumbers.length, 3);
+    assertEqual("sample[0]", result.syncSampleNumbers[0], 1);
+    assertEqual("sample[1]", result.syncSampleNumbers[1], 4);
+    assertEqual("sample[2]", result.syncSampleNumbers[2], 6);
+
+    assertEqual(
+        "totalSampleCount",
+        result.totalSampleCount,
+        6
+    );
 
 }
 
@@ -72,9 +78,14 @@ export function testNativeMuxer_DeriveSyncSampleNumbers_NoKeyInfo() {
     );
 
     assertEqual(
-        "sampleNumbers",
-        result.sampleNumbers,
+        "syncSampleNumbers",
+        result.syncSampleNumbers,
         false
     );
 
+    assertEqual(
+        "totalSampleCount",
+        result.totalSampleCount,
+        4
+    );
 }

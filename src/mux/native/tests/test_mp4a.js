@@ -133,12 +133,12 @@ export async function testMp4a_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg()
     // ---------------------------------------------------------
     // 3. Rebuild mp4a
     // ---------------------------------------------------------
-    const outBytes = serializeBoxTree(
-        EmitterRegistry.assemble(
+    const mp4aNode = EmitterRegistry.assemble(
             "moov/trak/mdia/minf/stbl/stsd|mp4a",
             buildParams,
         )
-    );
+    //console.log('mp4aNode', mp4aNode);
+    const outBytes = serializeBoxTree(mp4aNode);
 
     // ---------------------------------------------------------
     // 4. Re-parse rebuilt mp4a

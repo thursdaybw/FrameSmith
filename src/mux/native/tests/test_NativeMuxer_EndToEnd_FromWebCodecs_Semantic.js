@@ -166,6 +166,14 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
         mdatReport.raw.length > 8,
         true
     );
+
+
+    // ---------------------------------------------------------
+    // Opus inspection
+    // ---------------------------------------------------------
+
+
+    //await opusInspection(outBytes);
     // ---------------------------------------------------------
     // Phase 4 — Optional download
     // ---------------------------------------------------------
@@ -180,6 +188,72 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
         totalMs: Math.round(tEnd - t0)
     });
 }
+
+async function opusInspection(outBytes) {
+
+    const oracleResp  = await fetch("reference/reference_av_opus.mp4");
+    const oracleBytes = new Uint8Array(await oracleResp.arrayBuffer());
+
+    // ---------------------------------------------------------
+    // Opus SampleEntry
+    // ---------------------------------------------------------
+
+    const oracleOpus =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            oracleBytes,
+            "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]"
+        );
+
+    const producedOpus =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            outBytes,
+            "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]"
+        );
+
+    const oracleOpusReport   = oracleOpus.readBoxReport();
+    const producedOpusReport = producedOpus.readBoxReport();
+
+    console.log("[ORACLE][Opus] size =", oracleOpusReport.raw.length);
+    console.log("[PRODUCED][Opus] size =", producedOpusReport.raw.length);
+
+    console.log(
+        "[ORACLE][Opus][hex]",
+        Array.from(oracleOpusReport.raw)
+            .map(b => b.toString(16).padStart(2, "0"))
+            .join(" ")
+    );
+
+    console.log(
+        "[PRODUCED][Opus][hex]",
+        Array.from(producedOpusReport.raw)
+            .map(b => b.toString(16).padStart(2, "0"))
+            .join(" ")
+    );
+
+    // ---------------------------------------------------------
+    // dOps (direct child of Opus SampleEntry)
+    // ---------------------------------------------------------
+
+    const oracleDOps =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            oracleBytes,
+            "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/dOps"
+        );
+
+    const producedDOps =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            outBytes,
+            "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]/dOps"
+        );
+
+    const o = oracleDOps.readBoxReport();
+    const p = producedDOps.readBoxReport();
+
+    console.log("[ORACLE][dOps] header+payload bytes:", o.raw.length);
+    console.log("[PRODUCED][dOps] header+payload bytes:", p.raw.length);
+
+}
+
 
 // -------------------------------------------------------------
 // Local helper (copied intentionally — test-local concern)
