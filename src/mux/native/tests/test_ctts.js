@@ -113,17 +113,14 @@ export async function testCtts_LockedLayoutEquivalence_ffmpeg() {
             const cttsPath =
                 `moov/trak[${trackIndex}]/mdia/minf/stbl/ctts`;
 
-            let parsed;
+            const parsed =
+                getGoldenTruthBox
+                .getSemanticBoxDataByPathFromMp4File(
+                    mp4,
+                    cttsPath
+                );
 
-            try {
-                parsed =
-                    getGoldenTruthBox
-                        .getSemanticBoxDataByPathFromMp4File(
-                            mp4,
-                            cttsPath
-                        );
-            } catch (e) {
-                // CTTS not present — this is a valid outcome
+            if (parsed && parsed.found === false) {
                 console.log(
                     `[CTTS] ${fixture.label} track ${trackIndex}: ABSENT`
                 );

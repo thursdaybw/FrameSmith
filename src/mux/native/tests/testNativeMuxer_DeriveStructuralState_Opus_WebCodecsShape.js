@@ -78,12 +78,8 @@ export async function testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainer
         )
         .readBoxReport();
 
-     console.log("Opus oracle stsc box: ", oracleStscReportProbe.box);
-
 
     const { tracks } = await runGoldenMp4AVTestClient({ mp4Bytes });
-
-    console.log("Opus compiler inputs", tracks);
 
     const videoTrack = tracks[0];
     videoTrack.semanticTrackFamily = deriveSemanticTrackFamily(videoTrack);
@@ -165,18 +161,9 @@ export async function testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainer
         )
         .readBoxReport();
 
-    // structural view
-    console.log("ORACLE STSC fields:", {
-        entryCount: oracleStscReport.box.fields.entries.length,
-        entries: oracleStscReport.box.fields.entries
-    });
-
     // raw byte view (first N bytes so logs stay readable)
     const raw = oracleStscReport.raw;
     const MAX = Math.min(raw.length, 128);
-
-    console.log( "ORACLE STSC raw bytes:", Array.from(oracleStscReport.raw));
-
 
     // ---------------------------------------------------------
     // 4. STSC byte-for-byte (oracle lock)
@@ -326,12 +313,7 @@ export async function testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainer
         )
         .readBoxReport();
 
-    console.log("Mp4a oracle stsc box: ", oracleStscReportProbe.box);
-
-
     const { tracks } = await runGoldenMp4AVTestClient({ mp4Bytes });
-
-    console.log("mp4 compiler inputs", tracks);
 
     const videoTrack = tracks[0];
     videoTrack.semanticTrackFamily = deriveSemanticTrackFamily(videoTrack);
@@ -552,7 +534,6 @@ export async function testNativeMuxer_WhenGivenWebCodecsInputs_MustProduceLegalS
 
     for (const fixture of fixtures) {
 
-        console.log(fixtures);
         // -----------------------------------------------------
         // Clone inputs
         // -----------------------------------------------------

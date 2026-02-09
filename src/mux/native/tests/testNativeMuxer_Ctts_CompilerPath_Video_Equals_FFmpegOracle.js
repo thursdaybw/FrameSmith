@@ -1,14 +1,9 @@
-import {
-    assertExists,
-    assertObjectEqual,
-    assertEqualHex,
-} from "./assertions.js";
-
+import { assertExists, assertObjectEqual, assertEqualHex, } from "./assertions.js";
 import { adaptCttsFromSamples } from "../adapters/adaptCttsFromSamples.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
-import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
+import { extractSemanticAccessUnitsFromMp4 } from "../demux/container/extractSemanticAccessUnitsFromMp4.js";
 import { deriveDecodeTimestampsInPlace } from "../derivers/deriveDecodeTimestampsInPlace.js";
 import { DecodeOrderStrategies } from "../derivers/strategies/decodeOrderStrategies.js";
 

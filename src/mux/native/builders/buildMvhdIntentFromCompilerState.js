@@ -2,40 +2,23 @@ import { applyMovieTimingPolicy } from "../policies/applyMovieTimingPolicy.js";
 
 export function buildMvhdIntentFromCompilerState({ mp4CompilerState }) {
 
-    const referenceTrackTimescale = mp4CompilerState.tracks[0].buildParameters.trackTimescale;
-
     // ---------------------------------------------------------
     // FFmpeg behavior:
     // Movie duration comes from authoritative stream timeline,
     // not max(trackDuration)
     // ---------------------------------------------------------
 
-    let movieDurationInMovieTimescale;
+    let movieDurationSeconds;
 
     if (Number.isInteger(mp4CompilerState.semanticHints?.movieDuration)) {
-
-        // Oracle / external authority path
-        movieDurationInMovieTimescale =
-            mp4CompilerState.semanticHints.movieDuration;
-
+        // IMPORTANT: semanticHints.movieDuration must already be in MOVIE TIMESCALE
+        movieDurationSeconds = mp4CompilerState.semanticHints.movieDuration / (mp4CompilerState.semanticHints.movieTimescale ?? 1000);
     } else {
-
-        // Derived path (WebCodecs, synthetic sources)
-        const referenceTrackTimescale =
-            mp4CompilerState.tracks[0].buildParameters.trackTimescale;
-
-        const derivedDurationInTrackTimescale =
-            getDurationOfLongestTrack(
-                mp4CompilerState.tracks,
-                referenceTrackTimescale
-            );
-
-        movieDurationInMovieTimescale =
-            derivedDurationInTrackTimescale;
+        movieDurationSeconds = getLongestTrackDurationSeconds(mp4CompilerState.tracks);
     }
 
     const timing = applyMovieTimingPolicy({
-        movieDurationInMovieTimescale,
+        movieDurationSeconds,
         trackId: mp4CompilerState.highestTrackId,
         movieTimescale: mp4CompilerState.semanticHints?.movieTimescale
     });
@@ -47,20 +30,12 @@ export function buildMvhdIntentFromCompilerState({ mp4CompilerState }) {
     };
 }
 
-function getDurationOfLongestTrack(tracks, referenceTrackTimescale) {
-
+function getLongestTrackDurationSeconds(tracks) {
 
     if (!Array.isArray(tracks)) {
         throw new Error(
-            "deriveMovieDurationFromTracks: tracks must be an array, " +
+            "getLongestTrackDurationSeconds: tracks must be an array, " +
             `received ${Object.prototype.toString.call(tracks)}`
-        );
-    }
-
-    if (!Number.isInteger(referenceTrackTimescale) || referenceTrackTimescale <= 0) {
-        throw new Error(
-            "deriveMovieDurationFromTracks: referenceTrackTimescale must be a positive integer, " +
-            `received ${referenceTrackTimescale} (${typeof referenceTrackTimescale})`
         );
     }
 
@@ -70,15 +45,16 @@ function getDurationOfLongestTrack(tracks, referenceTrackTimescale) {
 
         if (!Number.isInteger(track.trackDuration)) {
             throw new Error(
-                "deriveMovieDurationFromTracks: track.trackDuration must be an integer"
+                "getLongestTrackDurationSeconds: track.trackDuration must be an integer"
             );
         }
 
-        const trackTimescale = track.buildParameters.trackTimescale;
+        const trackTimescale = track.buildParameters?.trackTimescale;
 
         if (!Number.isInteger(trackTimescale) || trackTimescale <= 0) {
             throw new Error(
-                "deriveMovieDurationFromTracks: trackTimescale must be a positive integer"
+                "getLongestTrackDurationSeconds: track.buildParameters.trackTimescale must be a positive integer, " +
+                `received ${trackTimescale} (${typeof trackTimescale})`
             );
         }
 
@@ -89,6 +65,5 @@ function getDurationOfLongestTrack(tracks, referenceTrackTimescale) {
         }
     }
 
-    // Convert ONCE into reference track timescale
-    return Math.round(maxSeconds * referenceTrackTimescale);
+    return maxSeconds;
 }

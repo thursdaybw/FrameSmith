@@ -125,23 +125,6 @@ export async function testDispatcher_TrakResolution_TrackIdentitiesAreDistinct()
         trak0 === trak1,
         false
     );
-
-    let threw = false;
-
-    try {
-        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
-            mp4,
-            "moov/trak[2]"
-        );
-    } catch {
-        threw = true;
-    }
-
-    assertEqual(
-        "trak[2] throws out of range",
-        threw,
-        true
-    );
 }
 
 export async function testDispatcher_TrakLoop_UsesStableMoovBoxBytes() {

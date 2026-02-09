@@ -108,32 +108,31 @@ export async function testStss_LockedLayoutEquivalence_ffmpeg_audio() {
     // ---------------------------------------------------------
     // Parse reference STSS on Video track 
     // ---------------------------------------------------------
-    let threw = false; 
-    try {
-        const ref = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+    const videoResult =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
             mp4,
             "moov/trak[0]/mdia/minf/stbl/stss",
         );
-    } catch {
-        threw = true;
-    }
 
-    assertEqual("stss found", threw, false);
+    assertEqual(
+        "stss found",
+        !(videoResult && videoResult.found === false),
+        true
+    );
 
     // ---------------------------------------------------------
     // Parse reference STSS on audio track
     // ---------------------------------------------------------
-    threw = false; 
-    try {
-        const ref = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+    const audioResult =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
             mp4,
             "moov/trak[1]/mdia/minf/stbl/stss",
         );
-    } catch {
-        threw = true;
-    }
 
-    assertEqual("stss not found", threw, true);
-
+    assertEqual(
+        "stss not found",
+        audioResult && audioResult.found === false,
+        true
+    );
 
 }

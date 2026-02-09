@@ -228,6 +228,12 @@ import {
     SampleEntryReader
 } from "../../reference/SampleEntryReader.js";
 
+import { IsoBoxNotFoundError } from "./errors.js";
+
+export const SEMANTIC_VALIDATORS = {
+    "moov/trak/mdia/minf": validateMinfByHandlerType,
+};
+
 // -----------------------------------------------------------------------------
 // Registry population (composition root)
 // -----------------------------------------------------------------------------
@@ -377,11 +383,22 @@ export const getGoldenTruthBox = {
         // Structural discovery
         // This section answers questions. It must not “advance state”.
         // Think of it as probing the file.
+
         let trakBytes = null;
         let stsdBytes = null;
 
         if (traversalRequest.trackIndex !== null) {
-            trakBytes = resolveTrakBytesFromTraversalRequest(traversalRequest);
+
+            const trakResult = resolveTrakBytesFromTraversalRequest(traversalRequest);
+
+            if (!trakResult.found) {
+                return { found: false };
+            }
+
+            trakBytes = trakResult.bytes;
+
+            // make available to semantic validators
+            traversalRequest.trakBytes = trakBytes;
         }
 
         // Exact-context stsd: reuse provided bytes
@@ -419,6 +436,8 @@ export const getGoldenTruthBox = {
         // Nothing above this line mutates identity.
         // Nothing below this line does discovery.
         resolveTargetBoxIdentityFromStructure(traversalRequest, { stsdBytes });
+
+        runSemanticValidators(traversalRequest);
 
         const isAbsoluteMp4Path2 =
             targetBoxPath.startsWith("moov") ||
@@ -485,11 +504,13 @@ export const getGoldenTruthBox = {
      * Scope: entire file
      */
     getSemanticBoxDataByPathFromMp4File(mp4Bytes, path) {
-        return getGoldenTruthBox.getSemanticBoxDataFromBox({
+        const result = getGoldenTruthBox.getSemanticBoxDataFromBox({
             boxBytes: mp4Bytes,
             sourceRegistryKey: "$mp4",
             targetBoxPath: path,
         });
+
+        return result;
     },
 
     /**
@@ -878,6 +899,42 @@ function resolveTargetBoxIdentityFromStructure(traversalRequest, { stsdBytes }) 
     throw new Error("resolveTargetBoxIdentityFromStructure: unable to resolve target identity");
 }
 
+function findOneOfAlternatives({ parentRegistryKey, missingChild }) {
+
+    const schema = getBoxSchemaForPath(parentRegistryKey);
+    if (!schema || !Array.isArray(schema.children)) {
+        return null;
+    }
+
+    // Normalize child tokens (strip ?)
+    const children = schema.children.map(c =>
+        typeof c === "string" ? c.replace(/\?$/, "") : c
+    );
+
+    // If the missing child is not even declared, bail
+    if (!children.includes(missingChild)) {
+        return null;
+    }
+
+    // OneOf heuristic (for now):
+    // siblings at same level, same structural role, mutually exclusive in spec
+    //
+    // For now we hard-detect known MP4 alternates.
+    const ONE_OF_GROUPS = [
+        ["stco", "co64"],
+        ["vmhd", "smhd"],
+    ];
+
+    for (const group of ONE_OF_GROUPS) {
+        if (group.includes(missingChild)) {
+            return group.filter(x => x !== missingChild);
+        }
+    }
+
+    return null;
+}
+
+
 // ---------------------------------------------------------
 // Generic ISO container traversal
 // ---------------------------------------------------------
@@ -963,12 +1020,46 @@ function resolveSingleIsoBoxFromContainer({
             const parts = path.split("/");
             return parts[parts.length - 1];
         }
+
         const boxName = getTerminalBoxName(relativeTraversalPath);
-        throw new Error(
-            [
-                `The box '${boxName}' does not exist in this track.`,
-                `This box is optional, but it is not present here.`
-            ].join("\n")
+
+        // 1. Optional child → not found, not an error
+        const parentRegistryKey =
+            stripBracketSelectors(
+                stripTrailingSlash(
+                    remainingTraversalPath.slice(
+                        0,
+                        remainingTraversalPath.lastIndexOf("/")
+                    )
+                )
+            );
+
+        if (isOptionalChild({
+            parentRegistryKey,
+            child: boxName
+        })) {
+            return { found: false };
+        }
+
+        // 2. oneOf alternative → unsupported
+        const alternatives = findOneOfAlternatives({
+            parentRegistryKey: sourceRegistryKey,
+            missingChild: boxName
+        });
+
+        if (alternatives) {
+            throw new Error(
+                [
+                    `Box '${boxName}' not found under '${sourceRegistryKey}'.`,
+                    `An alternative box is permitted here: ${alternatives.join(", ")}.`,
+                    `This alternative is not yet supported.`
+                ].join("\n")
+            );
+        }
+
+        // 3. Required child → error
+        throw new IsoBoxNotFoundError(
+            `Box '${boxName}' not found under '${sourceRegistryKey}'`
         );
     }
 
@@ -1051,13 +1142,19 @@ function lookupExtractorByRegistryKey(registryKey) {
     return extractor;
 }
 
-function resolveIsoBoxAndCreateSemanticBoxData( traversalRequest, extractor) {
+
+function resolveIsoBoxAndCreateSemanticBoxData(traversalRequest, extractor) {
 
     const sourceBoxBytes = resolveSingleIsoBoxFromContainer(traversalRequest);
 
+    // OPTIONAL BOX ABSENCE — short-circuit
+    if (sourceBoxBytes && sourceBoxBytes.found === false) {
+        return { found: false };
+    }
+
     if (!(sourceBoxBytes instanceof Uint8Array)) {
         throw new Error(
-            "resolveIsoBoxAndCreateSemanticBoxData: expected Uint8Array from resolveSingleIsoBoxFromContainer\n" +
+            "resolveIsoBoxAndCreateSemanticBoxData: expected Uint8Array\n" +
             `Received: ${Object.prototype.toString.call(sourceBoxBytes)}`
         );
     }
@@ -1113,38 +1210,37 @@ function resolveTrakBytesFromTraversalRequest(traversalRequest) {
         );
     }
 
-    return resolveTrakFromMoov(traversalRequest.sourceBoxBytes, traversalRequest.trackIndex);
+    return resolveTrakFromMoov(
+        traversalRequest.sourceBoxBytes,
+        traversalRequest.trackIndex
+    );
 }
 
 /**
  * resolveTrakFromMoov
  * ===================
  *
- * Structural utility.
+ * Structural selector.
  *
- * - Extracts trak[n] from a moov box
- * - Does NOT recurse
- * - Does NOT infer semantics
- * - Does NOT touch registry keys
- * - Does NOT normalize paths
+ * - Queries moov for trak[n]
+ * - NEVER throws for absence
+ * - Throws ONLY for malformed containers
  *
- * This is the ONLY indexed ISO container selector we support.
+ * Return:
+ * - { found: true, bytes }
+ * - { found: false }
  */
-export function resolveTrakFromMoov(moovBytes, trackIndex) {
+function resolveTrakFromMoov(moovBytes, trackIndex) {
 
     if (!(moovBytes instanceof Uint8Array)) {
-        throw new Error(
-            "resolveTrakFromMoov: moovBytes must be Uint8Array"
-        );
+        throw new Error("resolveTrakFromMoov: moovBytes must be Uint8Array");
     }
 
     if (!Number.isInteger(trackIndex) || trackIndex < 0) {
-        throw new Error(
-            "resolveTrakFromMoov: trackIndex must be a non-negative integer"
-        );
+        throw new Error("resolveTrakFromMoov: trackIndex must be >= 0");
     }
 
-    let offset = 8; // skip moov header
+    let offset = 8;
     let found = 0;
 
     while (offset + 8 <= moovBytes.length) {
@@ -1156,9 +1252,7 @@ export function resolveTrakFromMoov(moovBytes, trackIndex) {
             moovBytes[offset + 3];
 
         if (size < 8) {
-            throw new Error(
-                "resolveTrakFromMoov: invalid box size"
-            );
+            throw new Error("resolveTrakFromMoov: invalid box size");
         }
 
         const type =
@@ -1171,7 +1265,10 @@ export function resolveTrakFromMoov(moovBytes, trackIndex) {
 
         if (type === "trak") {
             if (found === trackIndex) {
-                return moovBytes.slice(offset, offset + size);
+                return {
+                    found: true,
+                    bytes: moovBytes.slice(offset, offset + size)
+                };
             }
             found++;
         }
@@ -1179,11 +1276,8 @@ export function resolveTrakFromMoov(moovBytes, trackIndex) {
         offset += size;
     }
 
-    throw new Error(
-        `resolveTrakFromMoov: trak[${trackIndex}] not found (found ${found})`
-    );
+    return { found: false };
 }
-
 
 function materializeSampleEntryBytesFromTraversalRequest({ traversalRequest, stsdBytes }) {
     // Preconditions:
@@ -1256,6 +1350,81 @@ function materializeSampleEntryBytesFromTraversalRequest({ traversalRequest, sts
     }
 
     return childBoxBytes;
+}
+
+function isOptionalChild({ parentRegistryKey, child }) {
+    const schema = getBoxSchemaForPath(parentRegistryKey);
+    if (!schema || !Array.isArray(schema.children)) {
+        return false;
+    }
+
+    const optional = schema.children.some(childBox =>
+        typeof childBox === "string" &&
+        childBox.endsWith("?") &&
+        childBox.replace(/\?$/, "") === child
+    );
+
+    return optional;
+}
+
+function runSemanticValidators(traversalRequest) {
+    const resolvedKey = traversalRequest.targetBoxIdentity.key;
+    if (!resolvedKey) return;
+
+    const lastSlash = resolvedKey.lastIndexOf("/");
+    if (lastSlash === -1) return;
+
+    const parentKey = resolvedKey.slice(0, lastSlash);
+    const childBox  = resolvedKey.slice(lastSlash + 1);
+
+    const validator = SEMANTIC_VALIDATORS[parentKey];
+    if (!validator) return;
+
+    // 🚨 CRITICAL GUARD:
+    // Only validate DIRECT children, never containers or grandchildren
+    if (childBox.includes("/")) return;
+
+    // For minf, only headers are semantically meaningful
+    if (parentKey === "moov/trak/mdia/minf") {
+        if (childBox !== "vmhd" && childBox !== "smhd") {
+            return;
+        }
+    }
+
+    const trakBytes = traversalRequest.trakBytes;
+    if (!trakBytes) return;
+
+    const hdlr = getGoldenTruthBox
+        .getSemanticBoxDataFromBox({
+            boxBytes: trakBytes,
+            sourceRegistryKey: "moov/trak",
+            targetBoxPath: "moov/trak/mdia/hdlr"
+        })
+        .readBoxReport();
+
+    const trackHandlerType = hdlr.box.fields.handlerType;
+
+    validator({
+        trackHandlerType,
+        resolvedChildBoxType: childBox,
+        traversalRequest
+    });
+}
+
+function validateMinfByHandlerType({
+    trackHandlerType,
+    resolvedChildBoxType
+}) {
+    if (trackHandlerType === "vide" && resolvedChildBoxType === "smhd") {
+        throw new Error("Video track must not contain smhd");
+    }
+
+    if (trackHandlerType === "soun" && resolvedChildBoxType === "vmhd") {
+        throw new Error("Audio track must not contain vmhd");
+    }
+
+    // subtitles later:
+    // if (handlerType === "subt" && resolvedChildBoxType !== "nmhd") …
 }
 
 export const __TEST_ONLY__ = Object.freeze({

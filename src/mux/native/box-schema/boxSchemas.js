@@ -473,7 +473,6 @@ export const BOX_SCHEMAS = {
         fields: {}
     },
 
-
     "moov/trak/mdia/minf/stbl": {
         headerLayout: "Basic",
         structuralRole: "container",
@@ -483,7 +482,12 @@ export const BOX_SCHEMAS = {
             "stts",
             "stsc",
             "stsz",
-            "stco",
+            // Chunk offset table: exactly one required
+            {
+                oneOf: ["stco", "co64"],
+                required: true,
+                role: "chunkOffsets"
+            },
             "stss?",
             "ctts?",
             "sbgp?",
@@ -587,7 +591,7 @@ export const BOX_SCHEMAS = {
             fixedFieldsSize: 28,
             childrenOffset: 36   // 8 (box header) + 28 (fixed fields)
         },
-/*
+        /*
 
 | Field                | Size | Offset (from box body start) |
 | -------------------- | ---- | ---------------------------- |
@@ -662,7 +666,7 @@ export const BOX_SCHEMAS = {
             f27: "uint8",
         },
 
-/*
+        /*
 | Schema type | Size (bytes) | DSL token | Notes                               |
 | ----------- | ------------ | --------- | ----------------------------------- |
 | `uint8`     | 1            | `byte`    | ✅ direct                            |
@@ -837,6 +841,65 @@ export const BOX_SCHEMAS = {
         fields: {
             hSpacing: "uint32",
             vSpacing: "uint32",
+        }
+    },
+
+    "moov/trak/mdia/minf/stbl/stsd|hvc1": {
+        headerLayout: "Basic",
+        structuralRole: "container",
+
+        sampleEntry: {
+            fixedFieldsSize: 78,
+            childrenOffset: 86 // 8 (box header) + 78 (fixed fields)
+        },
+
+        children: [
+            "hvcC",
+            "btrt",
+            "pasp"
+        ],
+
+        fields: {
+            reserved0: "uint8",
+            reserved1: "uint8",
+            reserved2: "uint8",
+            reserved3: "uint8",
+            reserved4: "uint8",
+            reserved5: "uint8",
+
+            dataReferenceIndex: "uint16",
+
+            preDefined1: "uint16",
+            reserved6:   "uint16",
+
+            preDefined2: "uint32",
+            preDefined3: "uint32",
+            preDefined4: "uint32",
+
+            width:  "uint16",
+            height: "uint16",
+
+            horizResolution: "uint32",
+            vertResolution:  "uint32",
+
+            reserved7: "uint32",
+
+            frameCount: "uint16",
+
+            compressorNameLength: "uint8",
+            compressorNameBytes:  "uint8[]",
+
+            depth: "uint16",
+            preDefined5: "uint16"
+        }
+    },
+
+    "moov/trak/mdia/minf/stbl/stsd|hvc1/hvcC": {
+        headerLayout: "Basic",
+        structuralRole: "terminal",
+        opaque: true,
+        fields: {
+            opaquePayloadBytes: "uint8[]"
         }
     },
 

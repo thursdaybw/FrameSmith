@@ -66,7 +66,7 @@
  */
 
 import { extractSemanticAccessUnitsFromMp4 }
-    from "../reference/extractSemanticAccessUnitsFromMp4.js";
+    from "../../demux/container/extractSemanticAccessUnitsFromMp4.js";
 
 import { extractAccessUnitPayloadsFromMp4 }
     from "../reference/extractAccessUnitPayloadsFromMp4.js";

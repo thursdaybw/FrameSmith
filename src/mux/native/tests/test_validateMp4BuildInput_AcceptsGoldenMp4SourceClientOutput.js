@@ -31,8 +31,7 @@ export async function test_validateMp4BuildInput_AcceptsGoldenMp4SourceClientOut
     const mp4Bytes =
         new Uint8Array(await resp.arrayBuffer());
 
-    const mp4BuildInput =
-        await runGoldenMp4AVTestClient({ mp4Bytes });
+    const mp4BuildInput = await runGoldenMp4AVTestClient({ mp4Bytes });
 
     // ---------------------------------------------------------
     // Grammar validation (must NOT throw)

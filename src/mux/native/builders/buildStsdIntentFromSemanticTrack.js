@@ -32,7 +32,7 @@ export function buildStsdIntentFromSemanticTrack({
             }
         });
 
-    } else if (codecName === "mp4a") {
+    } else if (codecName.startsWith("mp4a")) {
         stsdParams = adaptAudioCodecConfigurationToStsdParams({
             codecConfiguration: {
                 codec:        codecName,

@@ -1,6 +1,7 @@
 import { adaptStscEntriesToEmitterParams } from "../adapters/adaptStscEntriesToEmitterParams.js";
 import { deriveSyncSampleNumbers } from "../derivers/deriveSyncSampleNumbers.js";
 import { adaptSttsFromSamples } from "../adapters/adaptSttsFromSamples.js";
+import { adaptSttsWithTailFixFromSamplesAndTrackDuration } from "../adapters/adaptSttsWithTailFixFromSamplesAndTrackDuration.js";
 import { deriveStszIntentFromPayloads }  from "../derivers/deriveStszIntentFromPayloads.js";
 import { adaptCttsFromSamples } from "../adapters/adaptCttsFromSamples.js";
 import { buildStsdIntentFromSemanticTrack } from "../builders/buildStsdIntentFromSemanticTrack.js";
@@ -34,20 +35,27 @@ export function buildStblChildIntentsWithoutOffsetsInPlace({ track }) {
     //
     //testNativeMuxer_AdaptSttsFromSamples_CFR
     //testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups
-    const sttsPolicy = track.buildHints?.sttsPolicy ?? "duration-collapsed";
-    track.storedIntent.sttsParams = adaptSttsFromSamples({
-        samples: track.semanticCore.accessUnits,
-        inputTrackDurationInTrackTimescale:
-        track.semanticHints?.inputTrackDurationInTrackTimescale
-    });
+
+    if (Number.isInteger(track.semanticHints?.inputTrackDurationInTrackTimescale)) {
+
+        track.storedIntent.sttsParams = adaptSttsWithTailFixFromSamplesAndTrackDuration({
+                samples: track.semanticCore.accessUnits,
+                inputTrackDurationInTrackTimescale: track.semanticHints?.inputTrackDurationInTrackTimescale
+            });
+
+    } else {
+        track.storedIntent.sttsParams = adaptSttsFromSamples({ samples: track.semanticCore.accessUnits });
+    }
 
     // -- Sample sizes
     // test: testNativeMuxer_DeriveStsz_Conformance_ffmpeg
     track.storedIntent.stszParams = deriveStszIntentFromPayloads({ accessUnits: track.semanticCore.accessUnits, accessUnitPayloads: track.payloads.accessUnitPayloads });
 
     // -- Composition offsets
+    /*
     track.storedIntent.cttsParams = adaptCttsFromSamples({ samples: track.semanticCore.accessUnits });
     track.hasNonZeroCompositionOffset = track.storedIntent.cttsParams.entries.some(e => e.offset !== 0);
+    */
 
     // =====================================================================
     // Tier 4 — Container Policies (explicit, named decisions)

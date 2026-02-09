@@ -1028,6 +1028,7 @@ export async function testDispatcher_RejectsInvalidSampleIndex() {
     );
 
 }
+
 /**
  * Dispatcher — Minf Divergence
  * ---------------------------
@@ -2760,6 +2761,7 @@ export async function testDispatcher_FromMp4_RootMoov_DoesNotRequireIndex() {
     );
 }
 
+// remove
 export async function testDispatcher_ThrowsWithIntentionalMessages_ForTrak_Sample_Ctts() {
 
     const resp = await fetch("reference/reference_av.mp4");
@@ -2847,7 +2849,36 @@ export async function testDispatcher_ThrowsWithIntentionalMessages_ForTrak_Sampl
     );
 }
 
-export async function testDispatcher_IsoBoxResolver_RejectsOutOfRangeTrakIndex() {
+//add
+export async function testDispatcher_SampleIndexOutOfRange_ThrowsWithIntentionalMessage() {
+
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    let threw = false;
+    let message = "";
+
+    try {
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]/mdia/minf/stbl/stsd/sample[99]"
+        );
+    } catch (err) {
+        threw = true;
+        message = String(err.message);
+    }
+
+    assertEqual("sample[99] throws", threw, true);
+    assertEqual(
+        `sample error message is intentional. Message: ${message}`,
+        message.includes("sample") &&
+        message.includes("99") &&
+        (message.includes("does not exist") || message.includes("out of range")),
+        true
+    );
+}
+
+export async function testDispatcher_IsoBoxResolver_OutOfRangeTrakIndex_ReturnsNotFound() {
 
     const resp = await fetch("reference/reference_av.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
@@ -2858,63 +2889,81 @@ export async function testDispatcher_IsoBoxResolver_RejectsOutOfRangeTrakIndex()
             .readBoxReport()
             .raw;
 
+    let result;
     let threw = false;
     let message = "";
 
     try {
-        getGoldenTruthBox.getSemanticBoxDataFromBox({
-            boxBytes: moov,
-            sourceRegistryKey: "moov",
-            targetBoxPath: "moov/trak[99]"
-        });
+        result =
+            getGoldenTruthBox.getSemanticBoxDataFromBox({
+                boxBytes: moov,
+                sourceRegistryKey: "moov",
+                targetBoxPath: "moov/trak[99]"
+            });
     } catch (err) {
         threw = true;
         message = String(err?.message ?? err);
     }
 
     assertEqual(
-        "trak[99] throws",
+        "trak[99] does not throw",
         threw,
-        true
+        false
     );
 
     assertEqual(
-        `trak error message is intentional. Message: ${message}`,
-        message.includes("trak") &&
-        (message.includes("not found") || message.includes("out of range")),
+        "trak[99] returns not-found result",
+        result && result.found === false,
         true
     );
 }
 
-export async function testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminates() {
+export async function testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminatesWithNotFound() {
 
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    let threwAt = null;
+    let foundFalseAt = null;
     let iterations = 0;
+    let threw = false;
 
     for (let i = 0; i < 10; i++) {
+
+        let result;
+
         try {
-            getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
-                mp4,
-                `moov/trak[${i}]`
-            );
-            iterations++;
-        } catch {
-            threwAt = i;
+            result =
+                getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+                    mp4,
+                    `moov/trak[${i}]`
+                );
+        } catch (err) {
+            threw = true;
             break;
         }
+
+        if (result && result.found === false) {
+            foundFalseAt = i;
+            break;
+        }
+
+        iterations++;
     }
 
     assertEqual(
-        "sequential trak index resolution eventually throws",
-        threwAt !== null,
+        "sequential trak index resolution does not throw",
+        threw,
+        false
+    );
+
+    assertEqual(
+        "sequential trak index resolution eventually returns not-found",
+        foundFalseAt !== null,
         true
     );
 
     assertEqual(
-        "failure occurs after at least one successful resolution",
+        "at least one trak resolves before not-found",
         iterations > 0,
         true
     );
@@ -3405,5 +3454,66 @@ export async function testDispatcher_FromBox_ExactContext_ResolvesSampleEntry_dO
         "resolved box type is dOps",
         report.box.type,
         "dOps"
+    );
+}
+
+export async function testDispatcher_IsoBoxResolver_RejectsUnsupportedCo64() {
+
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    let threw = false;
+    let message = "";
+
+    try {
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]/mdia/minf/stbl/co64"
+        );
+    } catch (err) {
+        threw = true;
+        message = String(err?.message ?? err);
+    }
+
+    assertEqual(
+        "co64 lookup throws",
+        threw,
+        true
+    );
+
+    assertEqual(
+        `error message explains unsupported or missing co64. Actual message:\n${message}`,
+        message.includes("co64"),
+        true
+    );
+}
+
+export async function testDispatcher_OptionalCtts_MissingIsNotAnError() {
+
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    let result;
+    let threw = false;
+
+    try {
+        result = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]/mdia/minf/stbl/ctts"
+        );
+    } catch (err) {
+        threw = true;
+    }
+
+    assertEqual(
+        "missing optional ctts does not throw",
+        threw,
+        false
+    );
+
+    assertEqual(
+        "missing optional ctts resolves to not-found",
+        result?.found === false || result === null || result === undefined,
+        true
     );
 }

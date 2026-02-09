@@ -69,7 +69,7 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
     console.log("[PHASE 2] Starting MP4 compilation…");
 
     const tCompileStart = performance.now();
-    const outBytes = createMp4FromInputs(mp4BuildInput).bytes;
+    const outBytes = createMp4FromInputs(mp4BuildInput);
 
     const tCompileEnd = performance.now();
 

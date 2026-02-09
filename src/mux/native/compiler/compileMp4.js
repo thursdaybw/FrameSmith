@@ -33,6 +33,8 @@ import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 
 import { getGoldenTruthBox } from "../tests/goldenTruthExtractors/index.js";
 
+import { validatePacketTopologyAdmissibility } from "../compiler/validateCompilerAdmissibility.js";
+
 // INTERNAL: compiler implementation detail — use createMp4FromInputs() instead
 /**
  * compileMp4
@@ -337,7 +339,7 @@ export function compileMp4({ mp4CompilerState }) {
         offset += part.length;
     }
 
-    return { bytes };
+    return bytes;
 }
 
 /**
@@ -431,6 +433,11 @@ export function prepareTracksForStructuralDerivation({ mp4CompilerState }) {
         // test: testNativeMuxer_DeriveSemanticTrackFamily
         track.semanticTrackFamily = deriveSemanticTrackFamily(track);
     }
+
+    for (const [index, track] of mp4CompilerState.tracks.entries()) {
+        validatePacketTopologyAdmissibility(track, index);
+    }
+
 
     for (const track of mp4CompilerState.tracks) {
 

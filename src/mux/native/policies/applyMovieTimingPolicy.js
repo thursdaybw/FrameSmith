@@ -29,20 +29,25 @@
  *
  * It must never be inferred or hidden in emitters.
  */
-
-export function applyMovieTimingPolicy({ movieDurationInMovieTimescale, trackId, movieTimescale }) {
-
-    if (!Number.isInteger(movieDurationInMovieTimescale) || movieDurationInMovieTimescale < 0) {
+export function applyMovieTimingPolicy({
+    movieDurationSeconds,
+    trackId,
+    movieTimescale
+}) {
+    if (
+        typeof movieDurationSeconds !== "number" ||
+        !Number.isFinite(movieDurationSeconds) ||
+        movieDurationSeconds < 0
+    ) {
         throw new Error(
-            "applyMovieTimingPolicy: movieDurationInMovieTimescale must be a non-negative integer, " +
-            `received ${movieDurationInMovieTimescale} (${typeof movieDurationInMovieTimescale})`
+            "applyMovieTimingPolicy: movieDurationSeconds must be a non-negative finite number, " +
+            `received ${movieDurationSeconds} (${typeof movieDurationSeconds})`
         );
     }
 
-    const resolvedMovieTimescale =
-        Number.isInteger(movieTimescale) && movieTimescale > 0
-        ? movieTimescale
-        : 1000;
+    const resolvedMovieTimescale = Number.isInteger(movieTimescale) && movieTimescale > 0
+            ? movieTimescale
+            : 1000;
 
     if (!Number.isInteger(trackId) || trackId <= 0) {
         throw new Error(
@@ -53,7 +58,7 @@ export function applyMovieTimingPolicy({ movieDurationInMovieTimescale, trackId,
 
     return {
         timescale: resolvedMovieTimescale,
-        duration: movieDurationInMovieTimescale,
+        duration: Math.round(movieDurationSeconds * resolvedMovieTimescale),
         nextTrackId: trackId + 1
     };
 }

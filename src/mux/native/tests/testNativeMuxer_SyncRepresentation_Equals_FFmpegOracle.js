@@ -505,7 +505,14 @@ export async function testNativeMuxer_SyncRepresentation_WebCodecs_NoHints_Emits
 
 function tryExtract(fn) {
     try {
-        return fn();
+        const result = fn();
+
+        // New contract: optional absence
+        if (result && result.found === false) {
+            return null;
+        }
+
+        return result;
     } catch {
         return null;
     }

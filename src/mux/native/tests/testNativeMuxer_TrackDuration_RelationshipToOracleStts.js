@@ -1,4 +1,4 @@
-import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
+import { extractSemanticAccessUnitsFromMp4 } from "../demux/container/extractSemanticAccessUnitsFromMp4.js";
 import { extractTrackDurationFromOracleStts } from "./reference/extractTrackDurationFromOracleStts.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 import { getSumOfAccessUnitDurations } from "../compiler/compileMp4.js";
@@ -13,23 +13,11 @@ export async function testNativeMuxer_TrackDuration_Relationships_AllFixtures() 
         const resp = await fetch("reference/reference_av.mp4");
         const mp4 = new Uint8Array(await resp.arrayBuffer());
 
-        const accessUnits = extractSemanticAccessUnitsFromMp4({
-            mp4Bytes: mp4,
-            trackIndex: 0
-        });
-
+        const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes: mp4, zeroBasedTrackIndex: 0 });
         const sum = getSumOfAccessUnitDurations(accessUnits);
+        const oracle = extractTrackDurationFromOracleStts({ mp4Bytes: mp4, zeroBasedTrackIndex: 0 });
 
-        const oracle = extractTrackDurationFromOracleStts({
-            mp4Bytes: mp4,
-            zeroBasedTrackIndex: 0
-        });
-
-        assertEqual(
-            "reference_av video track duration equals STTS total",
-            sum,
-            oracle
-        );
+        assertEqual( "reference_av video track duration equals STTS total", sum, oracle);
     }
 
     // =========================================================
@@ -39,23 +27,13 @@ export async function testNativeMuxer_TrackDuration_Relationships_AllFixtures() 
         const resp = await fetch("reference/reference_av.mp4");
         const mp4 = new Uint8Array(await resp.arrayBuffer());
 
-        const accessUnits = extractSemanticAccessUnitsFromMp4({
-            mp4Bytes: mp4,
-            trackIndex: 1
-        });
+        const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes: mp4, zeroBasedTrackIndex: 1 });
 
         const sum = getSumOfAccessUnitDurations(accessUnits);
 
-        const oracle = extractTrackDurationFromOracleStts({
-            mp4Bytes: mp4,
-            zeroBasedTrackIndex: 1
-        });
+        const oracle = extractTrackDurationFromOracleStts({ mp4Bytes: mp4, zeroBasedTrackIndex: 1 });
 
-        assertEqual(
-            "reference_av audio track duration equals STTS total",
-            sum,
-            oracle
-        );
+        assertEqual( "reference_av audio track duration equals STTS total", sum, oracle);
     }
 
     // =========================================================
@@ -65,23 +43,13 @@ export async function testNativeMuxer_TrackDuration_Relationships_AllFixtures() 
         const resp = await fetch("reference/reference_av_opus.mp4");
         const mp4 = new Uint8Array(await resp.arrayBuffer());
 
-        const accessUnits = extractSemanticAccessUnitsFromMp4({
-            mp4Bytes: mp4,
-            trackIndex: 0
-        });
+        const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes: mp4, zeroBasedTrackIndex: 0 });
 
         const sum = getSumOfAccessUnitDurations(accessUnits);
 
-        const oracle = extractTrackDurationFromOracleStts({
-            mp4Bytes: mp4,
-            zeroBasedTrackIndex: 0
-        });
+        const oracle = extractTrackDurationFromOracleStts({ mp4Bytes: mp4, zeroBasedTrackIndex: 0 });
 
-        assertEqual(
-            "reference_av_opus video track duration equals STTS total",
-            sum,
-            oracle
-        );
+        assertEqual( "reference_av_opus video track duration equals STTS total", sum, oracle);
     }
 
     // =========================================================
@@ -91,22 +59,12 @@ export async function testNativeMuxer_TrackDuration_Relationships_AllFixtures() 
         const resp = await fetch("reference/reference_av_opus.mp4");
         const mp4 = new Uint8Array(await resp.arrayBuffer());
 
-        const accessUnits = extractSemanticAccessUnitsFromMp4({
-            mp4Bytes: mp4,
-            trackIndex: 1
-        });
+        const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes: mp4, zeroBasedTrackIndex: 1 });
 
         const sum = getSumOfAccessUnitDurations(accessUnits);
 
-        const oracle = extractTrackDurationFromOracleStts({
-            mp4Bytes: mp4,
-            zeroBasedTrackIndex: 1
-        });
+        const oracle = extractTrackDurationFromOracleStts({ mp4Bytes: mp4, zeroBasedTrackIndex: 1 });
 
-        assertEqual(
-            "reference_av_opus audio track duration equals STTS total",
-            sum,
-            oracle
-        );
+        assertEqual( "reference_av_opus audio track duration equals STTS total", sum, oracle);
     }
 }

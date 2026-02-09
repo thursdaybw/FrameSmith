@@ -1,4 +1,4 @@
-import { extractSemanticAccessUnitsFromMp4 } from "../reference/extractSemanticAccessUnitsFromMp4.js";
+import { extractSemanticAccessUnitsFromMp4 } from "../../demux/container/extractSemanticAccessUnitsFromMp4.js";
 
 import { extractAccessUnitPayloadsFromMp4 } from "../reference/extractAccessUnitPayloadsFromMp4.js";
 
@@ -7,12 +7,12 @@ import { extractTrackDurationFromOracleStts }
 
 
 import {
-    extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex
-} from "../reference/extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex.js";
+    extractTrackCodecConfigurationFromMp4
+} from "../../demux/container/extractTrackCodecConfigurationFromMp4.js";
 
 import {
-    extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex
-} from "../reference/extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex.js";
+    extractTrackContainerMetadataFromMp4
+} from "../../demux/container/extractTrackContainerMetadataFromMp4.js";
 
 import {
     extractOpaqueUserDataFromMp4UsingRootContainer
@@ -33,7 +33,7 @@ export async function runGoldenMp4AVTestClient({ mp4Bytes }) {
         throw new Error("GoldenMp4AVTestClient: mp4Bytes must be Uint8Array");
     }
 
-    const audioCodecConfiguration = extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 1 });
+    const audioCodecConfiguration = extractTrackCodecConfigurationFromMp4({ mp4Bytes, zeroBasedTrackIndex: 1 });
 
     const videoTrack = extractVideoTrackFromMp4({ mp4Bytes });
     const audioTrack = extractAudioTrackFromMp4({ mp4Bytes });
@@ -111,8 +111,8 @@ function extractUdtaIntentFromMp4({ mp4Bytes }) {
 
 function extractVideoTrackFromMp4({ mp4Bytes, audioCodecName }) {
 
-    const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes, trackIndex: 0 });
-    const accessUnitPayloads = extractAccessUnitPayloadsFromMp4({ mp4Bytes, trackIndex: 0 });
+    const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes, zeroBasedTrackIndex: 0 });
+    const accessUnitPayloads = extractAccessUnitPayloadsFromMp4({ mp4Bytes, zeroBasedTrackIndex: 0 });
 
     if (!Array.isArray(accessUnits) || accessUnits.length === 0) {
         throw new Error("GoldenMp4AVTestClient: no video accessUnits extracted");
@@ -127,9 +127,9 @@ function extractVideoTrackFromMp4({ mp4Bytes, audioCodecName }) {
     }
 
 
-    const codec = extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 0 });
+    const codec = extractTrackCodecConfigurationFromMp4({ mp4Bytes, zeroBasedTrackIndex: 0 });
 
-    const buildParameters = extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 0 });
+    const buildParameters = extractTrackContainerMetadataFromMp4({ mp4Bytes, zeroBasedTrackIndex: 0 });
 
     const buildHints = {};
 
@@ -188,9 +188,9 @@ function extractVideoTrackFromMp4({ mp4Bytes, audioCodecName }) {
 
 function extractAudioTrackFromMp4({ mp4Bytes }) {
 
-    const codecConfig = extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 1 });
-    const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes, trackIndex: 1, });
-    const accessUnitPayloads = extractAccessUnitPayloadsFromMp4({ mp4Bytes, trackIndex: 1, });
+    const codecConfig = extractTrackCodecConfigurationFromMp4({ mp4Bytes, zeroBasedTrackIndex: 1 });
+    const accessUnits = extractSemanticAccessUnitsFromMp4({ mp4Bytes, zeroBasedTrackIndex: 1, });
+    const accessUnitPayloads = extractAccessUnitPayloadsFromMp4({ mp4Bytes, zeroBasedTrackIndex: 1, });
 
     if (!Array.isArray(accessUnits) || accessUnits.length === 0 || accessUnits == undefined) {
         throw new Error("GoldenMp4AVTestClient: no audio accessUnits extracted");
@@ -200,7 +200,7 @@ function extractAudioTrackFromMp4({ mp4Bytes }) {
         throw new Error("GoldenMp4AVTestClient: audio sample/payload count mismatch");
     }
 
-    const buildParameters = extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex({ mp4Bytes, zeroBasedTrackIndex: 1 });
+    const buildParameters = extractTrackContainerMetadataFromMp4({ mp4Bytes, zeroBasedTrackIndex: 1 });
 
     // Audio shape symmetry with WebCodecs
     if (codecConfig.channelCount !== undefined) {

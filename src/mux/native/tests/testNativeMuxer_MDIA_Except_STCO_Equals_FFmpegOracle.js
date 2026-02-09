@@ -31,8 +31,6 @@ export async function testNativeMuxer_MDIA_Except_STCO_Equals_FFmpegOracle() {
 
             const track = mp4CompilerState.tracks[trackIndex];
 
-            console.log(`Fixture ${fixture} - track codec ${track.semanticCore.codec.codec}`);
-
             // build intents up to mdia
             deriveStructuralStateInPlace({ track });
             buildStblChildIntentsWithoutOffsetsInPlace({ track });
@@ -48,9 +46,6 @@ export async function testNativeMuxer_MDIA_Except_STCO_Equals_FFmpegOracle() {
                     `moov/trak[${trackIndex}]/mdia/mdhd`
                 )
                 .getEmitterInput()
-
-            console.log("MDHD ORACLE", oracleMdhd);
-            console.log("MDHD INTENT FINAL", mdiaIntent.mdhd);
 
             // emit compiler mdia
             const compilerMdiaBytes =

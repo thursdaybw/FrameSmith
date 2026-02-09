@@ -1,5 +1,5 @@
 /**
- * WebCodecs Test Client
+  *WebCodecs Test Client
  * ====================
  *
  * Supplies a Mp4BuildInput by running WebCodecs and mapping
@@ -110,9 +110,9 @@ import {
 }
 from "../webcodecs/createDeterministicAudioSource.js";
 
-export async function runWebCodecsAudioVideoTestClient({
-    mediaRecorderSink
-} = {}) {
+import { buildVideoTrackFromWebCodecs, buildAudioTrackFromWebCodecs } from "../../producers/webcodecsMp4Producer.js";
+
+export async function runWebCodecsAudioVideoTestClient({ mediaRecorderSink } = {}) {
 
     const trackTimescale = 1_000_000;
 
@@ -136,7 +136,9 @@ export async function runWebCodecsAudioVideoTestClient({
     // Video encode (WebCodecs)
     // ---------------------------------------------------------
 
-    const videoEncodeResult = await runWebCodecsRunner({
+    const videoTrack = buildVideoTrackFromWebCodecs({
+
+        webcodecsOutput: await runWebCodecsRunner({
             codec: codecString, 
             width: codedWidth,
             height: codedHeight,
@@ -144,15 +146,13 @@ export async function runWebCodecsAudioVideoTestClient({
             framerate: fps,
             frames,
             mediaRecorderSink, // ← pass-through
-        });
-
-    const videoTrack = buildVideoTrackFromWebCodecs({
-        webcodecsOutput: videoEncodeResult,
+        }),
         buildParameters: {
             codedWidth,
             codedHeight,
             trackTimescale
         }
+
     });
 
     const audioBuffer = await renderOscillatorAudioBuffer({
@@ -198,108 +198,5 @@ export async function runWebCodecsAudioVideoTestClient({
         ]
     };
 
-}
-
-
-/**
- * Maps WebCodecs output into Mp4BuildInput.
- *
- * This client:
- *   - owns intent
- *   - supplies identity if desired
- *   - does not apply container policy
- */
-function buildVideoTrackFromWebCodecs({
-    webcodecsOutput,
-    buildParameters,
-    semanticHints,
-    buildHints
-}) {
-    const { encodedChunks, decoderConfig } = webcodecsOutput;
-
-    const accessUnits = [];
-    const accessUnitPayloads = [];
-
-    for (const chunk of encodedChunks) {
-        const bytes = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(bytes);
-
-        accessUnitPayloads.push(bytes);
-        accessUnits.push({
-            pts: chunk.timestamp,
-            isKey: chunk.type === "key"
-        });
-    }
-
-    return {
-        semanticCore: {
-            accessUnits,
-            codec: {
-                codec: decoderConfig.codec,
-                avcC: new Uint8Array(decoderConfig.description),
-                avcCCompleteness: "semantic"
-            }
-        },
-
-        payloads: {
-            accessUnitPayloads
-        },
-
-        semanticHints,
-        buildParameters,
-        buildHints
-    };
-
-}
-
-function buildAudioTrackFromWebCodecs({
-    webcodecsOutput,
-    buildParameters,
-}) {
-    const { encodedChunks, decoderConfig } = webcodecsOutput;
-
-    const accessUnits = [];
-    const accessUnitPayloads = [];
-
-    for (const chunk of encodedChunks) {
-        const bytes = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(bytes);
-
-        accessUnitPayloads.push(bytes);
-        accessUnits.push({
-            pts: chunk.timestamp,
-            isKey: true // audio has no inter-frame dependency
-        });
-    }
-
-    console.log(`webcodecs supplied access units`, accessUnits);
-
-    const dOps = new Uint8Array(decoderConfig.description);
-    console.log("webcodecs supplied dOps", dOps);
-
-    let buildHints = {}
-    
-    buildHints.chunkingStrategy = "packetized";
-
-    let semanticHints = {}
-   
-    return {
-
-        semanticCore: {
-            accessUnits,
-            codec: {
-                codec: decoderConfig.codec, // "opus"
-                dOps 
-            }
-        },
-
-        payloads: {
-            accessUnitPayloads
-        },
-
-        semanticHints,
-        buildParameters,
-        buildHints
-    };
 }
 

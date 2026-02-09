@@ -111,7 +111,7 @@ const VALID_FOURCC = new Set([
  *
  * Do NOT reuse this for runtime validation or general parsing.
  */
-export function assertBytesWithStubbedStco({ fixture, compilerBytes, oracleBytes, expectedStcoEntryCount, labelPrefix, diagnostic = true, }) {
+export function assertBytesWithStubbedStco({ fixture, compilerBytes, oracleBytes, expectedStcoEntryCount, labelPrefix, diagnostic = false, }) {
 
     const len = compilerBytes.length;
     let i = 0;

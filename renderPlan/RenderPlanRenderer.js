@@ -5,11 +5,11 @@
  *   - Composite the full frame:
  *       1. Video frame
  *       2. Overlay nodes (e.g., images)
- *       3. Captions (delegated to captionRenderer)
+ *       3. TextOverlays (delegated to textOverlaysRenderer)
  *
  * Does NOT:
  *   - Perform layout
- *   - Modify caption styles
+ *   - Modify text-overlay styles
  *   - Resolve animations (except temporary overlay pulse)
  *   - Interpret semantic intent
  *
@@ -18,12 +18,12 @@
  *   animation dispatcher is introduced in Phase B.
  */
 
-import { drawCaptionForTime } from "../captionRenderer.js";
+import { drawTextOverlayForTime } from "../textOverlayRenderer.js";
 
 export function renderFrame({
   videoFrame,
   renderPlan,
-  captions,
+  textOverlays,
   context,
   canvas,
   t
@@ -69,7 +69,7 @@ export function renderFrame({
         }
     }
 
-    // 3. Draw captions (delegated)
-    drawCaptionForTime(t, context, canvas, captions, "default");
+    // 3. Draw text-overlays (delegated)
+    drawTextOverlayForTime(t, context, canvas, textOverlays, "default");
 }
 

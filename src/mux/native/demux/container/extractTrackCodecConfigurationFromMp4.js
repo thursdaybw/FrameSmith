@@ -1,11 +1,6 @@
-import { getGoldenTruthBox }
-    from "../goldenTruthExtractors/index.js";
+import { getGoldenTruthBox } from "../../tests/goldenTruthExtractors/index.js";
 
-export function
-extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex({
-    mp4Bytes,
-    zeroBasedTrackIndex
-}) {
+export function extractTrackCodecConfigurationFromMp4({ mp4Bytes, zeroBasedTrackIndex }) {
 
     // ---------------------------------------------------------
     // Input validation

@@ -4,17 +4,69 @@
     <h1>Video Player</h1>
     <video id="v" src="test.mp4" style="display:none"></video>
     <canvas id="c"></canvas>
-    <button id="run">Run Test</button>
-    <button id="export">Export MP4</button>
+    <button id="previewBtn">Run Test</button>
+    <button id="prerenderBtn">Pre-render</button>
+    <button id="encodeBtn">Encode</button>
+    <button id="exportBtn" disabled="disabled">Export</button>
 
-    <script type="module" src="captionModel.js"></script>
+    <script type="module" src="textOverlayModel.js"></script>
     <script type="module" src="layout.js"></script>
-    <script type="module" src="captionRenderer.js"></script>
+    <script type="module" src="textOverlayRenderer.js"></script>
 
     <script src="vendor/mp4box.js/dist/mp4box.all.global.js"></script>
 
     <script type="module" src="script.js"></script>
+    <!--<script type="module" src="preview.js"></script>-->
+
+    <script type="module" src="./test_script.js"></script>
 
   </body>
 </html>
-
+<!--
+    /*
+  const textOverlays = [
+    {
+      start: 0.0,
+      end: 0.86,
+      text: "Do you know what hit me today?",
+      words: [
+        { start: 0.0, end: 0.12, text: "Do" },
+        { start: 0.12, end: 0.14, text: "you" },
+        { start: 0.14, end: 0.24, text: "know" },
+        { start: 0.24, end: 0.32, text: "what" },
+        { start: 0.32, end: 0.46, text: "hit" },
+        { start: 0.46, end: 0.58, text: "me" },
+        { start: 0.58, end: 0.86, text: "today?" }
+      ]
+    },
+    {
+      start: 1.24,
+      end: 5.72,
+      text: "It's how many eBay businesses are killed by fear.",
+      words: [
+        { start: 1.24, end: 1.46, text: "It's" },
+        { start: 1.46, end: 1.72, text: "how" },
+        { start: 1.72, end: 2.06, text: "many" },
+        { start: 2.06, end: 2.88, text: "eBay" },
+        { start: 2.88, end: 3.48, text: "businesses", override: ["pulse"] },
+        { start: 3.48, end: 4.28, text: "are" },
+        { start: 4.28, end: 4.66, text: "killed" },
+        { start: 4.66, end: 5.16, text: "by" },
+        { start: 5.16, end: 5.72, text: "fear." }
+      ]
+    },
+      {
+          start: 0,
+          end: 30,
+          text: "Testing animation inside the caption renderer",
+          words: [
+              {
+                  start: 0,
+                  end: 30,
+                  text: "Testing",
+                  override: ["pulse"]
+              }
+          ]
+      }
+  ];    
+-->

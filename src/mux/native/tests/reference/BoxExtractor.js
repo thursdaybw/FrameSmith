@@ -392,7 +392,6 @@ export function extractChildBoxFromIlstItem(itemBytes, fourcc) {
  * This function should disappear once schema-driven plural traversal
  * is fully handled by the extractor layer.
  */
-const DEBUG_FIND_BOXES = true;
 export function findBoxesByPathFromMp4(mp4Bytes, path) {
     if (!(mp4Bytes instanceof Uint8Array)) {
         throw new Error("findBoxesByPathFromMp4: expected Uint8Array");
@@ -411,15 +410,6 @@ export function findBoxesByPathFromMp4(mp4Bytes, path) {
 
     for (const segment of segments) {
         const next = [];
-
-        if (DEBUG_FIND_BOXES) {
-            console.log(
-                "[findBoxes]",
-                "segment =", segment,
-                "current paths =",
-                current.map(c => c.registryPath)
-            );
-        }
 
         for (const { bytes, registryPath } of current) {
             const container =

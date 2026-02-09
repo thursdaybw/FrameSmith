@@ -6,11 +6,96 @@ import { DecodeOrderStrategies} from "./strategies/decodeOrderStrategies.js";
 import { ChunkingStrategies } from "./strategies/chunkingStrategies.js";
 import { PacketizationStrategies } from "./strategies/packetizationStrategies.js"
 import { deriveFfmpegOpusPacketRunsFromAccessUnits } from "./strategies/deriveFfmpegOpusPacketRunsFromAccessUnits.js";
+import { validatePacketTopologyAdmissibility } from "../compiler/validateCompilerAdmissibility.js";
 
 const DEFAULT_CHUNKING_STRATEGY = ChunkingStrategies.ONE_SAMPLE_PER_CHUNK
 
 const OPUS_FRAME_SIZE = 960;
 
+/**
+ * deriveStructuralStateInPlace
+ * ============================
+ *
+ * Derives the *structural* representation of a track in-place from its
+ * normalized semantic inputs.
+ *
+ * Structural derivation answers container-level questions such as:
+ *   - how samples are grouped into chunks
+ *   - how chunks map to samples (stsc)
+ *   - how long the track is
+ *
+ * It does NOT:
+ *   - change media semantics
+ *   - infer codec behaviour heuristically
+ *   - inspect payload bytes
+ *
+ * All inputs are assumed to be semantically normalized before entry.
+ *
+ * ------------------------------------------------------------------
+ * Track-family invariants
+ * ------------------------------------------------------------------
+ *
+ * This function currently handles multiple semantic track families
+ * (audio and video) in a single control flow. These families have
+ * *different and non-overlapping invariants*:
+ *
+ * Audio tracks:
+ *   - Have packet semantics
+ *   - MUST have packetIndex materialised on all access units
+ *   - Default to PACKETIZED chunking
+ *   - May derive identity packetization when topology is not supplied
+ *   - Chunking policy affects grouping, not packet existence
+ *
+ * Video tracks:
+ *   - Do NOT have packet semantics
+ *   - MUST NOT have packetIndex on access units
+ *   - Always use ONE_SAMPLE_PER_CHUNK
+ *   - Chunking is a simple container layout decision
+ *
+ * These invariants are enforced explicitly to prevent illegal
+ * cross-contamination (e.g. packetized video or packetless audio).
+ *
+ * ------------------------------------------------------------------
+ * Ordering guarantees
+ * ------------------------------------------------------------------
+ *
+ * Structural derivation proceeds in this order:
+ *
+ *   1. Decode timestamp derivation (DTS)
+ *   2. Track-family-specific normalization (e.g. audio packetIndex)
+ *   3. Chunking strategy selection
+ *   4. Structural validation of requested layout
+ *   5. Chunk model derivation
+ *   6. STSC derivation
+ *   7. Track duration derivation
+ *
+ * Packet semantics (when applicable) are fully materialised BEFORE
+ * chunk derivation. Chunking must never invent or guess packet topology.
+ *
+ * ------------------------------------------------------------------
+ * Design note / future refactor
+ * ------------------------------------------------------------------
+ *
+ * This function is intentionally conservative and explicit, but it
+ * currently interleaves audio and video logic via conditionals.
+ *
+ * As additional track families are added, this function should be
+ * refactored into per-track-family derivation paths, e.g.:
+ *
+ *   - deriveAudioStructuralStateInPlace
+ *   - deriveVideoStructuralStateInPlace
+ *
+ * with this function acting as a thin dispatcher based on
+ * semanticTrackFamily.
+ *
+ * That refactor would:
+ *   - make invariants local and self-evident
+ *   - eliminate illegal states by construction
+ *   - simplify reasoning and future extension
+ *
+ * Until then, all invariants are enforced explicitly and covered
+ * by tests.
+ */
 export function deriveStructuralStateInPlace({ track }) {
 
     const accessUnits = track.semanticCore.accessUnits;
@@ -57,6 +142,53 @@ export function deriveStructuralStateInPlace({ track }) {
         track,
         buildHints: track.buildHints
     });
+
+    // ---------------------------------------------------------
+    // Identity packetization (default, derivable)
+    // ---------------------------------------------------------
+
+    // ---------------------------------------------------------
+    // INVARIANT
+    // ---------------------------------------------------------
+    // Any track that reaches PACKETIZED chunking MUST have
+    // packetIndex materialised on every access unit.
+    //
+    // WebCodecs and mp4a do not expose packet topology.
+    // In those cases, identity packetization is applied:
+    //
+    //   1 access unit == 1 packet
+    //
+    // This MUST happen before:
+    //   - packet topology validation
+    //   - deriveChunkModel()
+    // ---------------------------------------------------------
+    // ---------------------------------------------------------
+    // Identity packetization (audio only, default, derivable)
+    // ---------------------------------------------------------
+    if (
+        track.semanticTrackFamily === "audio" &&
+        selectChunkingStrategy({ track, buildHints: track.buildHints }) === ChunkingStrategies.PACKETIZED
+    ) {
+
+        const accessUnits = track.semanticCore.accessUnits;
+
+        const hasPacketIndex =
+            Array.isArray(accessUnits) &&
+            accessUnits.length > 0 &&
+            accessUnits.every(au => Number.isInteger(au.packetIndex));
+
+        if (!hasPacketIndex) {
+            // Identity packetization: 1 sample == 1 packet
+            for (let i = 0; i < accessUnits.length; i++) {
+                accessUnits[i].packetIndex = i;
+            }
+        }
+    }
+
+
+    if (chunkingStrategy === ChunkingStrategies.PACKETIZED) {
+        validatePacketTopologyAdmissibility(track, track.trackId ?? 0);
+    }
 
     // Default path (mp4a, WebCodecs, video)
     track.chunks = deriveChunkModel( accessUnits, chunkingStrategy);
@@ -167,19 +299,32 @@ function derivePacketRunsFromAccessUnits(accessUnits) {
  */
 function selectChunkingStrategy({ track, buildHints }) {
 
-    if (buildHints?.chunkingStrategy) {
-        return buildHints.chunkingStrategy;
+    // ---------------------------------------------------------
+    // 1. Explicit opt-out
+    // ---------------------------------------------------------
+    if (buildHints?.chunkingStrategy === "non-packetized") {
+        return ChunkingStrategies.ONE_SAMPLE_PER_CHUNK;
     }
 
+    // ---------------------------------------------------------
+    // 2. Explicit non-identity packetization
+    // ---------------------------------------------------------
+    if (
+        buildHints?.chunkingStrategy === "ffmpeg-opus-packet-grouped" ||
+        buildHints?.packetizationStrategy === "explicit"
+    ) {
+        return ChunkingStrategies.PACKETIZED;
+    }
+
+    // ---------------------------------------------------------
+    // 3. Default by track family
+    // ---------------------------------------------------------
     if (track.semanticTrackFamily === "audio") {
         return ChunkingStrategies.PACKETIZED;
     }
 
-    if (track.semanticTrackFamily === "video") {
-        return ChunkingStrategies.ONE_SAMPLE_PER_CHUNK;
-    }
-
     return ChunkingStrategies.ONE_SAMPLE_PER_CHUNK;
+
 }
 
 function resolvePacketTopology({ accessUnits, semanticHints, codecName, }) {

@@ -146,9 +146,7 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
     // ---------------------------------------------------------
     // Compile MP4 (debug object temporarily enabled)
     // ---------------------------------------------------------
-    const result = createMp4FromInputs(mp4BuildInput, goldenMp4);
-    const outBytes = result.bytes;
-
+    const outBytes = createMp4FromInputs(mp4BuildInput, goldenMp4);
 
     const goldT1Stts = getGoldenTruthBox .getSemanticBoxDataFromBox(
         {

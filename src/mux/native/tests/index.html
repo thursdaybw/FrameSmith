@@ -160,8 +160,6 @@ import { test_SourceClient_GoldenMp4_ProducesMp4BuildInput }  from "./test_Sourc
 
 import { test_DeriveDecodeTimestamps_Invariants }  from "./test_DeriveDecodeTimestamps_Invariants.js";
 
-import { inspect_GoldenMp4_PtsDtsOrder } from "./test_DeriveDecodeTimestamps_Invariants.js";
-
 import { 
     test_UdtaPolicy_OpaquePassthrough,
     test_UdtaPolicy_ExplicitOmission,
@@ -234,8 +232,8 @@ import {
     testFromLeafBox_RejectsNonUint8Array,
     testFromLeafBox_RejectsTooSmallBox,
     testDispatcher_FromMp4_RootMoov_Terminates,
-    testDispatcher_IsoBoxResolver_RejectsOutOfRangeTrakIndex,
-    testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminates,
+    testDispatcher_IsoBoxResolver_OutOfRangeTrakIndex_ReturnsNotFound,
+    testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminatesWithNotFound,
     testDispatcher_FromMp4_DoesNotCallExtractorOnReturn,
     testDispatcher_FromMp4_ReturnedObject_IsLazy,
     testDispatcher_FromMp4_RootMoov_DoesNotRequireIndex,
@@ -252,9 +250,10 @@ import {
     testValidateIsoBoxTraversalContext_InjectsImplicitTrakBytes,
     testValidateIsoBoxTraversalContext_RejectsEmptyPath,
     testValidateIsoBoxTraversalContext_RejectsTraversalIntoTerminalBox,
-    testDispatcher_ThrowsWithIntentionalMessages_ForTrak_Sample_Ctts,
+    testDispatcher_SampleIndexOutOfRange_ThrowsWithIntentionalMessage,
     testLookupExtractorByRegistryKey_InvalidKey_Throws,
-
+    testDispatcher_IsoBoxResolver_RejectsUnsupportedCo64,
+    testDispatcher_OptionalCtts_MissingIsNotAnError,
 }
 from "./test_goldenTruthDispatcher.js";
 
@@ -626,6 +625,12 @@ import {
 from "./testNativeMuxer_AdaptSttsFromSamples_WebCodecs_Opus.js";
 
 import {
+    testNativeMuxer_AdaptSttsFromSamples_DoesNotReconcileTail,
+    testNativeMuxer_AdaptSttsWithTailFix_ReconcilesFinalSample
+}
+   from "./testNativeMuxer_AdaptSttsFromSamplesTailHandling.js";
+
+import {
    testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerTopology_MustReproduceStscByteForByte_Opus,
    testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerSuppliedHints_MustReproduceStscByteForByte_Mp4a,
    testNativeMuxer_WhenGivenWebCodecsInputs_MustProduceLegalStsc,
@@ -830,8 +835,8 @@ const testsAll = [
     testFromBox_ParityWithFromMp4_ForStbl,
     testFromLeafBox_RejectsNonUint8Array,
     testFromLeafBox_RejectsTooSmallBox,
-    testDispatcher_IsoBoxResolver_RejectsOutOfRangeTrakIndex,
-    testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminates,
+    testDispatcher_IsoBoxResolver_OutOfRangeTrakIndex_ReturnsNotFound,
+    testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminatesWithNotFound,
     testDispatcher_FromMp4_RootMoov_DoesNotRequireIndex,
     testDispatcher_FromMp4_ReturnedObject_IsLazy,
     testDispatcher_FromMp4_DoesNotCallExtractorOnReturn,
@@ -1056,6 +1061,8 @@ const testsAll = [
     testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,
     testNativeMuxer_Opus_STBL_WebCodecsShapeCompatibility,
     testNativeMuxer_AdaptSttsFromSamples_WebCodecs_Opus,
+    testNativeMuxer_AdaptSttsFromSamples_DoesNotReconcileTail,
+    testNativeMuxer_AdaptSttsWithTailFix_ReconcilesFinalSample,
     testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerTopology_MustReproduceStscByteForByte_Opus,
     testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerSuppliedHints_MustReproduceStscByteForByte_Mp4a,
     testNativeMuxer_WhenGivenWebCodecsInputs_MustProduceLegalStsc,
@@ -1104,8 +1111,10 @@ const testsAll = [
     testDispatcher_NormalizesIndexedPaths,
     testFromMp4_RootMoov_Resolves,
     testFromBox_RootMp4_ResolvesMoov,
-    testDispatcher_ThrowsWithIntentionalMessages_ForTrak_Sample_Ctts,
+    testDispatcher_SampleIndexOutOfRange_ThrowsWithIntentionalMessage,
     testLookupExtractorByRegistryKey_InvalidKey_Throws,
+    testDispatcher_IsoBoxResolver_RejectsUnsupportedCo64,
+    testDispatcher_OptionalCtts_MissingIsNotAnError,
     test_DeriveDecodeTimestamps_Invariants,
     test_applyAvcCContainerPolicy,
     test_avcC_policy_locked_layout_container_complete,
@@ -1131,14 +1140,16 @@ const testsAll = [
     */
     //generateWebCodecsAvOpusFixtures,
     //testNativeMuxer_MP4_FromResolvedParts_Equals_FFmpegOracle,
-    //test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical,
     //test_SourceClient_WebCodecs_ProducesMp4BuildInput,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical,
     test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic,
     ];
 
 
     const tests = testsAll;
-    //const tests = [ testDispatcher_FromBox_ExactContext_DoesNotReResolveAncestors, ];
+    const testsofff = [
+        testCtts_LockedLayoutEquivalence_ffmpeg
+    ];
 
 
     let failures = 0;
@@ -1208,7 +1219,6 @@ async function runInspectionTests() {
   /*
    await inspectBoxTreeDiff_AV_vs_Visual();
    await test_Inspection_Stsd_Semantics();
-   await inspect_GoldenMp4_PtsDtsOrder();
    await testUdta_Inspection_ffmpeg();
    await testMeta_Inspection_ffmpeg();
    await testMetaHdlr_Inspection_ffmpeg();

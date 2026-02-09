@@ -26,7 +26,36 @@ export class Mp4BoxDemuxer {
     }
 
     getAudioTrackInfo() {
-        return this.info?.audioTracks?.[0] ?? null;
+        const track = this.info?.audioTracks?.[0];
+        if (!track || !track.audio) {
+            return null;
+        }
+
+        return {
+            codec: track.codec,
+            timescale: track.timescale,
+
+            // REQUIRED FOR COMPILER ADMISSIBILITY
+            channelCount: track.audio.channel_count,
+            sampleRate: track.audio.sample_rate,
+            sampleSize: track.audio.sample_size,
+
+            // optional but useful
+            bitrate: track.bitrate,
+            samplesDuration: track.samples_duration
+        };
+    }
+
+    getAudioEsds() {
+        if (!this.audioTrackId) return null;
+
+        const trak = this.moov?.traks?.find(
+            t => t.tkhd.track_id === this.audioTrackId
+        );
+
+        return (
+            trak?.mdia?.minf?.stbl?.stsd?.entries?.[0]?.esds ?? null
+        );
     }
 
     // Convert mp4box's parsed AVCConfigurationBox into the binary
@@ -157,8 +186,9 @@ export class Mp4BoxDemuxer {
                     for (const s of samples) {
                         const encoded = new EncodedSampleLike({
                             type: s.is_sync ? "key" : "delta",
-                            timestamp: this.toNano(s.cts, s.timescale),
-                            duration: this.toNano(s.duration, s.timescale),
+
+                            timestamp: this.toMicro(s.cts, s.timescale),
+                            duration: this.toMicro(s.duration, s.timescale),
 
                             // Not sure which is appropriate, toNano or toMicro
                             // timestamp: this.toMicro(s.cts, s.timescale),
@@ -167,6 +197,19 @@ export class Mp4BoxDemuxer {
 
                             raw: s  // ← KEEP ORIGINAL SAMPLE. REQUIRED FOR avcC.
                         });
+
+                        if (
+                            trackId === this.audioTrackId &&
+                            audioSamples.length === 0
+                        ) {
+                            console.log("AUDIO FIRST SAMPLE (µs)", {
+                                ts: encoded.timestamp,
+                                dur: encoded.duration,
+                                rawDuration: s.duration,
+                                timescale: s.timescale
+                            });
+                        }
+
                         if (trackId === this.videoTrackId) {
                             videoSamples.push(encoded);
                         } else if (trackId === this.audioTrackId) {

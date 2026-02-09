@@ -127,12 +127,9 @@ function validateTrackAdmissibility(track, trackIndex) {
     }
 
 
-
-
     // ---------------------------------------------------------
     // Audio tracks (mp4a / opus)
     // ---------------------------------------------------------
-
     if (
         codecString === "opus" ||
         codecString.startsWith("mp4a")
@@ -158,6 +155,8 @@ function validateTrackAdmissibility(track, trackIndex) {
             );
         }
 
+        validatePacketTopologyAdmissibility(track, trackIndex);
+
         return;
     }
 
@@ -167,5 +166,120 @@ function validateTrackAdmissibility(track, trackIndex) {
 
     throw new Error(
         `Track[${trackIndex}]: unsupported codec for compilation: ${codecString}`
+    );
+}
+
+/**
+ * validatePacketTopologyAdmissibility
+ * ==================================
+ *
+ * Guards packetized chunking requests against missing packet topology.
+ *
+ * PURPOSE
+ * -------
+ * Ensures that the compiler only fails when the caller explicitly
+ * demands a NON-IDENTITY packetization without supplying topology.
+ *
+ * This function deliberately does NOT try to be clever.
+ * It does NOT derive packet topology.
+ * It does NOT inspect container structure.
+ *
+ * It enforces ONE rule only:
+ *
+ *   If the caller explicitly requests a specific packetization policy,
+ *   they MUST also supply packet topology.
+ *
+ * --------------------------------------------------------------------
+ * Identity packetization (default)
+ * --------------------------------------------------------------------
+ *
+ * Identity packetization means:
+ *
+ *   - one access unit == one packet
+ *   - packetIndex can be derived trivially
+ *
+ * This mode is ALWAYS permitted when:
+ *   - accessUnits exist
+ *   - no explicit packetizationStrategy is requested
+ *
+ * This is the default for:
+ *   - WebCodecs input
+ *   - semantic encoder output
+ *   - non-oracle compilation paths
+ *
+ * --------------------------------------------------------------------
+ * When this validator FAILS
+ * --------------------------------------------------------------------
+ *
+ * The validator throws ONLY when ALL of the following are true:
+ *
+ *   1. Packetized chunking is requested
+ *   2. A NON-IDENTITY packetizationStrategy is explicitly requested
+ *   3. No packet topology is supplied via:
+ *        - accessUnit.packetIndex, OR
+ *        - semanticHints.codecPacketRuns
+ *
+ * This protects the compiler from illegal requests while allowing
+ * fully derivable defaults.
+ *
+ * --------------------------------------------------------------------
+ * Design constraints
+ * --------------------------------------------------------------------
+ *
+ * - No mutation
+ * - No inference
+ * - No derivation
+ * - No container knowledge
+ *
+ * This is an admissibility gate, not a policy engine.
+ */
+export function validatePacketTopologyAdmissibility(track, trackIndex) {
+    const accessUnits = track.semanticCore?.accessUnits;
+    const buildHints = track.buildHints;
+    const semanticHints = track.semanticHints;
+
+    // ---------------------------------------------------------
+    // 1. Is packetized chunking requested?
+    // ---------------------------------------------------------
+    const packetizedChunkingRequested =
+        buildHints?.chunkingStrategy === "packetized" ||
+        buildHints?.chunkingStrategy === "ffmpeg-opus-packet-grouped";
+
+    if (!packetizedChunkingRequested) {
+        return;
+    }
+
+    // ---------------------------------------------------------
+    // 2. Is a NON-IDENTITY packetization explicitly requested?
+    // ---------------------------------------------------------
+    const explicitPacketizationRequested =
+        buildHints?.packetizationStrategy !== undefined;
+
+    if (!explicitPacketizationRequested) {
+        // Identity packetization is allowed and derivable
+        return;
+    }
+
+    // ---------------------------------------------------------
+    // 3. Is packet topology supplied?
+    // ---------------------------------------------------------
+    const hasPacketIndex =
+        Array.isArray(accessUnits) &&
+        accessUnits.length > 0 &&
+        accessUnits.every(au => Number.isInteger(au.packetIndex));
+
+    const hasPacketRuns =
+        Array.isArray(semanticHints?.codecPacketRuns);
+
+    if (hasPacketIndex || hasPacketRuns) {
+        return;
+    }
+
+    // ---------------------------------------------------------
+    // 4. Illegal state
+    // ---------------------------------------------------------
+    throw new Error(
+        `Track[${trackIndex}]: explicit packetization requested, but no packet topology supplied.\n` +
+        `Provide accessUnit.packetIndex or semanticHints.codecPacketRuns.`
     );
 }
