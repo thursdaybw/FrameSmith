@@ -548,6 +548,193 @@ document.addEventListener("DOMContentLoaded", async () => {
         throw new Error("VideoEncoder could not be configured for export.");
     }
 
+    function createSharedRenderExecutionContext({
+        videoDecoder,
+        audioDecoder,
+        getVideoDecoderError,
+        getAudioDecoderError,
+        decodedVideoFrames,
+        decodedAudioData,
+        timecodeFragmentIntentResolvers,
+        timeline,
+        exportFps,
+        configuredVideoEncoderConfig
+    }) {
+        return {
+            videoDecoder: {
+                decode(chunk) {
+                    const videoDecoderError = getVideoDecoderError();
+                    if (videoDecoderError) {
+                        throw Object.assign(
+                            new Error("videoDecoder.decode called after decoder failure"),
+                            { cause: videoDecoderError }
+                        );
+                    }
+                    try {
+                        videoDecoder.decode(chunk);
+                    } catch (error) {
+                        console.error("videoDecoder.decode threw", error);
+                        throw error;
+                    }
+                },
+                async flush() {
+                    const videoDecoderError = getVideoDecoderError();
+                    if (videoDecoderError) {
+                        throw Object.assign(
+                            new Error("videoDecoder.flush called after decoder failure"),
+                            { cause: videoDecoderError }
+                        );
+                    }
+                    try {
+                        const flushStart = performance.now();
+                        const heartbeat = setInterval(() => {
+                            console.log("[VideoDecoder.flush] waiting", {
+                                elapsedMs: Math.round(performance.now() - flushStart),
+                                decodeQueueSize: videoDecoder.decodeQueueSize,
+                                hasDecoderError: !!getVideoDecoderError()
+                            });
+                        }, 2000);
+
+                        try {
+                            await videoDecoder.flush();
+                        } finally {
+                            clearInterval(heartbeat);
+                        }
+                    } catch (error) {
+                        console.error("videoDecoder.flush threw", error);
+                        throw error;
+                    }
+                },
+                getDecodedOutputs() {
+                    return decodedVideoFrames;
+                },
+                getLastError() {
+                    return getVideoDecoderError();
+                },
+                get decodeQueueSize() {
+                    return videoDecoder.decodeQueueSize;
+                }
+            },
+            audioDecoder: {
+                decode(chunk) {
+                    const audioDecoderError = getAudioDecoderError();
+                    if (audioDecoderError) {
+                        throw Object.assign(
+                            new Error("audioDecoder.decode called after decoder failure"),
+                            { cause: audioDecoderError }
+                        );
+                    }
+                    try {
+                        audioDecoder.decode(chunk);
+                    } catch (error) {
+                        console.error("audioDecoder.decode threw", error);
+                        throw error;
+                    }
+                },
+                async flush() {
+                    const audioDecoderError = getAudioDecoderError();
+                    if (audioDecoderError) {
+                        throw Object.assign(
+                            new Error("audioDecoder.flush called after decoder failure"),
+                            { cause: audioDecoderError }
+                        );
+                    }
+                    try {
+                        await audioDecoder.flush();
+                    } catch (error) {
+                        console.error("audioDecoder.flush threw", error);
+                        throw error;
+                    }
+                },
+                getDecodedOutputs() {
+                    return decodedAudioData;
+                },
+                getLastError() {
+                    return getAudioDecoderError();
+                },
+                get decodeQueueSize() {
+                    return audioDecoder.decodeQueueSize;
+                }
+            },
+            timecodeFragmentIntentResolvers,
+            activeLayers: timeline.tracks.map((track, index) => ({
+                track,
+                zIndex: index,
+                muted: false
+            })),
+            options: {
+                audioStrategy: "mixToSingleTrack",
+                frameDurationSeconds: 1 / exportFps,
+                trackTimescale: 1_000_000,
+                outputSpec: {
+                    width: configuredVideoEncoderConfig.width,
+                    height: configuredVideoEncoderConfig.height,
+                    fps: exportFps,
+                    sampleRate: 48_000,
+                    channels: 2
+                },
+                background: { r: 0, g: 0, b: 0, a: 1 }
+            }
+        };
+    }
+
+    function createExportExecutionContext({
+        sharedContext,
+        videoEncoder,
+        audioEncoder,
+        videoEncodedChunks,
+        audioEncodedChunks,
+        getVideoDecoderConfig,
+        getAudioDecoderConfig
+    }) {
+        return {
+            ...sharedContext,
+            encodeVideoFrame({ frame, timeSeconds }) {
+                // MVP constraint:
+                // Force all-intra output to stay on the NativeMuxer happy path
+                // while CTTS/STSS policy work is still pending.
+                videoEncoder.encode(frame, { keyFrame: true });
+                if (typeof frame.close === "function") {
+                    frame.close();
+                }
+                return {
+                    accessUnit: {
+                        codecDomain: "video",
+                        pts: Math.round(timeSeconds * 1_000_000),
+                        data: new Uint8Array(0)
+                    }
+                };
+            },
+            encodeAudioData({ audioData, timeSeconds }) {
+                audioEncoder.encode(audioData);
+                if (typeof audioData.close === "function") {
+                    audioData.close();
+                }
+                return {
+                    accessUnit: {
+                        codecDomain: "audio",
+                        pts: Math.round(timeSeconds * 1_000_000),
+                        data: new Uint8Array(0)
+                    }
+                };
+            },
+            flushVideoEncoder: async () => {
+                await videoEncoder.flush();
+            },
+            flushAudioEncoder: async () => {
+                await audioEncoder.flush();
+            },
+            getVideoWebCodecsOutput: () => ({
+                encodedChunks: videoEncodedChunks,
+                decoderConfig: getVideoDecoderConfig()
+            }),
+            getAudioWebCodecsOutput: () => ({
+                encodedChunks: audioEncodedChunks,
+                decoderConfig: getAudioDecoderConfig()
+            })
+        };
+    }
+
     previewBtn.onclick = () => {
         console.log("Preview button clicked");
 
@@ -856,161 +1043,29 @@ document.addEventListener("DOMContentLoaded", async () => {
                 bitrate: 128_000
             });
 
-            const strategy = new ExportExecutionStrategy({
-                videoDecoder: {
-                    decode(chunk) {
-                        if (videoDecoderError) {
-                            throw Object.assign(
-                                new Error("videoDecoder.decode called after decoder failure"),
-                                { cause: videoDecoderError }
-                            );
-                        }
-                        try {
-                            videoDecoder.decode(chunk);
-                        } catch (error) {
-                            console.error("videoDecoder.decode threw", error);
-                            throw error;
-                        }
-                    },
-                    async flush() {
-                        if (videoDecoderError) {
-                            throw Object.assign(
-                                new Error("videoDecoder.flush called after decoder failure"),
-                                { cause: videoDecoderError }
-                            );
-                        }
-                        try {
-                            const flushStart = performance.now();
-                            const heartbeat = setInterval(() => {
-                                console.log("[VideoDecoder.flush] waiting", {
-                                    elapsedMs: Math.round(performance.now() - flushStart),
-                                    decodeQueueSize: videoDecoder.decodeQueueSize,
-                                    hasDecoderError: !!videoDecoderError
-                                });
-                            }, 2000);
-
-                            try {
-                                await videoDecoder.flush();
-                            } finally {
-                                clearInterval(heartbeat);
-                            }
-                        } catch (error) {
-                            console.error("videoDecoder.flush threw", error);
-                            throw error;
-                        }
-                    },
-                    getDecodedOutputs() {
-                        return decodedVideoFrames;
-                    },
-                    getLastError() {
-                        return videoDecoderError;
-                    },
-                    get decodeQueueSize() {
-                        return videoDecoder.decodeQueueSize;
-                    }
-                },
-                audioDecoder: {
-                    decode(chunk) {
-                        if (audioDecoderError) {
-                            throw Object.assign(
-                                new Error("audioDecoder.decode called after decoder failure"),
-                                { cause: audioDecoderError }
-                            );
-                        }
-                        try {
-                            audioDecoder.decode(chunk);
-                        } catch (error) {
-                            console.error("audioDecoder.decode threw", error);
-                            throw error;
-                        }
-                    },
-                    async flush() {
-                        if (audioDecoderError) {
-                            throw Object.assign(
-                                new Error("audioDecoder.flush called after decoder failure"),
-                                { cause: audioDecoderError }
-                            );
-                        }
-                        try {
-                            await audioDecoder.flush();
-                        } catch (error) {
-                            console.error("audioDecoder.flush threw", error);
-                            throw error;
-                        }
-                    },
-                    getDecodedOutputs() {
-                        return decodedAudioData;
-                    },
-                    getLastError() {
-                        return audioDecoderError;
-                    },
-                    get decodeQueueSize() {
-                        return audioDecoder.decodeQueueSize;
-                    }
-                },
+            const sharedRenderContext = createSharedRenderExecutionContext({
+                videoDecoder,
+                audioDecoder,
+                getVideoDecoderError: () => videoDecoderError,
+                getAudioDecoderError: () => audioDecoderError,
+                decodedVideoFrames,
+                decodedAudioData,
                 timecodeFragmentIntentResolvers,
-                activeLayers: timeline.tracks.map((track, index) => ({
-                    track,
-                    zIndex: index,
-                    muted: false
-                })),
-                options: {
-                    audioStrategy: "mixToSingleTrack",
-                    frameDurationSeconds: 1 / exportFps,
-                    trackTimescale: 1_000_000,
-                    outputSpec: {
-                        width: configuredVideoEncoderConfig.width,
-                        height: configuredVideoEncoderConfig.height,
-                        fps: exportFps,
-                        sampleRate: 48_000,
-                        channels: 2
-                    },
-                    background: { r: 0, g: 0, b: 0, a: 1 }
-                },
-                encodeVideoFrame({ frame, timeSeconds }) {
-                    // MVP constraint:
-                    // Force all-intra output to stay on the NativeMuxer happy path
-                    // while CTTS/STSS policy work is still pending.
-                    videoEncoder.encode(frame, { keyFrame: true });
-                    if (typeof frame.close === "function") {
-                        frame.close();
-                    }
-                    return {
-                        accessUnit: {
-                            codecDomain: "video",
-                            pts: Math.round(timeSeconds * 1_000_000),
-                            data: new Uint8Array(0)
-                        }
-                    };
-                },
-                encodeAudioData({ audioData, timeSeconds }) {
-                    audioEncoder.encode(audioData);
-                    if (typeof audioData.close === "function") {
-                        audioData.close();
-                    }
-                    return {
-                        accessUnit: {
-                            codecDomain: "audio",
-                            pts: Math.round(timeSeconds * 1_000_000),
-                            data: new Uint8Array(0)
-                        }
-                    };
-                },
-                flushVideoEncoder: async () => {
-                    await videoEncoder.flush();
-                },
-                flushAudioEncoder: async () => {
-                    await audioEncoder.flush();
-                },
-                getVideoWebCodecsOutput: () => ({
-                    encodedChunks: videoEncodedChunks,
-                    decoderConfig: videoDecoderConfig
-                }),
-                getAudioWebCodecsOutput: () => ({
-                    encodedChunks: audioEncodedChunks,
-                    decoderConfig: audioDecoderConfig
-                })
+                timeline,
+                exportFps,
+                configuredVideoEncoderConfig
             });
+            const exportExecutionContext = createExportExecutionContext({
+                sharedContext: sharedRenderContext,
+                videoEncoder,
+                audioEncoder,
+                videoEncodedChunks,
+                audioEncodedChunks,
+                getVideoDecoderConfig: () => videoDecoderConfig,
+                getAudioDecoderConfig: () => audioDecoderConfig
+            });
+
+            const strategy = new ExportExecutionStrategy(exportExecutionContext);
 
             const result = await strategy.execute({
                 plan: prerenderPlan,
