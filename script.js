@@ -205,8 +205,6 @@ import { openContainerFromMp4 } from "./src/mux/native/demux/container/openConta
 // to future API
 import { buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.js";
 
-import { routeProceduralFragmentAtTimeToResolver } from "./src/timeline/procedural/routeProceduralFragmentAtTimeToResolver.js";
-
 import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
 import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js";
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
@@ -268,7 +266,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const PRE_RENDER_FPS = 30;
     const PRE_RENDER_FRAME_DURATION_US = Math.floor(1_000_000 / PRE_RENDER_FPS);
 
-    const prerenderBtn = document.getElementById("prerenderBtn");
     const previewBtn = document.getElementById("previewBtn");
     const encodeBtn = document.getElementById("encodeBtn");
     const exportBtn = document.getElementById("exportBtn");
@@ -829,68 +826,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         requestAnimationFrame(frameLoop);
 
-    };
-
-    /**
-     * Pre-Render Button Handler (Offline Timeline Evaluation)
-     *
-     * Purpose:
-     * - Deterministically evaluate the timeline structure.
-     * - Produce a *render plan* describing what media access units
-     *   must be processed, in what order.
-     *
-     * What pre-render produces (CURRENT STAGE):
-     * - Video access-unit plan (container-timed, ordered)
-     * - Audio access-unit plan (container-timed, ordered)
-     *
-     * What pre-render explicitly does NOT do:
-     * - It does NOT decode media
-     * - It does NOT produce VideoFrame or AudioData objects
-     * - It does NOT sample by wall-clock time
-     * - It does NOT rely on preview or playback APIs
-     * - It does NOT encode
-     *
-     * Architectural Rule:
-     * - Pre-render PUSHES access units forward.
-     * - Later stages DECIDE how to decode, render, or encode them.
-     *
-     * This handler marks the boundary between:
-     * - Timeline compilation (this stage)
-     * - Media execution (future stages)
-     */
-    prerenderBtn.onclick = () => {
-        console.log("Prerender button clicked");
-
-        try {
-
-            const prerenderPlan = buildPrerenderPlanFromTimeline({ timeline });
-
-
-            console.log("Pre-render plan complete", {
-                videoAccessUnits: prerenderPlan.videoAccessUnits.length,
-                audioAccessUnits: prerenderPlan.audioAccessUnits.length
-            });
-
-            // Temporary: expose for inspection
-            window.__prerenderPlan = prerenderPlan;
-
-            const proceduralFragments = prerenderPlan.fragments.filter(
-                f => f.prerenderContributorKind === "procedural"
-            );
-
-            const demoTimeSeconds = 12;
-
-            for (const fragment of proceduralFragments) {
-                executeProceduralFragmentAtTime({
-                    fragment,
-                    timeSeconds: demoTimeSeconds,
-                    timecodeFragmentIntentResolvers
-                });
-            }
-
-        } catch (error) {
-            console.error("Error during pre-render planning:", error);
-        }
     };
 
     /**
