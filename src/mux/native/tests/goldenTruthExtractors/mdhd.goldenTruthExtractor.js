@@ -11,7 +11,8 @@
 
 import {
     readUint32,
-    readUint16
+    readUint16,
+    readUint64
 } from "../../bytes/mp4ByteReader.js";
 
 import {
@@ -35,6 +36,30 @@ function readBoxReport(box) {
 
     const header = readBoxHeaderFromBytes(box, path);
     const payloadOffset = getPayloadOffsetForPath(path);
+    const version = Number(header?.version ?? 0);
+
+    let creationTime;
+    let modificationTime;
+    let timescale;
+    let duration;
+    let language;
+    let predefined;
+
+    if (version === 1) {
+        creationTime = readUint64(box, payloadOffset);
+        modificationTime = readUint64(box, payloadOffset + 8);
+        timescale = readUint32(box, payloadOffset + 16);
+        duration = readUint64(box, payloadOffset + 20);
+        language = readUint16(box, payloadOffset + 28);
+        predefined = readUint16(box, payloadOffset + 30);
+    } else {
+        creationTime = readUint32(box, payloadOffset);
+        modificationTime = readUint32(box, payloadOffset + 4);
+        timescale = readUint32(box, payloadOffset + 8);
+        duration = readUint32(box, payloadOffset + 12);
+        language = readUint16(box, payloadOffset + 16);
+        predefined = readUint16(box, payloadOffset + 18);
+    }
 
     return {
         raw: box,
@@ -44,12 +69,12 @@ function readBoxReport(box) {
             header,
 
             fields: {
-                creationTime:     readUint32(box, payloadOffset),
-                modificationTime: readUint32(box, payloadOffset + 4),
-                timescale:        readUint32(box, payloadOffset + 8),
-                duration:         readUint32(box, payloadOffset + 12),
-                language:         readUint16(box, payloadOffset + 16),
-                predefined:       readUint16(box, payloadOffset + 18)
+                creationTime,
+                modificationTime,
+                timescale,
+                duration,
+                language,
+                predefined
             }
         },
 

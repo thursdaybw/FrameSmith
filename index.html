@@ -2,7 +2,11 @@
 <html>
   <body>
     <h1>Video Player</h1>
-    <video id="v" src="test.mp4" style="display:none"></video>
+    <video id="v" src="webcodecs-native-muxer.mp4" style="display:none"></video>
+    <div>
+      <input id="videoFileInput" type="file" accept="video/mp4,video/*" />
+      <span id="videoSourceStatus"></span>
+    </div>
     <canvas id="c"></canvas>
     <button id="previewBtn">Play preview</button>
     <button id="encodeBtn">Encode</button>

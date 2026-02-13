@@ -14,8 +14,9 @@
  */
 
 export class Mp4BoxDemuxer {
-    constructor(arrayBuffer) {
+    constructor(arrayBuffer, options = {}) {
         this.arrayBuffer = arrayBuffer;
+        this.options = options;
     }
 
     getVideoTrackInfo() {
@@ -119,8 +120,7 @@ export class Mp4BoxDemuxer {
         return new Promise((resolve, reject) => {
             try {
 
-                const keepMdatData = true;
-                const mp4boxFile = MP4Box.createFile(keepMdatData);
+                const mp4boxFile = MP4Box.createFile();
 
                 const videoSamples = [];
                 const audioSamples = [];
@@ -129,15 +129,32 @@ export class Mp4BoxDemuxer {
                 let appendComplete = false;
                 let expectedVideoSamples = null;
                 let expectedAudioSamples = 0;
+                let extractionStarted = false;
+                let noProgressTimeoutId = null;
+                const parseTimeoutMs = Number.isFinite(this.options?.parseTimeoutMs)
+                    ? Math.max(5_000, Math.floor(this.options.parseTimeoutMs))
+                    : 120_000;
 
                 const timeoutId = setTimeout(() => {
-                    settle(reject, new Error("Mp4BoxDemuxer.parse timeout"));
-                }, 15000);
+                    settle(
+                        reject,
+                        new Error(
+                            "Mp4BoxDemuxer.parse timeout " +
+                            `(timeoutMs=${parseTimeoutMs}, ready=${ready}, appendComplete=${appendComplete}, ` +
+                            `expectedVideoSamples=${expectedVideoSamples}, expectedAudioSamples=${expectedAudioSamples}, ` +
+                            `videoSamples=${videoSamples.length}, audioSamples=${audioSamples.length})`
+                        )
+                    );
+                }, parseTimeoutMs);
 
                 const settle = (fn, value) => {
                     if (resolved) return;
                     resolved = true;
                     clearTimeout(timeoutId);
+                    if (noProgressTimeoutId) {
+                        clearTimeout(noProgressTimeoutId);
+                        noProgressTimeoutId = null;
+                    }
                     fn(value);
                 };
 
@@ -156,6 +173,49 @@ export class Mp4BoxDemuxer {
                         duration: this.info.duration,
                         timescale: this.info.timescale
                     });
+                };
+
+                const maybeStartExtraction = () => {
+                    if (extractionStarted) return;
+                    if (!ready) return;
+                    extractionStarted = true;
+                    mp4boxFile.start();
+
+                    // If extraction starts but no samples arrive for a while after all bytes
+                    // are appended, fail fast instead of waiting for global timeout.
+                    const armNoProgressTimeout = () => {
+                        if (!appendComplete || noProgressTimeoutId) return;
+                        noProgressTimeoutId = setTimeout(() => {
+                            if (videoSamples.length === 0 && audioSamples.length === 0) {
+                                settle(
+                                    reject,
+                                    new Error(
+                                        "Mp4BoxDemuxer.parse no sample progress " +
+                                        `(ready=${ready}, appendComplete=${appendComplete}, ` +
+                                        `expectedVideoSamples=${expectedVideoSamples}, expectedAudioSamples=${expectedAudioSamples})`
+                                    )
+                                );
+                            }
+                        }, 8000);
+                    };
+                    armNoProgressTimeout();
+                    maybeFinalize();
+                };
+
+                const maybeArmNoProgressTimeout = () => {
+                    if (!extractionStarted || !appendComplete || noProgressTimeoutId) return;
+                    noProgressTimeoutId = setTimeout(() => {
+                        if (videoSamples.length === 0 && audioSamples.length === 0) {
+                            settle(
+                                reject,
+                                new Error(
+                                    "Mp4BoxDemuxer.parse no sample progress " +
+                                    `(ready=${ready}, appendComplete=${appendComplete}, ` +
+                                    `expectedVideoSamples=${expectedVideoSamples}, expectedAudioSamples=${expectedAudioSamples})`
+                                )
+                            );
+                        }
+                    }, 8000);
                 };
 
                 mp4boxFile.onError = (e) => {
@@ -201,16 +261,17 @@ export class Mp4BoxDemuxer {
                     expectedVideoSamples = videoTrack.nb_samples;
                     expectedAudioSamples = audioTrack?.nb_samples ?? 0;
                     mp4boxFile.setExtractionOptions(this.videoTrackId, null, {
-                        nbSamples: videoTrack.nb_samples
+                        nbSamples: Math.min(250, Math.max(1, videoTrack.nb_samples))
                     });
 
                     if (this.audioTrackId) {
                         mp4boxFile.setExtractionOptions(this.audioTrackId, null, {
-                            nbSamples: audioTrack.nb_samples
+                            nbSamples: Math.min(250, Math.max(1, audioTrack.nb_samples))
                         });
                     }
 
                     ready = true;
+                    maybeStartExtraction();
                     maybeFinalize();
 
                 };
@@ -263,9 +324,12 @@ export class Mp4BoxDemuxer {
 
                 const feedChunk = () => {
                     if (offset >= file.byteLength) {
-                        mp4boxFile.start();
-                        mp4boxFile.flush();
                         appendComplete = true;
+                        maybeStartExtraction();
+                        maybeArmNoProgressTimeout();
+                        if (extractionStarted) {
+                            mp4boxFile.flush();
+                        }
                         maybeFinalize();
 
                         return;

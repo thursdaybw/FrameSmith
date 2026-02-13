@@ -66,9 +66,9 @@ extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex({
     const trackTimescale =
         mdhdReport?.box?.fields?.timescale;
 
-    if (!Number.isInteger(trackTimescale)) {
+    if (!Number.isInteger(trackTimescale) || trackTimescale <= 0) {
         throw new Error(
-            "extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex: mdhd.timescale missing or invalid"
+            "extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex: mdhd.timescale missing, non-integer, or non-positive"
         );
     }
 
