@@ -191,6 +191,38 @@ async function run() {
                 console.error(error);
             }
         }
+
+        const nodeOnlyTests = [
+            {
+                name: "test_nativeDemux_vs_mp4box_phoneFixture",
+                modulePath: path.resolve("./src/mux/native/tests/node/test_nativeDemux_vs_mp4box_phoneFixture.mjs"),
+                exportName: "test_nativeDemux_vs_mp4box_phoneFixture"
+            }
+        ];
+
+        for (const nodeOnly of nodeOnlyTests) {
+            try {
+                process.stdout.write(`RUN  ${nodeOnly.name}\n`);
+                const moduleUrl = pathToFileURL(nodeOnly.modulePath).href;
+                const loaded = await import(moduleUrl);
+                const fn = loaded[nodeOnly.exportName];
+                if (typeof fn !== "function") {
+                    throw new Error(`Missing export '${nodeOnly.exportName}' in ${nodeOnly.modulePath}`);
+                }
+                const result = await fn();
+                if (result?.skipped === true) {
+                    skipCount++;
+                    process.stdout.write(`SKIP ${nodeOnly.name}\n`);
+                } else {
+                    passCount++;
+                    process.stdout.write(`PASS ${nodeOnly.name}\n`);
+                }
+            } catch (error) {
+                failCount++;
+                process.stdout.write(`FAIL ${nodeOnly.name}\n`);
+                console.error(error);
+            }
+        }
     } finally {
         globalThis.fetch = previousFetch;
     }
