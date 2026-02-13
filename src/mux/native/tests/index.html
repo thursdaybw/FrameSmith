@@ -7,6 +7,7 @@
 <button id="run-boundary">Run Boundary Tests</button>
 <button id="run-integration">Run Integration Tests</button>
 <button id="run-all">Run All Tests</button>
+<script src="../../../../vendor/mp4box.js/dist/mp4box.all.global.js"></script>
 <script type="module">
 /*
 if (location.hostname === "localhost") {
@@ -303,8 +304,12 @@ import {
 } from "./test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput.js";
 
 import { 
-   test_DeriveSamplesFromStbl_Definition
+   test_DeriveSamplesFromStbl_Definition,
+   test_DeriveSamplesFromStbl_SyncParityWithStss
 } from "./test_deriveSamplesFromStbl.js";
+import {
+    test_nativeDemux_vs_mp4box_phoneFixture
+} from "./test_nativeDemux_vs_mp4box_phoneFixture.js";
 
 import { 
    test_DeriveSamplesOnePerPacketFromStbl_Definition
@@ -1056,6 +1061,8 @@ const testsAll = [
     test_adaptAudioCodecConfigurationToStsdParams_mp4a,
 
     test_DeriveSamplesFromStbl_Definition,
+    test_DeriveSamplesFromStbl_SyncParityWithStss,
+    test_nativeDemux_vs_mp4box_phoneFixture,
     testNativeMuxer_DeriveSemanticTrackFamily,
     testNativeMuxer_TrackDuration_Relationships_AllFixtures,
     testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,
@@ -1319,4 +1326,3 @@ document.getElementById("run-all").onclick = async () => {
 </script>
 </body>
 </html>
-

@@ -71,3 +71,58 @@ export async function test_DeriveSamplesFromStbl_Definition() {
     assertEqual( "sample.offset is integer", Number.isInteger(first.offset), true);
     assertEqual( "sample.isSync is boolean", typeof first.isSync === "boolean", true);
 }
+
+export async function test_DeriveSamplesFromStbl_SyncParityWithStss() {
+
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4 = new Uint8Array(await resp.arrayBuffer());
+
+    const stblReport =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia/minf/stbl"
+            )
+            .readBoxReport();
+
+    const stssReport =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia/minf/stbl/stss"
+            )
+            .readBoxReport();
+
+    assertExists("stblReport", stblReport);
+    assertExists("stssReport", stssReport);
+
+    const derivedSamples = deriveSamplesFromStbl(stblReport.raw);
+    const sampleNumbers = stssReport?.box?.fields?.sampleNumbers;
+
+    assertEqual(
+        "stss.sampleNumbers is array",
+        Array.isArray(sampleNumbers),
+        true
+    );
+
+    const expectedSyncIndices = new Set(
+        sampleNumbers.map((sampleNumber) => sampleNumber - 1)
+    );
+
+    const derivedSyncCount =
+        derivedSamples.filter((sample) => sample.isSync === true).length;
+
+    assertEqual(
+        "derived sync count must match stss entry count",
+        derivedSyncCount,
+        expectedSyncIndices.size
+    );
+
+    for (let i = 0; i < derivedSamples.length; i++) {
+        assertEqual(
+            `sample[${i}] sync parity`,
+            derivedSamples[i].isSync,
+            expectedSyncIndices.has(i)
+        );
+    }
+}

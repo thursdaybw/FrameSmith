@@ -158,14 +158,18 @@ function tryGetCtts(stblBoxBytes) {
     try {
         const ctts =
             getGoldenTruthBox
-                .getSemanticBoxDataByPathFromIsoBox(stblBoxBytes, "ctts")
+                .getSemanticBoxDataFromBox({
+                    boxBytes: stblBoxBytes,
+                    sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+                    targetBoxPath: "moov/trak/mdia/minf/stbl/ctts"
+                })
                 .readBoxReport();
 
-        if (!Array.isArray(ctts.box.offsets)) {
+        if (!Array.isArray(ctts?.box?.fields?.offsets)) {
             throw new Error();
         }
 
-        return ctts.box.offsets.slice();
+        return ctts.box.fields.offsets.slice();
     } catch {
         return null;
     }
@@ -327,16 +331,24 @@ function readSyncSamples(stblBoxBytes) {
     try {
         const stss =
             getGoldenTruthBox
-            .getSemanticBoxDataByPathFromIsoBox(stblBoxBytes, "stss")
+            .getSemanticBoxDataFromBox({
+                boxBytes: stblBoxBytes,
+                sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+                targetBoxPath: "moov/trak/mdia/minf/stbl/stss"
+            })
             .readBoxReport();
 
-        if (!Array.isArray(stss.box.samples)) {
+        const sampleNumbers =
+            stss?.box?.fields?.sampleNumbers ??
+            stss?.box?.samples;
+
+        if (!Array.isArray(sampleNumbers)) {
             throw new Error();
         }
 
         // Convert 1-based sample numbers to 0-based indices
         return new Set(
-            stss.box.samples.map(i => i - 1)
+            sampleNumbers.map(i => i - 1)
         );
     } catch {
         return null;
