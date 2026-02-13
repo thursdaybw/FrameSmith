@@ -14,6 +14,7 @@ import { PRERENDER_TIME_RESOLUTION_TESTS } from "./src/prerender/test_resolvePro
 import { EXPORT_EXECUTION_STRATEGY_TESTS } from "./src/prerender/strategies/test_ExportExecutionStrategy.js";
 import { PROCEDURAL_EXECUTION_TESTS } from "./src/timeline/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
 import { TEXT_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_textOverlayRenderer.js";
+import { IMAGE_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_imageOverlayRenderer.js";
 import { CONTAINER_DECODE_TESTS } from "./src/timeline/container/execution/test_executeAccessUnitFragmentDecode.js";
 import { COMPOSITION_TESTS } from "./src/composition/test_composeAtTime.js";
 import { ENCODE_TESTS } from "./src/encode/test_encodeAtTime.js";
@@ -49,6 +50,7 @@ const NODE_TESTS = [
     ...EXPORT_EXECUTION_STRATEGY_TESTS,
     ...PROCEDURAL_EXECUTION_TESTS,
     ...TEXT_OVERLAY_RENDERER_TESTS,
+    ...IMAGE_OVERLAY_RENDERER_TESTS,
     ...CONTAINER_DECODE_TESTS,
     ...COMPOSITION_TESTS,
     ...ENCODE_TESTS,

@@ -65,6 +65,7 @@ import { PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DETERMINISM_TESTS } from "./src
 
 import { PROCEDURAL_EXECUTION_TESTS } from "./src/timeline/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
 import { TEXT_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_textOverlayRenderer.js";
+import { IMAGE_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_imageOverlayRenderer.js";
 import { CONTAINER_DECODE_TESTS } from "./src/timeline/container/execution/test_executeAccessUnitFragmentDecode.js";
 
 import { PRERENDER_TIME_RESOLUTION_TESTS } from "./src/prerender/test_resolveProceduralFragmentsAtTimeFromPlan.js";
@@ -410,6 +411,7 @@ const ALL_TESTS = [
     ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DETERMINISM_TESTS,
     ...PROCEDURAL_EXECUTION_TESTS,
     ...TEXT_OVERLAY_RENDERER_TESTS,
+    ...IMAGE_OVERLAY_RENDERER_TESTS,
     ...CONTAINER_DECODE_TESTS,
     ...PRERENDER_TIME_RESOLUTION_TESTS,
     ...COMPOSITION_TESTS,

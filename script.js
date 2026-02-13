@@ -190,14 +190,13 @@
  *       are used consistently across code, tests, and documentation.
  */
 
-//import { drawTextOverlayForTime } from "./textOverlayRenderer.js"; clean up this legacy file.
-
 import { Timeline } from "./src/timeline/Timeline.js";
 import { Track } from "./src/timeline/Track.js";
 import { Clip } from "./src/timeline/Clip.js";
 import { ProceduralClip } from "./src/timeline/ProceduralClip.js";
 
 import { resolveTextOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/textOverlayFragmentIntentResolver.js";
+import { resolveImageOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/imageOverlayFragmentIntentResolver.js";
 
 import { openContainerFromMp4 } from "./src/mux/native/demux/container/openContainerFromMp4.js";
 
@@ -283,7 +282,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     let lastExportUrl = null;
 
     const timecodeFragmentIntentResolvers = {
-        "text-overlay": resolveTextOverlayFragmentIntentAtTime
+        "text-overlay": resolveTextOverlayFragmentIntentAtTime,
+        "image-overlay": resolveImageOverlayFragmentIntentAtTime
     };
 
     async function configureAudioDecoderForTrack({ audioDecoder, audioTrackView }) {
@@ -1121,6 +1121,82 @@ const DEFAULT_TEXT_OVERLAY_STYLE = Object.freeze({
     shadowBlurPx: 0
 });
 
+const DEFAULT_IMAGE_OVERLAY_STYLE = Object.freeze({
+    anchor: "top-left",
+    marginXPct: 3,
+    marginYPct: 3,
+    opacity: 1
+});
+
+const DEFAULT_IMAGE_OVERLAY_PULSE = Object.freeze({
+    largeScalePct: 30,
+    smallScalePct: 24,
+    cycleSeconds: 6.5
+});
+
+async function loadImageDrawableFromPath(path) {
+    try {
+        const response = await fetch(path);
+        if (!response.ok) return null;
+        const blob = await response.blob();
+
+        if (typeof createImageBitmap === "function") {
+            return await createImageBitmap(blob);
+        }
+
+        if (typeof Image === "function") {
+            const objectUrl = URL.createObjectURL(blob);
+            try {
+                const image = new Image();
+                const loaded = new Promise((resolve, reject) => {
+                    image.onload = () => resolve(image);
+                    image.onerror = (error) => reject(error);
+                });
+                image.src = objectUrl;
+                return await loaded;
+            } finally {
+                URL.revokeObjectURL(objectUrl);
+            }
+        }
+    } catch (error) {
+        console.warn("[Timeline][image-overlay] failed to load image drawable", {
+            path,
+            error: error?.message ?? String(error)
+        });
+    }
+
+    return null;
+}
+
+async function loadTimelineImageOverlays() {
+    const logoPath = "./logo.png";
+    const drawable = await loadImageDrawableFromPath(logoPath);
+    if (!drawable) {
+        console.warn("[Timeline][image-overlay] logo drawable unavailable; skipping logo overlay", {
+            logoPath
+        });
+        return [];
+    }
+
+    const overlayItem = {
+        id: "logo-overlay-default",
+        startSeconds: 0,
+        endSeconds: 10,
+        drawable,
+        style: {
+            ...DEFAULT_IMAGE_OVERLAY_STYLE
+        },
+        pulse: {
+            ...DEFAULT_IMAGE_OVERLAY_PULSE
+        }
+    };
+
+    console.log("[Timeline][image-overlay] loaded logo overlay item", {
+        logoPath
+    });
+    return [overlayItem];
+}
+
 function tokenizeTranscriptText(text) {
     if (typeof text !== "string") return [];
     const matches = text.match(/\S+/g);
@@ -1323,6 +1399,7 @@ async function createTimeline() {
 
     const mp4Bytes = new Uint8Array(await resp.arrayBuffer());
     const transcriptOverlayItems = await loadTimelineTextOverlays();
+    const imageOverlayItems = await loadTimelineImageOverlays();
 
     const container = openContainerFromMp4({ mp4Bytes });
     const nativeTrackViews = container.createTrackViews();
@@ -1340,7 +1417,8 @@ async function createTimeline() {
         });
         return createTimelineFromPreparedAssets({
             trackViews: mergedTrackViews,
-            textOverlayItems: transcriptOverlayItems
+            textOverlayItems: transcriptOverlayItems,
+            imageOverlayItems
         });
     }
 
@@ -1351,7 +1429,8 @@ async function createTimeline() {
 
     return createTimelineFromPreparedAssets({
         trackViews: nativeTrackViews,
-        textOverlayItems: transcriptOverlayItems
+        textOverlayItems: transcriptOverlayItems,
+        imageOverlayItems
     });
 }
 
@@ -1481,7 +1560,11 @@ async function createMp4BoxVideoTrackView({ mp4Bytes }) {
  * -------
  * - Timeline
  */
-export function createTimelineFromPreparedAssets({ trackViews, textOverlayItems = [] }) {
+export function createTimelineFromPreparedAssets({
+    trackViews,
+    textOverlayItems = [],
+    imageOverlayItems = []
+}) {
     if (!Array.isArray(trackViews)) {
         throw new Error("createTimelineFromPreparedAssets: trackViews must be array");
     }
@@ -1559,6 +1642,29 @@ export function createTimelineFromPreparedAssets({ trackViews, textOverlayItems 
             items: overlayItems
         })
     );
+
+    if (Array.isArray(imageOverlayItems) && imageOverlayItems.length > 0) {
+        const imageOverlayTrack = new Track();
+        timeline.addTrack(imageOverlayTrack);
+
+        const imageOverlayStartSeconds = imageOverlayItems.reduce((minStart, item) => {
+            const start = typeof item?.startSeconds === "number" ? item.startSeconds : minStart;
+            return Math.min(minStart, start);
+        }, Number.POSITIVE_INFINITY);
+        const imageOverlayEndSeconds = imageOverlayItems.reduce((maxEnd, item) => {
+            const end = typeof item?.endSeconds === "number" ? item.endSeconds : maxEnd;
+            return Math.max(maxEnd, end);
+        }, 0);
+
+        imageOverlayTrack.addClip(
+            new ProceduralClip({
+                kind: "image-overlay",
+                startSeconds: Number.isFinite(imageOverlayStartSeconds) ? imageOverlayStartSeconds : 0,
+                endSeconds: imageOverlayEndSeconds > 0 ? imageOverlayEndSeconds : 10,
+                items: imageOverlayItems
+            })
+        );
+    }
 
     return timeline;
 }

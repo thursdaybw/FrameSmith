@@ -174,6 +174,57 @@ function drawStyledTextOverlayItem({ ctx, canvas, item, timeSeconds, yOffsetPx }
     return yOffsetPx + blockHeight + 16;
 }
 
+function drawImageOverlayItem({ ctx, canvas, item }) {
+    const drawable = item?.drawable;
+    if (!drawable || typeof ctx.drawImage !== "function") return;
+
+    const style = item?.style ?? {};
+    const anchor = typeof style.anchor === "string" ? style.anchor : "top-right";
+    const marginXPct = typeof style.marginXPct === "number" ? style.marginXPct : 0;
+    const marginYPct = typeof style.marginYPct === "number" ? style.marginYPct : 6;
+    const opacity = typeof style.opacity === "number" ? style.opacity : 1;
+    const scalePct = typeof item?.animatedScalePct === "number"
+        ? item.animatedScalePct
+        : (typeof item?.scalePct === "number" ? item.scalePct : 25);
+    const pulse = item?.pulse ?? {};
+    const nominalScalePct = typeof item?.scalePct === "number"
+        ? item.scalePct
+        : (
+            (typeof pulse.largeScalePct === "number" && typeof pulse.smallScalePct === "number")
+                ? ((pulse.largeScalePct + pulse.smallScalePct) / 2)
+                : scalePct
+        );
+
+    const sourceWidth = drawable.width ?? drawable.displayWidth ?? drawable.videoWidth;
+    const sourceHeight = drawable.height ?? drawable.displayHeight ?? drawable.videoHeight;
+    if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
+        return;
+    }
+
+    const nominalDrawWidth = Math.max(1, Math.round(canvas.width * (nominalScalePct / 100)));
+    const drawWidth = Math.max(1, Math.round(canvas.width * (scalePct / 100)));
+    const aspectRatio = sourceHeight / sourceWidth;
+    const nominalDrawHeight = Math.max(1, Math.round(nominalDrawWidth * aspectRatio));
+    const drawHeight = Math.max(1, Math.round(drawWidth * aspectRatio));
+    const marginX = Math.round(canvas.width * (marginXPct / 100));
+    const marginY = Math.round(canvas.height * (marginYPct / 100));
+
+    let x = marginX;
+    if (anchor === "top-right") {
+        x = canvas.width - nominalDrawWidth - marginX;
+    }
+    const y = marginY;
+
+    // Pulse around the center of the nominal anchored box.
+    const centeredX = x - ((drawWidth - nominalDrawWidth) / 2);
+    const centeredY = y - ((drawHeight - nominalDrawHeight) / 2);
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
+    ctx.drawImage(drawable, centeredX, centeredY, drawWidth, drawHeight);
+    ctx.restore();
+}
+
 function createCompositionCanvas({ width, height, background }) {
     const canvasWidth = Math.max(1, Math.round(width));
     const canvasHeight = Math.max(1, Math.round(height));
@@ -210,17 +261,31 @@ function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) 
 
     let yOffsetPx = 0;
     for (const intent of renderIntents) {
-        if (!intent || intent.kind !== "text-overlay") continue;
+        if (!intent) continue;
 
-        const items = Array.isArray(intent.items) ? intent.items : [];
-        for (const item of items) {
-            yOffsetPx = drawStyledTextOverlayItem({
-                ctx,
-                canvas,
-                item,
-                timeSeconds,
-                yOffsetPx
-            });
+        if (intent.kind === "text-overlay") {
+            const items = Array.isArray(intent.items) ? intent.items : [];
+            for (const item of items) {
+                yOffsetPx = drawStyledTextOverlayItem({
+                    ctx,
+                    canvas,
+                    item,
+                    timeSeconds,
+                    yOffsetPx
+                });
+            }
+            continue;
+        }
+
+        if (intent.kind === "image-overlay") {
+            const items = Array.isArray(intent.items) ? intent.items : [];
+            for (const item of items) {
+                drawImageOverlayItem({
+                    ctx,
+                    canvas,
+                    item
+                });
+            }
         }
     }
 }
