@@ -7,7 +7,7 @@
  * - Procedural fragments are emitted deterministically
  */
 
-import { __test__ } from "../../../../../../script.js";
+import { __test__ } from "../../../../../script.js";
 
 import {
     PreRenderPlanFragmentKinds,

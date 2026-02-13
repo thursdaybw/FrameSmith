@@ -41,12 +41,13 @@ export class ProceduralClip {
      */
     *iterateProceduralItems() {
         for (const item of this.items) {
-            yield {
-                ...item,
-                kind: this.kind,
-                startSeconds: this.startSeconds,
-                endSeconds: this.endSeconds
-            };
+
+            // Preserve authored payload identity
+            item.kind = this.kind;
+            item.startSeconds = this.startSeconds;
+            item.endSeconds = this.endSeconds;
+
+            yield item;
         }
     }
 }

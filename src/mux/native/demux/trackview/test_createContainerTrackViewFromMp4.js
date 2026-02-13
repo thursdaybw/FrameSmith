@@ -37,7 +37,7 @@
  * If any of these invariants change, this file MUST be updated first.
  */
 import { createContainerTrackViewFromMp4 } from "./createContainerTrackViewFromMp4.js";
-import { __test__ } from "../../../../../../script.js";
+import { __test__ } from "../../../../../script.js";
 
 import {
     PreRenderPlanFragmentKinds,
@@ -120,17 +120,17 @@ async function test_singleClip_fullTrack() {
     const fragment = getAccessUnitFragment(plan);
 
     assert(
-        fragment.units.length === videoTrackView.sampleCount,
+        fragment.access_units.length === videoTrackView.sampleCount,
         "unit count must match container sample count"
     );
 
     assert(
-        fragment.units[0].pts === videoTrackView._semanticSamples[0].pts,
+        fragment.access_units[0].pts === videoTrackView._semanticSamples[0].pts,
         "first PTS must match container"
     );
 
     assert(
-        fragment.units.at(-1).pts === videoTrackView._semanticSamples.at(-1).pts,
+        fragment.access_units.at(-1).pts === videoTrackView._semanticSamples.at(-1).pts,
         "last PTS must match container"
     );
 }
@@ -168,7 +168,7 @@ async function test_clipTrimming() {
     const startPts = videoTrackView.secondsToPts(startSeconds);
     const endPts   = videoTrackView.secondsToPts(endSeconds);
 
-    for (const unit of fragment.units) {
+    for (const unit of fragment.access_units) {
         assert(unit.pts >= startPts, "PTS below clip start");
         assert(unit.pts <= endPts, "PTS above clip end");
     }
@@ -210,7 +210,7 @@ async function test_multipleClips_sameTrack() {
 
     let seenClipB = false;
 
-    for (const unit of fragment.units) {
+    for (const unit of fragment.access_units) {
         if (unit.clip === clipB) seenClipB = true;
 
         if (seenClipB) {
@@ -275,7 +275,7 @@ async function test_audioVideoSymmetry() {
 
     for (const fragment of accessUnitFragments) {
         assert(
-            fragment.units.length > 0,
+            fragment.access_units.length > 0,
             "access-units fragment must not be empty"
         );
     }
@@ -308,8 +308,8 @@ async function test_determinism() {
     const planA = buildPrerenderPlanFromTimeline({ timeline });
     const planB = buildPrerenderPlanFromTimeline({ timeline });
 
-    const unitsA = getAccessUnitFragment(planA).units;
-    const unitsB = getAccessUnitFragment(planB).units;
+    const unitsA = getAccessUnitFragment(planA).access_units;
+    const unitsB = getAccessUnitFragment(planB).access_units;
 
     assert(
         deepEqual(

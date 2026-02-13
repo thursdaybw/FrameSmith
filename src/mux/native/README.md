@@ -1,5 +1,16 @@
 NativeMuxer is a deterministic MP4 compiler designed for workflows where media is assembled after all meaning is known. Instead of discovering structure from bytes as they arrive, NativeMuxer takes explicit semantic input (samples, timestamps, durations, codec configuration, and policy) and emits a standards-compliant MP4 file in a single, deliberate pass. The result is byte-accurate, reproducible output with no hidden inference, no incremental patching, and no container drift.
 
+## Known Demux Caveat (Current)
+
+The NativeMuxer compiler path and the native demux helper path are separate concerns.
+
+Current finding (locked in FrameSmith architecture docs):
+
+- native demux video semantic output (timing/key flags) diverges from mp4box on the same source,
+- while payload bytes remain aligned.
+
+This caveat affects upstream timeline extraction/decoding workflows, not the core MP4 compiler contract.
+
 This architecture makes NativeMuxer particularly well suited to offline, non-linear media workflows such as browser-based editing, automated video assembly, retiming, and remuxing without re-encoding. Encoding cost scales with codec and resolution as expected, while muxing cost remains trivial even for long durations. NativeMuxer does not aim to be clever or adaptive — it aims to be correct, explicit, and boring in the best possible way. That is what makes higher-level systems safe to build on top of it.
 
 
@@ -728,7 +739,7 @@ For a system where byte-level correctness matters, removing hidden transformatio
 
 ---
 
-## Known Limitation: Monolithic MDAT Assembly
+## Known Limitation: Monolithic MDAT Assembly + In-Memory Payload Retention
 
 In its current form, NativeMuxer assembles the entire `mdat` payload as a single `Uint8Array` before writing the file.
 
@@ -738,7 +749,19 @@ This means:
 * offsets are resolved after all samples are present
 * `stco` offsets are finalized in one pass
 
-For the intended use cases (browser-based editing, offline export, batch processing), this is acceptable and intentional.
+For the intended use cases (browser-based editing, offline export, batch processing), this is acceptable for short and medium exports.
+For long exports, this creates real memory pressure, especially in browser runtimes.
+
+NativeMuxer currently does not provide:
+
+* storage-backed payload retention (e.g. browser storage or filesystem-backed payload buffers)
+* fragmented MP4 output
+* segmented export at compiler boundary
+
+The current compiler contract remains:
+
+* `Mp4BuildInput` in
+* fully assembled MP4 bytes out
 
 ### Why This Is Not a Dead End
 
@@ -760,6 +783,35 @@ It is straightforward to extend NativeMuxer to support:
 This is an **engineering trade-off**, not a structural limitation.
 
 The architecture already supports the extension point.
+
+## Roadmap: Large Export Support
+
+### 1. Payload Store Abstraction (High Priority)
+
+Introduce a payload store boundary so muxing can keep sample metadata in memory while payload bytes are stored in a backend-specific medium.
+
+Planned backends:
+
+* memory-backed (current behavior)
+* browser storage-backed (where available)
+* filesystem-backed (Node and other host runtimes)
+
+Goal:
+
+* preserve deterministic full-file MP4 compilation
+* reduce peak memory pressure for long exports
+* keep the existing compiler boundary stable
+
+### 2. `co64` Offset Support (Required for Large Files)
+
+NativeMuxer currently finalizes 32-bit chunk offsets via `stco`.
+Large files require 64-bit chunk offsets via `co64`.
+
+Planned upgrade:
+
+* explicit `stco`/`co64` selection policy
+* deterministic `co64` emission path
+* structural and byte-level test coverage for both paths
 
 ---
 

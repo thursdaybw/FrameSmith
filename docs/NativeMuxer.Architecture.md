@@ -942,6 +942,18 @@ NativeMuxer does not:
 
 Those concerns belong elsewhere.
 
+## 10.1 Known Architectural Gaps (Current)
+
+The current architecture is deterministic and compiler-oriented, but two explicit gaps remain for large-output workflows:
+
+1. Payload storage is memory-backed only.
+   Media payloads are retained in memory and assembled into a monolithic `mdat` payload before final emission.
+
+2. Offset emission is currently 32-bit (`stco`) only.
+   A full 64-bit offset path (`co64`) is required for very large files.
+
+These are implementation gaps, not conceptual contradictions.
+
 ---
 
 ## 11. Determinism Guarantee
@@ -1012,6 +1024,18 @@ the tests represent newer truth.
 
 This document must be updated to reflect that truth.
 
+## 14.1 Planned Evolution (Non-Breaking)
+
+Future upgrades must preserve deterministic compiler behavior and the existing compiler boundary (`Mp4BuildInput` -> full MP4 bytes).
+
+Planned architectural evolution:
+
+1. Payload indirection via explicit payload references and pluggable payload stores.
+   This allows memory-backed, browser-storage-backed, and filesystem-backed payload retention without changing semantic compilation rules.
+
+2. Dual offset emission model with explicit `stco`/`co64` policy.
+   Large-file paths must emit `co64` deterministically with full structural test coverage.
+
 ---
 
 ### Future Consideration: Path Selectors for MP4 Traversal
@@ -1037,4 +1061,3 @@ The motivation is not to generalize MP4 parsing, but to make ambiguous states un
 This idea is exploratory and intentionally deferred. The current implementation remains path-based, with explicit track selection
 and explicit SampleEntry boundaries enforced by the traversal API.
 This concept may inform future refactors once the muxer and demuxer architecture has stabilized.
-

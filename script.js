@@ -1,9 +1,9 @@
 /**
- * FrameSmith — Application Driver (Pre-Alpha)
+ * FrameSmith, Application Driver (Pre-Alpha)
  *
  * This file is a temporary orchestration layer used during early development.
- * It wires together preview rendering, offline pre-rendering, and future
- * encode/export stages.
+ * It wires together preview rendering, offline pre-render planning, and future
+ * prerender execution, encode, and export stages.
  *
  * IMPORTANT:
  * This file is NOT the domain model.
@@ -18,29 +18,25 @@
  * FrameSmith is a timeline compiler.
  *
  * Preview exists only to visualise timeline evaluation.
- * Pre-render exists to deterministically evaluate the timeline.
- * Encoding and export consume the results of pre-render.
+ * Pre-render planning deterministically evaluates the timeline into a plan.
+ * Pre-render execution consumes the plan and produces timestamped buffers.
+ * Encoding and export consume those buffers.
  *
- * Preview, pre-render, encode, and export are separate concerns.
+ * Preview, planning, execution, encode, and export are separate concerns.
  *
  * -------------------------------------------------
  * Current Phases (As Implemented Today)
  * -------------------------------------------------
  *
  * 1. Preview Phase (Real-Time, Non-Deterministic)
- *
  *    - Uses browser playback and rendering APIs.
- *    - Renders video frames to a canvas for visual inspection.
+ *    - Renders frames to a canvas for visual inspection.
  *    - Plays audio via the browser audio output.
  *    - No data produced here is used for encoding or export.
  *
- *    Preview is disposable.
- *
- * 2. Timeline → Pre-Render Planning Phase (Offline, Deterministic)
- *
- *    - Evaluates the timeline without relying on playback.
- *    - Produces a Pre-Render Plan.
- *    - Describes what will be pre-rendered.
+ * 2. Timeline to Pre-Render Planning Phase (Offline, Deterministic)
+ *    - Evaluates the Timeline without relying on playback.
+ *    - Produces a PreRenderPlan, a list of plan fragments.
  *
  *    Does NOT:
  *    - decode media
@@ -48,164 +44,185 @@
  *    - generate AudioData
  *    - sample wall-clock time
  *
- * 3. Offline Rendering (Pre-Render) — NOT YET IMPLEMENTED
+ * 3. Pre-Render Execution (Offline, Deterministic)
+ *    - Consumes a PreRenderPlan.
+ *    - Executes plan fragments deterministically.
+ *    - Uses injected executors:
+ *        - container-backed fragments decode access units
+ *        - procedural fragments dispatch to procedural renderers
+ *    - Produces timestamped buffers (VideoFrame and or AudioData).
  *
- *    - Consumes the Pre-Render Plan.
- *    - Decodes media into:
- *        - VideoFrame objects
- *        - AudioData objects
- *    - Produces deterministic, timestamped frame buffers.
+ *    Does NOT:
+ *    - use preview playback APIs
+ *    - encode
+ *    - write containers
  *
- *    No preview, no playback, no encoding.
- *
- * 4. Encode Phase (Planned, Not Yet Implemented)
- *
- *    - Consumes pre-rendered VideoFrame and AudioData objects.
+ * 4. Encode Phase (Planned)
+ *    - Consumes VideoFrame and AudioData objects.
  *    - Uses WebCodecs to produce compressed access units.
  *
  * 5. Export Phase (Planned)
- *
  *    - Packages encoded access units into an MP4 container.
  *
- * A fragment is not an access unit
- * A fragment describes access-unit work
- * A timeline never owns a plan*
+ * Notes:
+ * - A fragment is not an access unit.
+ * - A fragment describes work.
+ * - A timeline never owns a plan.
  *
- *
+ * -------------------------------------------------
  * Architectural Note: Tracks vs Output Domains
- *
- * FrameSmith does NOT use "track types" (e.g. video, audio, subtitle) as a core
- * engine concept. Tracks exist only as structural groupings that define ordering,
- * overlap, and layering of clips within the timeline. Rendering semantics are
- * derived from the *contribution domain* of each clip or asset (e.g. video, audio),
- * not from the track it resides on. This avoids coupling editor UI conventions
- * (such as NLE track types) to the timeline compiler and allows procedural and
- * container-backed contributors to participate uniformly in pre-render execution.
- *
- * -------------------------------------------------
- * IMPORTANT: Demo Constraints (Non-Architectural)
  * -------------------------------------------------
  *
- * This file represents ONE temporary application entry point:
+ * FrameSmith does not use "track types" (video, audio, subtitle) as a core
+ * engine concept. Tracks are structural groupings that define ordering,
+ * overlap, and layering of clips. Rendering semantics are derived from the
+ * contribution domain of each clip or asset (video, audio, procedural),
+ * not from the track it resides on.
+ *
+ * -------------------------------------------------
+ * Demo Constraints (Non-Architectural)
+ * -------------------------------------------------
+ *
+ * This file represents one temporary application entry point:
  * a container-backed, HTMLVideoElement-driven demo workflow.
  *
  * Assumptions made here are NOT FrameSmith domain rules.
- *
- * In particular:
- * - This demo assumes a container-backed video source exists.
- * - This demo treats video as the render-driving track.
- * - Audio is optional in this path.
- *
- * These constraints exist ONLY to support:
- * - HTMLVideoElement preview
- * - Early timeline compilation experiments
- *
- * FrameSmith as a system DOES NOT require:
+ * FrameSmith as a system does NOT require:
  * - container-backed media
  * - video tracks
  * - HTML elements
- *
- * Other valid timelines include:
- * - procedural video (generated frames)
- * - audio-only timelines
- * - text-only or image-only timelines
- *
- * Any future architecture MUST NOT infer mandatory video
- * or container-backed media from this file.
  *
  * -------------------------------------------------
  * Scope Warning
  * -------------------------------------------------
  *
- * This file currently uses HTMLVideoElement and browser APIs
- * as a TEMPORARY stand-in for future asset and timeline systems.
+ * This file currently uses HTMLVideoElement and browser APIs as a temporary
+ * stand-in for future asset and timeline systems.
  *
- * These APIs MUST NOT leak into:
- *   - the timeline model
- *   - the pre-render contract
- *   - the encoder inputs
+ * These APIs must not leak into:
+ * - the timeline model
+ * - the pre-render plan contract
+ * - the prerender execution contract
+ * - the encoder inputs
  *
- * Any such usage is provisional and expected to be removed.
+ * -------------------------------------------------
+ * Glossary
+ * -------------------------------------------------
  *
- * ### Glossary
- * * **Real-Time Rendering (Preview)**: Frames composited live to the canvas for previewing effects and timeline edits. These frames are not encoded or stored persistently.
- * * **Timeline → Pre-Render Planning**: Deterministic evaluation of the editing timeline to produce a **Pre-Render Plan** describing what must be pre-rendered (access units and procedural intent), without decoding, rendering, or generating `VideoFrame` or `AudioData`.
- * * **Offline Rendering (Pre-Render)**: Deterministically evaluate the timeline into timestamped media buffers (VideoFrame, AudioData) by executing all active contributors (container-backed and procedural) without playback, preview, or encoding.
- * * **Encoding (WebCodecs)**: The process of taking `VideoFrame` and `AudioData` objects and producing compressed video and audio samples suitable for packaging into a container (MP4). Encoding does **not** include preview rendering.
- * * **Access Units / Samples**: The output of the WebCodecs encoder. Video samples (H.264 NAL units) and audio samples (Opus frames) that are later written into an MP4 container.
- * **Timeline**: The Timeline is the central piece that represents the entire sequence of events to be rendered or played back. It contains an ordered collection of Tracks (for audio, video, and other assets). It organizes how clips are sequenced and overlaid in time.
- * **Track**: A Track is an organizational layer in the timeline that contains clips. Tracks can be video, audio, or other asset types. Tracks organize media clips in sequence and help manage their relationships (e.g., audio and video can exist on separate tracks).
- * **Clip**: A Clip is a time-bound section of a media asset (video, audio, etc.). It has a start time, an end time, and can contain transformations or effects like scaling, rotation, opacity, etc. Clips are the smallest editable unit in the timeline. They may be layered, resized, and positioned in time.
- * **Asset**: An Asset is a media resource (like a video file, an audio file, an image, etc.) referenced by the timeline. Assets are the actual media that clips point to.
- * **Track vs Clip: Relationship**: A Track contains multiple Clips. Clips exist in time on the Track. For video, a clip would reference a segment of a video file with a start and end time. For audio, a clip would reference a segment of an audio file with a start and end time.
+ * * Real-Time Rendering (Preview)
+ *   Frames composited live to the canvas for preview. Not used for encoding.
  *
- *  ## The real domain of this application: 
- * 
- *  * FrameSmith is not a video player.
- *  * FrameSmith is a timeline compiler.
+ * * Pre-Render Planning
+ *   Deterministic evaluation of a Timeline into a PreRenderPlan, without
+ *   decoding, rendering, or producing VideoFrame or AudioData.
  *
- * That means the true domain objects are:
- *  * assets
- *  * clips
- *  * tracks
- *  * time ranges
- *  * transforms
- *  * render plans
- *  * Not elements.
- *  * Not players.
- *  * Not HTML.
+ * * PreRenderPlan
+ *   An ordered list of plan fragments describing work to be executed later.
  *
- * Pre-render does not read from the preview.
- * Pre-rKey rule (this prevents access-unit-centrism)
- * 
- * The prerender plan does not describe tracks.
- * It describes contributors.
- * 
- * Contributors can be:
- * - container-backed (video/audio access units)
- * - procedural (image overlays, text overlays)
- * - future things (effects, generators)
- * 
- * This means:
- * - buildAccessUnitPlanFragmentFromTrack is fine but it must be seen as one contributor type “the plan”
- * 
- * Before execution:
- * 
- * The plan must clearly say what kind of work each fragment represents
- * and what it will emit when executed
- * 
- * ## Prerender executor
+ * * Plan Fragment
+ *   A typed unit of executable intent.
+ *   Examples:
+ *   - access-units fragment (container-backed decode work)
+ *   - procedural fragment (dispatch to a procedural renderer)
  *
- * For each plan fragment:
- * - dispatch by fragment kind
- * - execute deterministically
- * - emit timestamped buffers
- * - do no preview, playback, or encoding
+ * * Container-Backed Contributor
+ *   A fragment whose execution obtains time and data from encoded access units
+ *   and decodes via a media decoder (WebCodecs VideoDecoder or AudioDecoder).
  *
- * TODO:
- * Remove track types / roles from the demo completely - Done
- * Make the prerender plan describe contributors, not “tracks” - Done?!
- * Add prerender execution that consumes a PreRenderPlan
- * Add decode stage that consumes this plan
- * Add encode stage.
+ * * Procedural Contributor
+ *   A fragment whose execution resolves authored procedural intent at a given
+ *   timecode. It does not produce VideoFrame or AudioData.
+ *
+ * * Timecode Fragment Intent Resolver
+ *   A function registered by proceduralKind that receives
+ *   { fragment, timeSeconds } and returns declarative render intent only.
+ *   It must not allocate VideoFrame or AudioData.
+ *
+ * * Media Decoder
+ *   Converts encoded access units into raw buffers (VideoFrame, AudioData).
+ *
+ * * Encoding (WebCodecs)
+ *   Converts VideoFrame and AudioData into compressed access units for packaging.
+ *
+ * * Access Units / Samples
+ *   The compressed outputs of encoding that are written into a container.
+ *
+ * -------------------------------------------------
+ * TODO — Concrete Next Actions (Non-Speculative)
+ * -------------------------------------------------
+ *
+ * Add resolver-level unit test
+ *    - Assert resolver is invoked via executeProceduralFragmentAtTime.
+ *    - Assert correct timeSeconds is received.
+ *    - Assert fragment identity is preserved by reference.
+ *    - Assert resolver emits render intent, not frames.
+ *
+ * Explicitly out of scope:
+ * - Resolution layers
+ * - Materialisation stages
+ * - Plan-level orchestration
+ * - New abstractions or refactors
+ *
+ * Container Decode Execution
+ *    - Implement access-unit fragment execution via WebCodecs decoders.
+ *    - Produce deterministic VideoFrame and AudioData buffers.
+ *    - Keep decoding separate from composition and encoding.
+ *
+ * Composition + Materialisation Stage
+ *    - Consume render intents from all contributors at a given timecode.
+ *    - Resolve z-order, layering, and overlap deterministically.
+ *    - Allocate VideoFrame and AudioData buffers.
+ *    - This is the first stage where frames exist.
+ *
+ * Encode Stage
+ *    - Consume composed VideoFrame and AudioData buffers.
+ *    - Encode via WebCodecs into compressed access units.
+ *
+ * Export Stage
+ *    - Package encoded access units into an MP4 container.
+ *
+ * Remove Demo Glue
+ *    - Shrink or remove HTMLVideoElement usage.
+ *    - Replace demo orchestration with explicit application entry points.
+ *
+ * Terminology Audit
+ *     - Ensure "planning", "execution", "resolution", and "materialisation"
+ *       are used consistently across code, tests, and documentation.
  */
 
-import { drawTextOverlayForTime } from "./textOverlayRenderer.js";
+//import { drawTextOverlayForTime } from "./textOverlayRenderer.js"; clean up this legacy file.
+
+import { Timeline } from "./src/timeline/Timeline.js";
+import { Track } from "./src/timeline/Track.js";
+import { Clip } from "./src/timeline/Clip.js";
+import { ProceduralClip } from "./src/timeline/ProceduralClip.js";
+
+import { resolveTextOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/textOverlayFragmentIntentResolver.js";
+
 import { createRenderPlan, createImageNode } from "./renderPlan/RenderPlan.js";
 import { renderFrame } from "./renderPlan/RenderPlanRenderer.js";
-
 
 import { listTracksFromMp4 } from "./src/mux/native/demux/container/listTracksFromMp4.js";
 import { createContainerTrackViewFromMp4 } from "./src/mux/native/demux/trackview/createContainerTrackViewFromMp4.js";
 
-import { buildAccessUnitPlanFragmentFromTrack, buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.js";
+// Only import this for current preview, which is a development pscyholgoy convenience, remove this when upgrading preview
+// to future API
+import { buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.js";
 
 import { createId } from "./src/core/identity/createId.js";
 
-document.addEventListener("DOMContentLoaded", () => {
+import { routeProceduralFragmentAtTimeToResolver } from "./src/timeline/procedural/routeProceduralFragmentAtTimeToResolver.js";
+
+import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
+import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js";
+import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
+import { getGoldenTruthBox } from "./src/mux/native/tests/goldenTruthExtractors/index.js";
+import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
+
+document.addEventListener("DOMContentLoaded", async () => {
 
     // Initialize the timeline, tracks, and clips
-    const timeline = createTimeline();
+    const timeline = await createTimeline();
 
     // Now you can interact with the timeline, tracks, and clips here
     //console.log(timeline);  // Debug log to ensure timeline is set up correctly
@@ -234,8 +251,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const prerenderBtn = document.getElementById("prerenderBtn");
     const previewBtn = document.getElementById("previewBtn");
     const encodeBtn = document.getElementById("encodeBtn");
+    const exportBtn = document.getElementById("exportBtn");
 
-    // DEMO ONLY:
+    // Demo Orchestration Only:
     // This HTMLVideoElement exists solely to support preview playback.
     // It must not be considered a required dependency of FrameSmith.
     // Future entry points may have no DOM, no video element, and no container.
@@ -244,7 +262,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const context = canvas.getContext("2d");
 
     let audioDataFrames = [];
+    let lastExportBlob = null;
+    let lastExportUrl = null;
 
+    const timecodeFragmentIntentResolvers = {
+        "text-overlay": resolveTextOverlayFragmentIntentAtTime
+    };
 
     const textOverlays = [
         {
@@ -270,6 +293,102 @@ document.addEventListener("DOMContentLoaded", () => {
             ]
         }
     ];
+
+    previewBtn.onclick = () => {
+        console.log("Preview button clicked");
+
+        const ctx = context;
+        const width = canvas.width = 640;
+        const height = canvas.height = 360;
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, width, height);
+
+        console.log(
+            "DEBUG timeline.tracks",
+            timeline.tracks,
+            typeof timeline.tracks,
+            Array.isArray(timeline.tracks),
+            timeline.tracks && timeline.tracks[Symbol.iterator]
+        );
+
+        // -------------------------------------------------
+        // Resolve procedural intent at a demo time
+        // -------------------------------------------------
+        const prerenderPlan = buildPrerenderPlanFromTimeline({ timeline });
+
+        const proceduralFragments = prerenderPlan.fragments.filter(
+            f => f.prerenderContributorKind === "procedural"
+        );
+
+        let startTimeMs = null;
+
+        // -------------------------------------------------
+        // PREVIEW-ONLY TIME DRIVER
+        //
+        // This loop exists purely for UI visualisation.
+        //
+        // It MUST NOT:
+        // - mutate timeline
+        // - mutate prerender plan
+        // - allocate VideoFrames
+        // - perform container decode
+        // - leak into execution contracts
+        //
+        // It evaluates procedural fragments at a timecode
+        // and draws declarative render intent to canvas.
+        //
+        // This is preview glue only.
+        // -------------------------------------------------
+        function frameLoop(nowMs) {
+
+            if (startTimeMs === null) {
+                startTimeMs = nowMs;
+            }
+
+            const elapsedMs = nowMs - startTimeMs;
+            const timeSeconds = elapsedMs / 1000;
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, width, height);
+
+            // PREVIEW → Application Orchestration Boundary
+            // We evaluate the PreRenderPlan at a time-slice.
+            // Preview does not inspect fragments directly.
+            const resolution = resolveProceduralFragmentsAtTimeFromPlan({
+                plan: prerenderPlan,
+                timeSeconds,
+                timecodeFragmentIntentResolvers
+            });
+
+            const allRenderIntents = resolution.renderIntents;
+
+            ctx.fillStyle = "#fff";
+            ctx.font = "32px sans-serif";
+            ctx.textBaseline = "top";
+
+            for (const intent of allRenderIntents) {
+                if (intent.kind === "text-overlay") {
+
+                    let y = 40;
+
+                    for (const item of intent.items) {
+                        for (const word of item.words) {
+                            ctx.fillText(word.text, 40, y);
+                            y += 40;
+                        }
+                    }
+                }
+            }
+
+            requestAnimationFrame(frameLoop);
+        }
+
+        requestAnimationFrame(frameLoop);
+
+    };
 
     /**
      * Pre-Render Button Handler (Offline Timeline Evaluation)
@@ -299,11 +418,12 @@ document.addEventListener("DOMContentLoaded", () => {
      * - Media execution (future stages)
      */
     prerenderBtn.onclick = () => {
-
         console.log("Prerender button clicked");
 
         try {
+
             const prerenderPlan = buildPrerenderPlanFromTimeline({ timeline });
+
 
             console.log("Pre-render plan complete", {
                 videoAccessUnits: prerenderPlan.videoAccessUnits.length,
@@ -312,6 +432,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Temporary: expose for inspection
             window.__prerenderPlan = prerenderPlan;
+
+            const proceduralFragments = prerenderPlan.fragments.filter(
+                f => f.prerenderContributorKind === "procedural"
+            );
+
+            const demoTimeSeconds = 12;
+
+            for (const fragment of proceduralFragments) {
+                executeProceduralFragmentAtTime({
+                    fragment,
+                    timeSeconds: demoTimeSeconds,
+                    timecodeFragmentIntentResolvers
+                });
+            }
 
         } catch (error) {
             console.error("Error during pre-render planning:", error);
@@ -338,8 +472,944 @@ document.addEventListener("DOMContentLoaded", () => {
      * - Works only after preRenderBtn has been executed successfully.
      * - The Export button remains disabled until a separate container packaging step is implemented.
      */
+    exportBtn.onclick = () => {
+        if (!lastExportBlob) {
+            console.warn("No exported MP4 available yet. Run Encode first.");
+            return;
+        }
+        downloadBlob(lastExportBlob, "framesmith-export.mp4");
+    };
+
     encodeBtn.onclick = async () => {
-        // Implementation: feed pre-rendered VideoFrame and AudioData buffers into WebCodecs for encoding
+        try {
+            const tStart = performance.now();
+            console.log("[Encode] start");
+            if (typeof VideoEncoder !== "function" || typeof AudioEncoder !== "function") {
+                throw new Error("WebCodecs VideoEncoder/AudioEncoder is not available in this browser.");
+            }
+            if (typeof VideoDecoder !== "function" || typeof AudioDecoder !== "function") {
+                throw new Error("WebCodecs VideoDecoder/AudioDecoder is not available in this browser.");
+            }
+
+            const exportFps = PRE_RENDER_FPS;
+            const exportRange = { startSeconds: 0, endSeconds: 10 };
+
+            const prerenderPlan = buildPrerenderPlanFromTimeline({ timeline });
+            console.log("[Encode] prerender plan ready", {
+                fragmentCount: prerenderPlan.fragments.length
+            });
+
+            const videoTrackView = timeline.tracks
+                .flatMap(track => track.clips)
+                .map(clip => clip.trackView)
+                .find(view => view && view.mediaType === "video" && view.codecConfig);
+
+            const audioTrackView = timeline.tracks
+                .flatMap(track => track.clips)
+                .map(clip => clip.trackView)
+                .find(view => view && view.mediaType === "audio" && view.codecConfig);
+
+            if (!videoTrackView) {
+                throw new Error("No container-backed video asset found on timeline.");
+            }
+            if (!audioTrackView) {
+                throw new Error("No container-backed audio asset found on timeline.");
+            }
+
+            const videoEncodedChunks = [];
+            const audioEncodedChunks = [];
+            let videoDecoderConfig = null;
+            let audioDecoderConfig = null;
+            const decodedVideoFrames = [];
+            const decodedAudioData = [];
+            let videoDecoderError = null;
+            let audioDecoderError = null;
+
+            const videoDecoder = new VideoDecoder({
+                output(frame) {
+                    // Keep decoder callback minimal; ownership of closing decoded
+                    // source frames is handled in export strategy after composition.
+                    decodedVideoFrames.push(frame);
+                },
+                error(error) {
+                    console.error("VideoDecoder error", error);
+                    videoDecoderError = error;
+                }
+            });
+
+            const sourceVideoCodec = videoTrackView.codecConfig.codec;
+            const avcC = videoTrackView.codecConfig.avcC;
+            const decodeVideoCodec = (sourceVideoCodec === "avc1" && avcC instanceof Uint8Array && avcC.length >= 4)
+                ? `avc1.${avcC[1].toString(16).padStart(2, "0").toUpperCase()}${avcC[2].toString(16).padStart(2, "0").toUpperCase()}${avcC[3].toString(16).padStart(2, "0").toUpperCase()}`
+                : sourceVideoCodec;
+
+            videoDecoder.configure({
+                codec: decodeVideoCodec,
+                description: avcC
+            });
+
+            const audioDecoderCodec = audioTrackView.codecConfig.codec === "mp4a"
+                ? "mp4a.40.2"
+                : audioTrackView.codecConfig.codec;
+
+            const extractAudioSpecificConfigBytesFromEsds = (esds) => {
+                if (!(esds instanceof Uint8Array)) return null;
+                let offset = 0;
+                while (offset < esds.length) {
+                    const tag = esds[offset++];
+                    let size = 0;
+                    let guard = 0;
+                    while (true) {
+                        if (offset >= esds.length) return null;
+                        const b = esds[offset++];
+                        size = (size << 7) | (b & 0x7F);
+                        if ((b & 0x80) === 0) break;
+                        guard++;
+                        if (guard > 4) return null;
+                    }
+                    if (tag === 0x05) {
+                        if (offset + size > esds.length) return null;
+                        return esds.slice(offset, offset + size);
+                    }
+                    offset += size;
+                }
+                return null;
+            };
+
+            const createAacLcAudioSpecificConfig = ({ sampleRate, channelCount }) => {
+                const samplingFrequencies = [
+                    96000, 88200, 64000, 48000, 44100, 32000,
+                    24000, 22050, 16000, 12000, 11025, 8000, 7350
+                ];
+                const audioObjectType = 2; // AAC-LC
+                const samplingFrequencyIndex = samplingFrequencies.indexOf(sampleRate);
+                if (samplingFrequencyIndex === -1) return null;
+                if (!Number.isInteger(channelCount) || channelCount <= 0 || channelCount > 7) return null;
+
+                const byte0 = (audioObjectType << 3) | (samplingFrequencyIndex >> 1);
+                const byte1 = ((samplingFrequencyIndex & 1) << 7) | (channelCount << 3);
+                return new Uint8Array([byte0, byte1]);
+            };
+
+            const sourceEsds = audioTrackView.codecConfig.esds;
+            const aacAsc = sourceEsds
+                ? parseAudioSpecificConfigFromEsds({ esds: sourceEsds })
+                : null;
+            const audioDecoderCodecFromSource = audioTrackView.codecConfig.codec === "mp4a" && aacAsc?.audioObjectType
+                ? `mp4a.40.${aacAsc.audioObjectType}`
+                : audioDecoderCodec;
+            const normalizedAudioSampleRate = (audioTrackView.codecConfig.sampleRate ?? 48_000) > 192_000
+                ? ((audioTrackView.codecConfig.sampleRate ?? 48_000) >>> 16)
+                : (audioTrackView.codecConfig.sampleRate ?? 48_000);
+
+            let audioDecoderDescription = audioTrackView.codecConfig.codec === "mp4a"
+                ? extractAudioSpecificConfigBytesFromEsds(sourceEsds)
+                : (audioTrackView.codecConfig.dOps ?? audioTrackView.codecConfig.esds);
+            const audioDecoderChannelCount = audioTrackView.codecConfig.channelCount ?? 2;
+            const audioDecoderSampleRate = normalizedAudioSampleRate;
+
+            if (!audioDecoderDescription && audioTrackView.codecConfig.codec === "mp4a") {
+                audioDecoderDescription = createAacLcAudioSpecificConfig({
+                    sampleRate: audioDecoderSampleRate,
+                    channelCount: audioDecoderChannelCount
+                });
+            }
+            const audioDecoder = new AudioDecoder({
+                output(audioData) {
+                    decodedAudioData.push(audioData);
+                },
+                error(error) {
+                    console.error("AudioDecoder error", error);
+                    audioDecoderError = error;
+                }
+            });
+
+            const audioDecoderCandidates = [
+                {
+                    codec: audioDecoderCodecFromSource,
+                    numberOfChannels: audioDecoderChannelCount,
+                    sampleRate: audioDecoderSampleRate,
+                    ...(audioDecoderDescription ? { description: audioDecoderDescription } : {})
+                },
+                {
+                    codec: audioDecoderCodecFromSource,
+                    numberOfChannels: audioDecoderChannelCount,
+                    sampleRate: audioDecoderSampleRate
+                },
+                {
+                    codec: "mp4a.40.2",
+                    numberOfChannels: audioDecoderChannelCount,
+                    sampleRate: audioDecoderSampleRate,
+                    ...(audioDecoderDescription ? { description: audioDecoderDescription } : {})
+                },
+                {
+                    codec: "mp4a.40.2",
+                    numberOfChannels: audioDecoderChannelCount,
+                    sampleRate: audioDecoderSampleRate
+                }
+            ];
+
+            const preflightAudioDecoderConfigs = async () => {
+                const rows = [];
+                for (const candidate of audioDecoderCandidates) {
+                    const row = {
+                        codec: candidate.codec,
+                        sampleRate: candidate.sampleRate,
+                        numberOfChannels: candidate.numberOfChannels,
+                        hasDescription: !!candidate.description
+                    };
+
+                    if (typeof AudioDecoder.isConfigSupported !== "function") {
+                        row.isConfigSupported = "not-available";
+                        rows.push(row);
+                        continue;
+                    }
+
+                    try {
+                        const support = await AudioDecoder.isConfigSupported(candidate);
+                        row.isConfigSupported = support.supported ? "yes" : "no";
+                        if (!support.supported) {
+                            row.reason = "reported unsupported";
+                        }
+                    } catch (error) {
+                        row.isConfigSupported = "error";
+                        row.reason = error?.message ?? String(error);
+                    }
+
+                    rows.push(row);
+                }
+
+                console.group("AudioDecoder preflight");
+                console.table(rows);
+                console.groupEnd();
+            };
+
+            await preflightAudioDecoderConfigs();
+            console.log("[Encode] audio decoder preflight complete");
+
+            let configuredAudioDecoder = false;
+            for (const candidate of audioDecoderCandidates) {
+                if (configuredAudioDecoder) break;
+                try {
+                    if (typeof AudioDecoder.isConfigSupported === "function") {
+                        const support = await AudioDecoder.isConfigSupported(candidate);
+                        if (!support.supported) {
+                            continue;
+                        }
+                    }
+                    audioDecoder.configure(candidate);
+                    configuredAudioDecoder = true;
+                } catch {
+                    // Try next candidate.
+                }
+            }
+
+            if (!configuredAudioDecoder) {
+                throw new Error("AudioDecoder could not be configured for source audio track.");
+            }
+
+            const videoEncoder = new VideoEncoder({
+                output(chunk, metadata) {
+                    videoEncodedChunks.push(chunk);
+                    if (!videoDecoderConfig && metadata?.decoderConfig) {
+                        videoDecoderConfig = metadata.decoderConfig;
+                    }
+                },
+                error(error) {
+                    console.error("VideoEncoder error", error);
+                    throw error;
+                }
+            });
+
+            const sourceWidth =
+                videoTrackView?.containerMeta?.codedWidth ??
+                videoTrackView?.codecConfig?.codedWidth ??
+                1080;
+            const sourceHeight =
+                videoTrackView?.containerMeta?.codedHeight ??
+                videoTrackView?.codecConfig?.codedHeight ??
+                1920;
+            const sourceAspect = sourceWidth > 0 && sourceHeight > 0
+                ? sourceWidth / sourceHeight
+                : (16 / 9);
+            const FORCE_DEBUG_RESOLUTION = true;
+            const DEBUG_FORCED_RESOLUTION = { width: 720, height: 1280 };
+
+            const toEven = (value) => {
+                const rounded = Math.max(2, Math.round(value));
+                return rounded % 2 === 0 ? rounded : rounded - 1;
+            };
+
+            const makeResolutionFromHeight = (height) => {
+                const h = toEven(height);
+                const w = toEven(h * sourceAspect);
+                return { width: w, height: h };
+            };
+
+            const resolutionLadder = FORCE_DEBUG_RESOLUTION
+                ? [DEBUG_FORCED_RESOLUTION]
+                : [
+                    {
+                        width: toEven(Math.min(sourceWidth, 1920)),
+                        height: toEven(Math.min(sourceHeight, 1080))
+                    },
+                    makeResolutionFromHeight(1280),
+                    makeResolutionFromHeight(960),
+                    makeResolutionFromHeight(720),
+                    makeResolutionFromHeight(540),
+                    { width: 640, height: 360 }
+                ];
+
+            const dedupedResolutions = [];
+            const seenResolutionKeys = new Set();
+            for (const resolution of resolutionLadder) {
+                const key = `${resolution.width}x${resolution.height}`;
+                if (seenResolutionKeys.has(key)) continue;
+                seenResolutionKeys.add(key);
+                dedupedResolutions.push(resolution);
+            }
+
+            const estimateBitrate = ({ width, height }) => {
+                const pixels = width * height;
+                const targetBitsPerPixelPerFrame = 0.12;
+                const estimated = Math.round(pixels * exportFps * targetBitsPerPixelPerFrame);
+                return Math.max(1_200_000, Math.min(8_000_000, estimated));
+            };
+
+            const videoEncoderConfigs = [];
+            for (const resolution of dedupedResolutions) {
+                const bitrate = estimateBitrate(resolution);
+                // MVP constraint:
+                // Keep timeline export on the same simple WebCodecs shape used by
+                // NativeMuxer's semantic E2E test. Prefer realtime configs and
+                // avoid quality-oriented reorder paths.
+                videoEncoderConfigs.push(
+                    {
+                        codec: "avc1.4D401F",
+                        width: resolution.width,
+                        height: resolution.height,
+                        bitrate,
+                        framerate: exportFps,
+                        latencyMode: "realtime",
+                        avc: { format: "avc" }
+                    },
+                    {
+                        codec: "avc1.42001E",
+                        width: resolution.width,
+                        height: resolution.height,
+                        bitrate,
+                        framerate: exportFps,
+                        latencyMode: "realtime",
+                        avc: { format: "avc" }
+                    }
+                );
+            }
+
+            let configuredVideoEncoder = false;
+            let configuredVideoEncoderConfig = null;
+            for (const candidate of videoEncoderConfigs) {
+                if (configuredVideoEncoder) break;
+                try {
+                    if (typeof VideoEncoder.isConfigSupported === "function") {
+                        const support = await VideoEncoder.isConfigSupported(candidate);
+                        if (!support.supported) {
+                            continue;
+                        }
+                    }
+                    videoEncoder.configure(candidate);
+                    configuredVideoEncoder = true;
+                    configuredVideoEncoderConfig = candidate;
+                    console.log("[Encode] video encoder configured", {
+                        codec: candidate.codec,
+                        latencyMode: candidate.latencyMode ?? "quality",
+                        width: candidate.width,
+                        height: candidate.height,
+                        bitrate: candidate.bitrate
+                    });
+                } catch {
+                    // Try next candidate.
+                }
+            }
+
+            if (!configuredVideoEncoder) {
+                throw new Error("VideoEncoder could not be configured for export.");
+            }
+
+            const audioEncoder = new AudioEncoder({
+                output(chunk, metadata) {
+                    audioEncodedChunks.push(chunk);
+                    if (!audioDecoderConfig && metadata?.decoderConfig) {
+                        audioDecoderConfig = metadata.decoderConfig;
+                    }
+                },
+                error(error) {
+                    console.error("AudioEncoder error", error);
+                    throw error;
+                }
+            });
+
+            audioEncoder.configure({
+                codec: "opus",
+                sampleRate: 48_000,
+                numberOfChannels: 2,
+                bitrate: 128_000
+            });
+
+            const strategy = new ExportExecutionStrategy({
+                videoDecoder: {
+                    decode(chunk) {
+                        if (videoDecoderError) {
+                            throw Object.assign(
+                                new Error("videoDecoder.decode called after decoder failure"),
+                                { cause: videoDecoderError }
+                            );
+                        }
+                        try {
+                            videoDecoder.decode(chunk);
+                        } catch (error) {
+                            console.error("videoDecoder.decode threw", error);
+                            throw error;
+                        }
+                    },
+                    async flush() {
+                        if (videoDecoderError) {
+                            throw Object.assign(
+                                new Error("videoDecoder.flush called after decoder failure"),
+                                { cause: videoDecoderError }
+                            );
+                        }
+                        try {
+                            const flushStart = performance.now();
+                            const heartbeat = setInterval(() => {
+                                console.log("[VideoDecoder.flush] waiting", {
+                                    elapsedMs: Math.round(performance.now() - flushStart),
+                                    decodeQueueSize: videoDecoder.decodeQueueSize,
+                                    hasDecoderError: !!videoDecoderError
+                                });
+                            }, 2000);
+
+                            try {
+                                await videoDecoder.flush();
+                            } finally {
+                                clearInterval(heartbeat);
+                            }
+                        } catch (error) {
+                            console.error("videoDecoder.flush threw", error);
+                            throw error;
+                        }
+                    },
+                    getDecodedOutputs() {
+                        return decodedVideoFrames;
+                    },
+                    getLastError() {
+                        return videoDecoderError;
+                    },
+                    get decodeQueueSize() {
+                        return videoDecoder.decodeQueueSize;
+                    }
+                },
+                audioDecoder: {
+                    decode(chunk) {
+                        if (audioDecoderError) {
+                            throw Object.assign(
+                                new Error("audioDecoder.decode called after decoder failure"),
+                                { cause: audioDecoderError }
+                            );
+                        }
+                        try {
+                            audioDecoder.decode(chunk);
+                        } catch (error) {
+                            console.error("audioDecoder.decode threw", error);
+                            throw error;
+                        }
+                    },
+                    async flush() {
+                        if (audioDecoderError) {
+                            throw Object.assign(
+                                new Error("audioDecoder.flush called after decoder failure"),
+                                { cause: audioDecoderError }
+                            );
+                        }
+                        try {
+                            await audioDecoder.flush();
+                        } catch (error) {
+                            console.error("audioDecoder.flush threw", error);
+                            throw error;
+                        }
+                    },
+                    getDecodedOutputs() {
+                        return decodedAudioData;
+                    },
+                    getLastError() {
+                        return audioDecoderError;
+                    },
+                    get decodeQueueSize() {
+                        return audioDecoder.decodeQueueSize;
+                    }
+                },
+                timecodeFragmentIntentResolvers,
+                activeLayers: timeline.tracks.map((track, index) => ({
+                    track,
+                    zIndex: index,
+                    muted: false
+                })),
+                options: {
+                    audioStrategy: "mixToSingleTrack",
+                    frameDurationSeconds: 1 / exportFps,
+                    trackTimescale: 1_000_000,
+                    outputSpec: {
+                        width: configuredVideoEncoderConfig.width,
+                        height: configuredVideoEncoderConfig.height,
+                        fps: exportFps,
+                        sampleRate: 48_000,
+                        channels: 2
+                    },
+                    background: { r: 0, g: 0, b: 0, a: 1 }
+                },
+                encodeVideoFrame({ frame, timeSeconds }) {
+                    // MVP constraint:
+                    // Force all-intra output to stay on the NativeMuxer happy path
+                    // while CTTS/STSS policy work is still pending.
+                    videoEncoder.encode(frame, { keyFrame: true });
+                    if (typeof frame.close === "function") {
+                        frame.close();
+                    }
+                    return {
+                        accessUnit: {
+                            codecDomain: "video",
+                            pts: Math.round(timeSeconds * 1_000_000),
+                            data: new Uint8Array(0)
+                        }
+                    };
+                },
+                encodeAudioData({ audioData, timeSeconds }) {
+                    audioEncoder.encode(audioData);
+                    if (typeof audioData.close === "function") {
+                        audioData.close();
+                    }
+                    return {
+                        accessUnit: {
+                            codecDomain: "audio",
+                            pts: Math.round(timeSeconds * 1_000_000),
+                            data: new Uint8Array(0)
+                        }
+                    };
+                },
+                flushVideoEncoder: async () => {
+                    await videoEncoder.flush();
+                },
+                flushAudioEncoder: async () => {
+                    await audioEncoder.flush();
+                },
+                getVideoWebCodecsOutput: () => ({
+                    encodedChunks: videoEncodedChunks,
+                    decoderConfig: videoDecoderConfig
+                }),
+                getAudioWebCodecsOutput: () => ({
+                    encodedChunks: audioEncodedChunks,
+                    decoderConfig: audioDecoderConfig
+                })
+            });
+
+            const result = await strategy.execute({
+                plan: prerenderPlan,
+                exportRange,
+                fps: exportFps
+            });
+            console.log("[Encode] strategy execution complete");
+
+            const summarizeTiming = (timestamps) => {
+                if (!Array.isArray(timestamps) || timestamps.length === 0) {
+                    return { count: 0 };
+                }
+
+                const deltas = [];
+                for (let i = 1; i < timestamps.length; i++) {
+                    deltas.push(timestamps[i] - timestamps[i - 1]);
+                }
+
+                const deltaCounts = new Map();
+                for (const delta of deltas) {
+                    deltaCounts.set(delta, (deltaCounts.get(delta) ?? 0) + 1);
+                }
+
+                const topDeltas = [...deltaCounts.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 6)
+                    .map(([delta, count]) => ({ delta, count }));
+
+                return {
+                    count: timestamps.length,
+                    first: timestamps[0],
+                    last: timestamps[timestamps.length - 1],
+                    uniqueDeltaCount: deltaCounts.size,
+                    minDelta: deltas.length > 0 ? Math.min(...deltas) : null,
+                    maxDelta: deltas.length > 0 ? Math.max(...deltas) : null,
+                    zeroDeltas: deltas.filter(d => d === 0).length,
+                    negativeDeltas: deltas.filter(d => d < 0).length,
+                    topDeltas,
+                    firstDeltas: deltas.slice(0, 30)
+                };
+            };
+
+            const summarizePayloadSizes = (payloads) => {
+                if (!Array.isArray(payloads) || payloads.length === 0) {
+                    return { count: 0 };
+                }
+
+                const sizes = payloads
+                    .map(payload => payload?.byteLength)
+                    .filter(size => Number.isInteger(size));
+
+                if (sizes.length === 0) {
+                    return { count: 0 };
+                }
+
+                const total = sizes.reduce((sum, size) => sum + size, 0);
+                return {
+                    count: sizes.length,
+                    min: Math.min(...sizes),
+                    max: Math.max(...sizes),
+                    avg: Math.round(total / sizes.length)
+                };
+            };
+
+            const summarizeKeyMap = (accessUnits) => {
+                if (!Array.isArray(accessUnits) || accessUnits.length === 0) {
+                    return { count: 0, trueCount: 0, falseCount: 0, unknownCount: 0 };
+                }
+
+                let trueCount = 0;
+                let falseCount = 0;
+                let unknownCount = 0;
+                for (const unit of accessUnits) {
+                    const key = unit?.isKey ?? unit?.isKeyframe;
+                    if (key === true) trueCount++;
+                    else if (key === false) falseCount++;
+                    else unknownCount++;
+                }
+
+                return {
+                    count: accessUnits.length,
+                    trueCount,
+                    falseCount,
+                    unknownCount
+                };
+            };
+
+            const convertSourceUnitPtsToUs = (unit) => {
+                const pts = unit?.pts;
+                if (typeof pts !== "number") return null;
+                const trackView = unit?.clip?.trackView;
+                if (trackView && typeof trackView.ptsToSeconds === "function") {
+                    return Math.round(trackView.ptsToSeconds(pts) * 1_000_000);
+                }
+                return Math.round(pts);
+            };
+
+            const classifySourceAccessUnit = (unit) => {
+                const mediaType = unit?.clip?.trackView?.mediaType;
+                if (mediaType === "video" || mediaType === "audio") {
+                    return mediaType;
+                }
+                return null;
+            };
+
+            const summarizeSourceAccessUnitsFromPlan = ({ plan, mediaType, rangeStartUs, rangeEndUs }) => {
+                const fragments = Array.isArray(plan?.fragments) ? plan.fragments : [];
+                const units = [];
+                for (const fragment of fragments) {
+                    if (!Array.isArray(fragment?.access_units)) continue;
+                    for (const unit of fragment.access_units) {
+                        if (classifySourceAccessUnit(unit) !== mediaType) continue;
+                        const ptsUs = convertSourceUnitPtsToUs(unit);
+                        if (typeof ptsUs !== "number") continue;
+                        if (ptsUs < rangeStartUs || ptsUs > rangeEndUs) continue;
+                        units.push({ ...unit, ptsUs });
+                    }
+                }
+                units.sort((a, b) => a.ptsUs - b.ptsUs);
+
+                return {
+                    count: units.length,
+                    timing: summarizeTiming(units.map(unit => unit.ptsUs)),
+                    keyMap: summarizeKeyMap(units),
+                    payloadSizes: summarizePayloadSizes(units.map(unit => unit?.data))
+                };
+            };
+
+            const classifyExportTrackMediaType = (track) => {
+                const codec = track?.semanticCore?.codec?.codec;
+                if (typeof codec !== "string") return null;
+                if (/^avc|^hev|^vp|^av01|^hvc|^vvc/i.test(codec)) return "video";
+                if (/^opus|^mp4a|^aac|^ac-3|^ec-3/i.test(codec)) return "audio";
+                return null;
+            };
+
+            const summarizeExportAccessUnitsFromMp4BuildInput = ({ mp4BuildInput, mediaType }) => {
+                const tracks = Array.isArray(mp4BuildInput?.tracks) ? mp4BuildInput.tracks : [];
+                const track = tracks.find(candidate => classifyExportTrackMediaType(candidate) === mediaType);
+                if (!track) {
+                    return {
+                        count: 0,
+                        timing: { count: 0 },
+                        keyMap: { count: 0, trueCount: 0, falseCount: 0, unknownCount: 0 },
+                        payloadSizes: { count: 0 },
+                        codec: null
+                    };
+                }
+
+                const accessUnits = Array.isArray(track?.semanticCore?.accessUnits) ? track.semanticCore.accessUnits : [];
+                const payloads = Array.isArray(track?.payloads?.accessUnitPayloads) ? track.payloads.accessUnitPayloads : [];
+
+                return {
+                    count: accessUnits.length,
+                    timing: summarizeTiming(
+                        accessUnits
+                            .map(unit => unit?.pts)
+                            .filter(pts => typeof pts === "number")
+                    ),
+                    keyMap: summarizeKeyMap(accessUnits),
+                    payloadSizes: summarizePayloadSizes(payloads),
+                    codec: track?.semanticCore?.codec?.codec ?? null
+                };
+            };
+
+            const summarizeDurationAgreement = ({ sourceSummary, exportSummary }) => {
+                const sourceStart = sourceSummary?.timing?.first;
+                const sourceEnd = sourceSummary?.timing?.last;
+                const exportStart = exportSummary?.timing?.first;
+                const exportEnd = exportSummary?.timing?.last;
+                const sourceSpanUs = (typeof sourceStart === "number" && typeof sourceEnd === "number")
+                    ? (sourceEnd - sourceStart)
+                    : null;
+                const exportSpanUs = (typeof exportStart === "number" && typeof exportEnd === "number")
+                    ? (exportEnd - exportStart)
+                    : null;
+                return {
+                    sourceSpanUs,
+                    exportSpanUs,
+                    spanDeltaUs:
+                        (typeof sourceSpanUs === "number" && typeof exportSpanUs === "number")
+                            ? (exportSpanUs - sourceSpanUs)
+                            : null
+                };
+            };
+
+            const videoChunkTiming = summarizeTiming(
+                videoEncodedChunks
+                    .map(chunk => chunk?.timestamp)
+                    .filter(timestamp => typeof timestamp === "number")
+            );
+            const audioChunkTiming = summarizeTiming(
+                audioEncodedChunks
+                    .map(chunk => chunk?.timestamp)
+                    .filter(timestamp => typeof timestamp === "number")
+            );
+
+            console.log("[Encode] encoded video chunk timing", videoChunkTiming);
+            console.log("[Encode] encoded audio chunk timing", audioChunkTiming);
+            console.log("[Encode] encoded video chunk timing JSON", JSON.stringify(videoChunkTiming));
+            console.log("[Encode] encoded audio chunk timing JSON", JSON.stringify(audioChunkTiming));
+
+            if (Array.isArray(result?.mp4BuildInput?.tracks)) {
+                const trackTiming = result.mp4BuildInput.tracks.map((track, index) => {
+                    const accessUnits = track?.semanticCore?.accessUnits ?? track?.accessUnits ?? [];
+                    const pts = accessUnits
+                        .map(unit => unit?.pts)
+                        .filter(timestamp => typeof timestamp === "number");
+                    return {
+                        index,
+                        accessUnitCount: accessUnits.length,
+                        ptsSummary: summarizeTiming(pts)
+                    };
+                });
+                console.log("[Encode] mp4BuildInput track timing", trackTiming);
+                console.log("[Encode] mp4BuildInput track timing JSON", JSON.stringify(trackTiming));
+
+                const rangeStartUs = Math.round(exportRange.startSeconds * 1_000_000);
+                const rangeEndUs = Math.round(exportRange.endSeconds * 1_000_000);
+                const sourceVideoSummary = summarizeSourceAccessUnitsFromPlan({
+                    plan: prerenderPlan,
+                    mediaType: "video",
+                    rangeStartUs,
+                    rangeEndUs
+                });
+                const sourceAudioSummary = summarizeSourceAccessUnitsFromPlan({
+                    plan: prerenderPlan,
+                    mediaType: "audio",
+                    rangeStartUs,
+                    rangeEndUs
+                });
+                const exportVideoSummary = summarizeExportAccessUnitsFromMp4BuildInput({
+                    mp4BuildInput: result.mp4BuildInput,
+                    mediaType: "video"
+                });
+                const exportAudioSummary = summarizeExportAccessUnitsFromMp4BuildInput({
+                    mp4BuildInput: result.mp4BuildInput,
+                    mediaType: "audio"
+                });
+
+                const accessUnitInvariantReport = {
+                    source: {
+                        video: sourceVideoSummary,
+                        audio: sourceAudioSummary
+                    },
+                    export: {
+                        video: exportVideoSummary,
+                        audio: exportAudioSummary
+                    },
+                    agreement: {
+                        video: summarizeDurationAgreement({
+                            sourceSummary: sourceVideoSummary,
+                            exportSummary: exportVideoSummary
+                        }),
+                        audio: summarizeDurationAgreement({
+                            sourceSummary: sourceAudioSummary,
+                            exportSummary: exportAudioSummary
+                        })
+                    }
+                };
+                console.log("[Encode] access unit invariants", accessUnitInvariantReport);
+                console.log("[Encode] access unit invariants JSON", JSON.stringify(accessUnitInvariantReport));
+            }
+
+            const summarizeSttsEntries = (entries) => {
+                if (!Array.isArray(entries) || entries.length === 0) {
+                    return {
+                        entryCount: 0,
+                        totalSamples: 0,
+                        uniqueDeltas: []
+                    };
+                }
+
+                const totalSamples = entries.reduce((sum, entry) => {
+                    const sampleCount = Number.isInteger(entry?.sampleCount)
+                        ? entry.sampleCount
+                        : (Number.isInteger(entry?.count) ? entry.count : 0);
+                    return sum + sampleCount;
+                }, 0);
+                const uniqueDeltas = [...new Set(entries.map(entry => {
+                    if (Number.isInteger(entry?.sampleDelta)) return entry.sampleDelta;
+                    if (Number.isInteger(entry?.delta)) return entry.delta;
+                    return undefined;
+                }))].filter(Number.isInteger);
+
+                return {
+                    entryCount: entries.length,
+                    totalSamples,
+                    uniqueDeltas
+                };
+            };
+
+            const summarizeCttsEntries = (entries) => {
+                if (!Array.isArray(entries) || entries.length === 0) {
+                    return {
+                        entryCount: 0,
+                        totalSamples: 0,
+                        uniqueOffsets: []
+                    };
+                }
+
+                const totalSamples = entries.reduce(
+                    (sum, entry) => sum + (Number.isInteger(entry.count) ? entry.count : 0),
+                    0
+                );
+                const uniqueOffsets = [...new Set(entries.map(entry => entry.offset))].filter(Number.isInteger);
+
+                return {
+                    entryCount: entries.length,
+                    totalSamples,
+                    uniqueOffsets
+                };
+            };
+
+            if (result.mp4Bytes instanceof Uint8Array) {
+                const readTrackBoxFields = (trackIndex, boxPathSuffix) => {
+                    const semanticBoxData = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+                        result.mp4Bytes,
+                        `moov/trak[${trackIndex}]/mdia/minf/stbl/${boxPathSuffix}`
+                    );
+
+                    if (!semanticBoxData || semanticBoxData.found === false) {
+                        return null;
+                    }
+
+                    if (typeof semanticBoxData.readBoxReport !== "function") {
+                        return null;
+                    }
+
+                    const report = semanticBoxData.readBoxReport();
+                    return report?.box?.fields ?? null;
+                };
+
+                try {
+                    const videoStts = summarizeSttsEntries(readTrackBoxFields(0, "stts")?.entries);
+                    const videoCtts = summarizeCttsEntries(readTrackBoxFields(0, "ctts")?.entries);
+                    const videoStssFields = readTrackBoxFields(0, "stss");
+                    const videoSyncSamples = Array.isArray(videoStssFields?.sampleNumbers)
+                        ? videoStssFields.sampleNumbers.length
+                        : 0;
+
+                    const audioStts = summarizeSttsEntries(readTrackBoxFields(1, "stts")?.entries);
+
+                    const mp4BoxTimingSummary = {
+                        video: {
+                            stts: videoStts,
+                            ctts: videoCtts,
+                            stssSyncSampleCount: videoSyncSamples
+                        },
+                        audio: {
+                            stts: audioStts
+                        }
+                    };
+
+                    console.log("[Encode] mp4 box timing summary", mp4BoxTimingSummary);
+                    console.log("[Encode] mp4 box timing summary JSON", JSON.stringify(mp4BoxTimingSummary));
+                    console.log("[Encode] mp4 box raw fields JSON", JSON.stringify({
+                        video: {
+                            stts: readTrackBoxFields(0, "stts"),
+                            ctts: readTrackBoxFields(0, "ctts"),
+                            stss: readTrackBoxFields(0, "stss")
+                        },
+                        audio: {
+                            stts: readTrackBoxFields(1, "stts")
+                        }
+                    }));
+                } catch (error) {
+                    console.error("[Encode] mp4 box timing summary failed", error);
+                }
+            }
+
+            if (!(result.mp4Bytes instanceof Uint8Array)) {
+                throw new Error("Export did not produce MP4 bytes");
+            }
+
+            const mp4Blob = new Blob([result.mp4Bytes], { type: "video/mp4" });
+            lastExportBlob = mp4Blob;
+            window.__lastBlob = mp4Blob;
+            window.__lastMp4Bytes = result.mp4Bytes;
+            window.__lastMp4BuildInput = result.mp4BuildInput;
+
+            if (lastExportUrl) {
+                URL.revokeObjectURL(lastExportUrl);
+            }
+            lastExportUrl = URL.createObjectURL(mp4Blob);
+
+            video.src = lastExportUrl;
+            video.style.display = "block";
+            video.controls = true;
+            exportBtn.disabled = false;
+
+            console.log("Encode complete", {
+                bytes: result.mp4Bytes.length,
+                videoChunks: videoEncodedChunks.length,
+                audioChunks: audioEncodedChunks.length,
+                elapsedMs: Math.round(performance.now() - tStart)
+            });
+        } catch (error) {
+            console.error("Encode/export failed", error);
+        }
     };
 
 
@@ -398,38 +1468,6 @@ function findClosestAudioFrame(audioFrames, timestampUs) {
     }
 
     return { closest, deltaUs: minDelta };
-}
-
-/**
- * Timeline
- *
- * The top-level structural container for compilation.
- *
- * CURRENT STAGE RESPONSIBILITIES:
- * - Own tracks
- * - Define overall duration
- *
- * INTENTIONALLY OUT OF SCOPE *FOR THIS STAGE*:
- * - Media decoding
- * - Rendering
- * - Playback or preview concerns
- *
- * NOTES:
- * - Timeline evaluation is performed by walking clips and access units.
- * - Time-based querying will reappear in later, higher-level stages.
- */
-class Timeline {
-
-    constructor(duration) {
-        this.id = createId(); // Engine identity (opaque, stable)
-        this.tracks = [];
-        this.duration = duration;
-    }
-
-    addTrack(track) {
-        this.tracks.push(track);
-    }
-
 }
 
 let textOverlays = [];  // Declare textOverlays in the global scope
@@ -491,74 +1529,187 @@ let textOverlays = [];  // Declare textOverlays in the global scope
 async function createTimeline() {
     const videoElement = document.getElementById("v");
 
-    // -------------------------------------------------
-    // Fetch MP4 bytes (application responsibility)
-    // -------------------------------------------------
     const resp = await fetch(videoElement.src);
     if (!resp.ok) {
         throw new Error("Failed to fetch MP4: " + videoElement.src);
     }
+
     const mp4Bytes = new Uint8Array(await resp.arrayBuffer());
 
-    // -------------------------------------------------
-    // Demux container tracks (boundary invocation)
-    // -------------------------------------------------
     const containerTracks = listTracksFromMp4({ mp4Bytes });
 
-    // -------------------------------------------------
-    // Build ContainerTrackViews (lazy, semantic)
-    // -------------------------------------------------
-    const trackViews = containerTracks.map(trackInfo =>
+    const nativeTrackViews = containerTracks.map(trackInfo =>
         createContainerTrackViewFromMp4({
             mp4Bytes,
             trackIndex: trackInfo.zeroBasedTrackIndex
         })
     );
 
-    // -------------------------------------------------
-    // Assemble Mp4Asset (post-demux, no container knowledge)
-    // -------------------------------------------------
-    const mp4Asset = new Mp4Asset({ trackViews });
-
-    /**
-     * Track selection policy
-     *
-     * IMPORTANT:
-     * - Mp4Asset exposes ALL tracks present in the container.
-     * - Selection of which tracks to use is EDITOR INTENT.
-     * - This policy is temporary and intentionally explicit.
-     *
-     * Future versions may:
-     * - Allow user selection
-     * - Support multiple video/audio tracks
-     * - Attach tracks dynamically
-     */
-    const allTrackViews = mp4Asset.getTrackViews();
-
-    const videoTracks = allTrackViews.filter(t => t.mediaType === "video");
-    const audioTracks = allTrackViews.filter(t => t.mediaType === "audio");
-
-    // -------------------------------------------------
-    // TEMPORARY TRACK SELECTION POLICY (APPLICATION-LEVEL)
-    // -------------------------------------------------
-    const videoTrackView = videoTracks[0];
-    const audioTrackView = audioTracks[0];
-
-    if (!videoTrackView) {
-        throw new Error("createTimeline: no video track selected");
-    }
-    if (!audioTrackView) {
-        throw new Error("createTimeline: no audio track selected");
+    const selectedVideoDemuxer = new URLSearchParams(window.location.search).get("videoDemuxer") ?? "mp4box";
+    if (selectedVideoDemuxer === "mp4box") {
+        const mp4BoxVideoTrackView = await createMp4BoxVideoTrackView({ mp4Bytes });
+        const mergedTrackViews = [
+            mp4BoxVideoTrackView,
+            ...nativeTrackViews.filter(trackView => trackView.mediaType !== "video")
+        ];
+        console.log("[Timeline] demux selection", {
+            selectedVideoDemuxer,
+            trackViewMediaTypes: mergedTrackViews.map(trackView => trackView.mediaType)
+        });
+        return createTimelineFromPreparedAssets({ trackViews: mergedTrackViews });
     }
 
-    // -------------------------------------------------
-    // Assemble Timeline (domain objects only)
-    // -------------------------------------------------
+    console.log("[Timeline] demux selection", {
+        selectedVideoDemuxer,
+        trackViewMediaTypes: nativeTrackViews.map(trackView => trackView.mediaType)
+    });
+
+    return createTimelineFromPreparedAssets({ trackViews: nativeTrackViews });
+}
+
+async function createMp4BoxVideoTrackView({ mp4Bytes }) {
+    const demuxer = new Mp4BoxDemuxer(mp4Bytes.buffer.slice(
+        mp4Bytes.byteOffset,
+        mp4Bytes.byteOffset + mp4Bytes.byteLength
+    ));
+
+    const parsed = await demuxer.parse();
+    const videoTrack = parsed?.videoTrack;
+    const avcCBuffer = demuxer.getAvcCBuffer();
+
+    if (!videoTrack) {
+        throw new Error("createMp4BoxVideoTrackView: video track not found");
+    }
+    if (!(avcCBuffer instanceof ArrayBuffer)) {
+        throw new Error("createMp4BoxVideoTrackView: avcC not available from Mp4BoxDemuxer");
+    }
+
+    const toMicroseconds = (value, timescale) => {
+        if (typeof value !== "number" || typeof timescale !== "number" || timescale <= 0) {
+            return null;
+        }
+        return Math.round((value / timescale) * 1_000_000);
+    };
+
+    const samples = Array.isArray(parsed?.videoSamples) ? parsed.videoSamples : [];
+    const normalizedSamples = samples
+        .map((sample, index) => {
+            const timescale =
+                sample?.raw?.timescale ??
+                videoTrack.timescale;
+            const ptsUs =
+                toMicroseconds(sample?.raw?.cts, timescale) ??
+                (typeof sample?.timestamp === "number" ? sample.timestamp : null);
+            const dtsUs =
+                toMicroseconds(sample?.raw?.dts, timescale) ??
+                ptsUs;
+            const durationUs =
+                toMicroseconds(sample?.raw?.duration, timescale) ??
+                (typeof sample?.duration === "number" ? sample.duration : null);
+
+            if (typeof ptsUs !== "number" || typeof durationUs !== "number") {
+                return null;
+            }
+
+            return {
+                _index: index,
+                ptsUs,
+                dtsUs,
+                durationUs,
+                isKeyframe: sample?.type === "key",
+                data: sample?.data
+            };
+        })
+        .filter(Boolean);
+
+    console.log("[Timeline][mp4box] normalized video sample summary", {
+        inputSampleCount: samples.length,
+        normalizedSampleCount: normalizedSamples.length
+    });
+
+    return {
+        mediaType: "video",
+        containerMeta: {
+            trackTimescale: 1_000_000,
+            codedWidth: videoTrack.track_width,
+            codedHeight: videoTrack.track_height
+        },
+        codecConfig: {
+            codec: "avc1",
+            avcC: new Uint8Array(avcCBuffer)
+        },
+        sampleCount: normalizedSamples.length,
+        ptsToSeconds(pts) {
+            return pts / 1_000_000;
+        },
+        secondsToPts(seconds) {
+            return Math.round(seconds * 1_000_000);
+        },
+        getSampleByIndex(index) {
+            const sample = normalizedSamples[index];
+            if (!sample) return null;
+            return {
+                pts: sample.ptsUs,
+                dts: sample.dtsUs,
+                duration: sample.durationUs,
+                isKeyframe: sample.isKeyframe,
+                data: sample.data
+            };
+        },
+        *iterateSamplesByPtsRange(startPts, endPts) {
+            for (const sample of normalizedSamples) {
+                if (sample.ptsUs < startPts) continue;
+                if (sample.ptsUs > endPts) continue;
+                yield {
+                    pts: sample.ptsUs,
+                    dts: sample.dtsUs,
+                    duration: sample.durationUs,
+                    isKeyframe: sample.isKeyframe,
+                    data: sample.data
+                };
+            }
+        }
+    };
+}
+
+/**
+ * createTimelineFromPreparedAssets
+ * =====================================================
+ *
+ * DOMAIN-ASSEMBLY — SYNCHRONOUS
+ *
+ * Purpose:
+ * --------
+ * Construct a Timeline from already-prepared ContainerTrackView instances.
+ *
+ * This function is PURELY SYNCHRONOUS.
+ * It performs NO I/O, NO demux, NO fetch, NO decoding.
+ *
+ * Inputs:
+ * -------
+ * - trackViews: Array<ContainerTrackView>
+ *
+ * Output:
+ * -------
+ * - Timeline
+ */
+export function createTimelineFromPreparedAssets({ trackViews }) {
+    if (!Array.isArray(trackViews)) {
+        throw new Error("createTimelineFromPreparedAssets: trackViews must be array");
+    }
+
     const timeline = new Timeline(30);
 
-    // DEMO ASSUMPTION (TEMPORARY):
-    // - timeline.tracks[0] drives video
-    // - timeline.tracks[1] drives audio (if present)
+    const videoTracks = trackViews.filter(t => t.mediaType === "video");
+    const audioTracks = trackViews.filter(t => t.mediaType === "audio");
+
+    if (!videoTracks[0]) {
+        throw new Error("createTimelineFromPreparedAssets: no video track");
+    }
+    if (!audioTracks[0]) {
+        throw new Error("createTimelineFromPreparedAssets: no audio track");
+    }
+
     const videoTrack = new Track();
     const audioTrack = new Track();
 
@@ -567,7 +1718,7 @@ async function createTimeline() {
 
     videoTrack.addClip(
         new Clip({
-            trackView: videoTrackView,
+            trackView: videoTracks[0],
             startSeconds: 0,
             endSeconds: 10
         })
@@ -575,103 +1726,35 @@ async function createTimeline() {
 
     audioTrack.addClip(
         new Clip({
-            trackView: audioTrackView,
+            trackView: audioTracks[0],
             startSeconds: 0,
             endSeconds: 30
         })
     );
 
+    const overlayTrack = new Track();
+    timeline.addTrack(overlayTrack);
+
+    overlayTrack.addClip(
+        new ProceduralClip({
+            kind: "text-overlay",
+            startSeconds: 0,
+            endSeconds: 10,
+            items: [
+                {
+                    words: [
+                        { start: 0, end: 3, text: "Hello" },
+                        { start: 3, end: 6, text: "Beautiful" },
+                        { start: 6, end: 9, text: "World" }
+                    ],
+                    override: [],
+                    animate: []
+                }
+            ]
+        })
+    );
+
     return timeline;
-}
-
-/**
- * Track
- *
- * A Track is a structural grouping of Clips within the Timeline.
- *
- * Tracks define:
- * - ordering of clips
- * - overlap relationships
- * - relative layering when multiple clips are active
- *
- * Tracks do NOT define rendering semantics.
- *
- * In particular:
- * - A Track is not inherently "video", "audio", or "text"
- * - Rendering behavior is determined by the Assets and Clips
- *   placed on the Track, not by the Track itself
- *
- * Track typing, lane constraints, and media-specific rules
- * are editor-level concerns and must not leak into the
- * timeline compiler or pre-render execution.
- *
- * CURRENT STAGE RESPONSIBILITIES:
- * - Own clip ordering
- * - Provide structural grouping for timeline evaluation
- *
- * INTENTIONALLY OUT OF SCOPE:
- * - Media decoding
- * - Rendering
- * - Mixing or compositing
- * - Output domain decisions
- */
-class Track {
-    constructor() {
-        this.id = createId(); // Engine identity (opaque, stable)
-        this.clips = [];
-    }
-
-    addClip(clip) {
-        this.clips.push(clip);
-    }
-}
-
-
-/**
- * Clip
- *
- * A bounded time window over an underlying source
- * (e.g. a ContainerTrackView for container-backed media).
- *
- * CURRENT STAGE RESPONSIBILITIES:
- * - Define a start/end range in container time
- * - Filter access units that fall within that range
- *
- * INTENTIONALLY OUT OF SCOPE *FOR THIS STAGE*:
- * - Decoding media
- * - Rendering frames
- * - Sampling by wall-clock time
- *
- * NOTES:
- * - Clips do not answer "what happens at time t" at this stage.
- * - They only define which access units belong to the clip.
- * - Later stages interpret these units for render, preview, or export.
- */
-class Clip {
-    constructor({ trackView, startSeconds, endSeconds }) {
-        this.id = createId(); // Engine identity (opaque, stable)
-        this.trackView = trackView;
-        this.startPts = trackView.secondsToPts(startSeconds);
-        this.endPts   = trackView.secondsToPts(endSeconds);
-    }
-
-    *iterateAccessUnits() {
-        let yielded = false;
-
-        for (const unit of this.trackView.iterateSamplesByPtsRange(
-            this.startPts,
-            this.endPts
-        )) {
-            yielded = true;
-            yield unit;
-        }
-
-        if (!yielded) {
-            throw new Error(
-                "Clip: no samples exist in referenced time range"
-            );
-        }
-    }
 }
 
 /**
@@ -893,6 +1976,7 @@ class ImageAsset extends Asset {
         return this._trackViews;
     }
 }
+
 /**
  * TextAsset
  *

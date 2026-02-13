@@ -24,11 +24,11 @@ export const PreRenderPlanContributorKinds = Object.freeze({
     PROCEDURAL: "procedural"
 });
 
-export function createAccessUnitPlanFragment({ units }) {
-    if (!Array.isArray(units)) {
+export function createAccessUnitPlanFragment({ access_units }) {
+    if (!Array.isArray(access_units)) {
         throw new Error(
-            "createAccessUnitPlanFragment: invalid units. " +
-            `Expected array, got ${Object.prototype.toString.call(units)}`
+            "createAccessUnitPlanFragment: invalid access_units. " +
+            `Expected array, got ${Object.prototype.toString.call(access_units)}`
         );
     }
 
@@ -36,7 +36,7 @@ export function createAccessUnitPlanFragment({ units }) {
         kind: PreRenderPlanFragmentKinds.ACCESS_UNITS,
         prerenderContributorKind:
         PreRenderPlanContributorKinds.CONTAINER_TRACK,
-        units
+        access_units
     }
 };
 

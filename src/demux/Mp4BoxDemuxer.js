@@ -13,9 +13,6 @@
  *   - race conditions
  */
 
-import { EncodedSampleLike } from "../types/EncodedSampleLike.js";
-
-
 export class Mp4BoxDemuxer {
     constructor(arrayBuffer) {
         this.arrayBuffer = arrayBuffer;
@@ -125,13 +122,45 @@ export class Mp4BoxDemuxer {
                 const keepMdatData = true;
                 const mp4boxFile = MP4Box.createFile(keepMdatData);
 
-
                 const videoSamples = [];
                 const audioSamples = [];
+                let resolved = false;
+                let ready = false;
+                let appendComplete = false;
+                let expectedVideoSamples = null;
+                let expectedAudioSamples = 0;
+
+                const timeoutId = setTimeout(() => {
+                    settle(reject, new Error("Mp4BoxDemuxer.parse timeout"));
+                }, 15000);
+
+                const settle = (fn, value) => {
+                    if (resolved) return;
+                    resolved = true;
+                    clearTimeout(timeoutId);
+                    fn(value);
+                };
+
+                const maybeFinalize = () => {
+                    if (!ready || !appendComplete) return;
+                    if (typeof expectedVideoSamples !== "number") return;
+                    const videoDone = videoSamples.length >= expectedVideoSamples;
+                    const audioDone = audioSamples.length >= expectedAudioSamples;
+                    if (!videoDone || !audioDone) return;
+
+                    settle(resolve, {
+                        videoSamples,
+                        audioSamples,
+                        videoTrack: this.videoTrack,
+                        audioTrack: this.audioTrack,
+                        duration: this.info.duration,
+                        timescale: this.info.timescale
+                    });
+                };
 
                 mp4boxFile.onError = (e) => {
                     console.error("mp4box error:", e);
-                    reject(new Error("mp4box error: " + e));
+                    settle(reject, new Error("mp4box error: " + e));
                 };
 
                 mp4boxFile.onSegment = (id, user, buffer, sampleNum) => {
@@ -152,7 +181,7 @@ export class Mp4BoxDemuxer {
                     const audioTrack = info.audioTracks[0];
 
                     if (!videoTrack) {
-                        reject(new Error("No video track found"));
+                        settle(reject, new Error("No video track found"));
                         return;
                     }
 
@@ -169,6 +198,8 @@ export class Mp4BoxDemuxer {
                     this._avcC = trak?.mdia?.minf?.stbl?.stsd?.entries?.[0]?.avcC || null;
 
                     // 4. Enable extraction
+                    expectedVideoSamples = videoTrack.nb_samples;
+                    expectedAudioSamples = audioTrack?.nb_samples ?? 0;
                     mp4boxFile.setExtractionOptions(this.videoTrackId, null, {
                         nbSamples: videoTrack.nb_samples
                     });
@@ -179,24 +210,30 @@ export class Mp4BoxDemuxer {
                         });
                     }
 
+                    ready = true;
+                    maybeFinalize();
+
                 };
 
                 mp4boxFile.onSamples = (trackId, _user, samples) => {
 
                     for (const s of samples) {
-                        const encoded = new EncodedSampleLike({
+                        const timestampUs = this.toMicro(s.cts, s.timescale);
+                        const durationUs = this.toMicro(s.duration, s.timescale);
+                        const dtsUs = this.toMicro(
+                            typeof s.dts === "number" ? s.dts : s.cts,
+                            s.timescale
+                        );
+
+                        const encoded = {
                             type: s.is_sync ? "key" : "delta",
-
-                            timestamp: this.toMicro(s.cts, s.timescale),
-                            duration: this.toMicro(s.duration, s.timescale),
-
-                            // Not sure which is appropriate, toNano or toMicro
-                            // timestamp: this.toMicro(s.cts, s.timescale),
-                            // duration: this.toMicro(s.duration, s.timescale),
+                            timestamp: timestampUs,
+                            duration: durationUs,
+                            cts: timestampUs,
+                            dts: dtsUs,
                             data: new Uint8Array(s.data),
-
-                            raw: s  // ← KEEP ORIGINAL SAMPLE. REQUIRED FOR avcC.
-                        });
+                            raw: s // preserve mp4box timing/source fields for callers
+                        };
 
                         if (
                             trackId === this.audioTrackId &&
@@ -216,18 +253,8 @@ export class Mp4BoxDemuxer {
                             audioSamples.push(encoded);
                         }
                     }
-                };
 
-                const finalize = () => {
-
-                    resolve({
-                        videoSamples,
-                        audioSamples,
-                        videoTrack: this.videoTrack,
-                        audioTrack: this.audioTrack,
-                        duration: this.info.duration,
-                        timescale: this.info.timescale
-                    });
+                    maybeFinalize();
                 };
 
                 const file = this.arrayBuffer;
@@ -236,12 +263,10 @@ export class Mp4BoxDemuxer {
 
                 const feedChunk = () => {
                     if (offset >= file.byteLength) {
-
-
                         mp4boxFile.start();
                         mp4boxFile.flush();
-
-                        finalize();
+                        appendComplete = true;
+                        maybeFinalize();
 
                         return;
                     }
@@ -263,7 +288,7 @@ export class Mp4BoxDemuxer {
 
 
             } catch (e) {
-                reject(e);
+                settle(reject, e);
             }
         });
     }

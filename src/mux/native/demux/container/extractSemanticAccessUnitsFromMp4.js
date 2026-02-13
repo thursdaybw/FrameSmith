@@ -50,6 +50,10 @@ export function extractSemanticAccessUnitsFromMp4({ mp4Bytes, zeroBasedTrackInde
     }
 
     return samples.map(sample => {
+        const sampleIsKey =
+            (typeof sample.isKey === "boolean")
+                ? sample.isKey
+                : (typeof sample.isSync === "boolean" ? sample.isSync : undefined);
 
         const accessUnit = {
             pts: sample.pts,
@@ -57,7 +61,7 @@ export function extractSemanticAccessUnitsFromMp4({ mp4Bytes, zeroBasedTrackInde
             duration: sample.duration,
             offset: sample.offset,
             size: sample.size,
-            isKey: sample.isKey
+            isKey: sampleIsKey
         };
 
         if (Number.isInteger(sample.packetIndex)) {

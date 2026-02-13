@@ -46,10 +46,33 @@
 
 import { __test__ } from "./script.js";
 
-import { TRACKVIEW_TESTS } from
-  "./src/mux/native/demux/trackview/test_createContainerTrackViewFromMp4.js";
+import { TRACKVIEW_TESTS } from "./src/mux/native/demux/trackview/test_createContainerTrackViewFromMp4.js";
 
 import { PROCEDURAL_CLIP_TESTS } from "./src/mux/native/demux/trackview/test_proceduralClips_prerenderPlanning.js";
+
+import { PRERENDER_DECODE_CONTAINER_VIDEO_TESTS } from "./src/prerender/test_decodeContainerAccessUnits_containerVideo.js";
+import { PRERENDER_DECODE_CONTAINER_AUDIO_TESTS } from "./src/prerender/test_decodeContainerAccessUnits_containerAudio.js";
+import {
+    PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DISPATCH_TESTS
+} from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_ignoresProceduralFragments.js";
+import {
+    PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_EMPTY_PLAN_TESTS
+} from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_noAccessUnits.js";
+import {
+    PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_ORDER_TESTS
+} from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_preservesDecoderOrder.js";
+import { PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DETERMINISM_TESTS } from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_determinism.js";
+
+import { PROCEDURAL_EXECUTION_TESTS } from "./src/timeline/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
+import { TEXT_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_textOverlayRenderer.js";
+import { CONTAINER_DECODE_TESTS } from "./src/timeline/container/execution/test_executeAccessUnitFragmentDecode.js";
+
+import { PRERENDER_TIME_RESOLUTION_TESTS } from "./src/prerender/test_resolveProceduralFragmentsAtTimeFromPlan.js";
+import { INTEGRATION_TESTS } from "./src/integration/test_FrameSmith_PublicApi_EndToEnd_ExportExecutionStrategy.js";
+import { COMPOSITION_TESTS } from "./src/composition/test_composeAtTime.js";
+import { ENCODE_TESTS } from "./src/encode/test_encodeAtTime.js";
+import { EXPORT_ADAPTER_TESTS } from "./src/export/test_adaptEncodedOutputsToMp4BuildInput.js";
+import { EXPORT_EXECUTION_STRATEGY_TESTS } from "./src/prerender/strategies/test_ExportExecutionStrategy.js";
 
 const {
     Timeline,
@@ -144,7 +167,7 @@ function test_singleClip_fullTrack() {
 
     const fragment = buildAccessUnitPlanFragmentFromTrack({ track: timeline.tracks[0] });
 
-    const plan = fragment.units;
+    const plan = fragment.access_units;
 
     assert(plan.length === 4, "should emit all access units");
 }
@@ -168,7 +191,7 @@ function test_clip_trimming() {
 
     const fragment = buildAccessUnitPlanFragmentFromTrack({ track: timeline.tracks[0] });
 
-    const plan = fragment.units;
+    const plan = fragment.access_units;
 
     assert(plan.length === 2, "trimmed clip should emit only in-range units");
     assert(plan[0].pts === 1_000_000, "first pts must match clip start");
@@ -191,7 +214,7 @@ function test_multiple_clips_same_track() {
 
     const fragment = buildAccessUnitPlanFragmentFromTrack({ track: timeline.tracks[0] });
 
-    const plan = fragment.units;
+    const plan = fragment.access_units;
 
     assert(plan.length === 4, "units from both clips should be included");
     assert(plan[0].pts < plan.at(-1).pts, "order must be preserved");
@@ -213,7 +236,7 @@ function test_audio_video_symmetry() {
 
     const fragment = buildAccessUnitPlanFragmentFromTrack({ track: videoTrack });
 
-    const plan = fragment.units;
+    const plan = fragment.access_units;
 
     assert(plan.length === 2, "video plan ok");
 }
@@ -238,8 +261,8 @@ function test_determinism() {
     const fragmentA = buildAccessUnitPlanFragmentFromTrack({ track: timeline.tracks[0] });
     const fragmentB = buildAccessUnitPlanFragmentFromTrack({ track: timeline.tracks[0] });
 
-    const a = fragmentA.units.map(u => u.pts);
-    const b = fragmentB.units.map(u => u.pts);
+    const a = fragmentA.access_units.map(u => u.pts);
+    const b = fragmentB.access_units.map(u => u.pts);
 
     assert(JSON.stringify(a) === JSON.stringify(b), "output must be deterministic");
 }
@@ -257,7 +280,7 @@ function test_prerender_planning_output_shape() {
     const first = plan.fragments[0];
     assert(first && typeof first === "object", "fragment must be an object");
     assert(first.kind === "access-units", "first fragment kind must be access-units");
-    assert(Array.isArray(first.units), "access-units fragment must have units array");
+    assert(Array.isArray(first.access_units), "access-units fragment must have access_units array");
 }
 
 function test_track_with_no_clips() {
@@ -335,12 +358,6 @@ const SCRIPT_TESTS = [
 ];
 
 
-const ALL_TESTS = [
-    ...SCRIPT_TESTS,
-    ...TRACKVIEW_TESTS,
-    ...PROCEDURAL_CLIP_TESTS
-];
-
 export async function runScriptTests({ quiet = false } = {}) {
     console.log("Running script.js tests…");
 
@@ -380,6 +397,27 @@ export async function runScriptTests({ quiet = false } = {}) {
 /* -------------------------
  * Console exposure
  * ------------------------- */
+
+const ALL_TESTS = [
+    ...SCRIPT_TESTS,
+    ...TRACKVIEW_TESTS,
+    ...PROCEDURAL_CLIP_TESTS,
+    ...PRERENDER_DECODE_CONTAINER_VIDEO_TESTS,
+    ...PRERENDER_DECODE_CONTAINER_AUDIO_TESTS,
+    ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DISPATCH_TESTS,
+    ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_EMPTY_PLAN_TESTS,
+    ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_ORDER_TESTS,
+    ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DETERMINISM_TESTS,
+    ...PROCEDURAL_EXECUTION_TESTS,
+    ...TEXT_OVERLAY_RENDERER_TESTS,
+    ...CONTAINER_DECODE_TESTS,
+    ...PRERENDER_TIME_RESOLUTION_TESTS,
+    ...COMPOSITION_TESTS,
+    ...ENCODE_TESTS,
+    ...EXPORT_ADAPTER_TESTS,
+    ...EXPORT_EXECUTION_STRATEGY_TESTS,
+    ...INTEGRATION_TESTS,
+];
 
 // THIS is the only global leak
 window.runScriptTests = runScriptTests;
