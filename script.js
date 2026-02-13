@@ -215,7 +215,38 @@ import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introsp
 import { getGoldenTruthBox } from "./src/mux/native/tests/goldenTruthExtractors/index.js";
 import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
 
+const CAPTION_FONT_FAMILY = "FrameSmithAntonSC";
+const CAPTION_FONT_URL = "./assets/fonts/AntonSC-Regular.ttf";
+
+async function ensureCaptionFontLoaded() {
+    if (typeof document === "undefined" || !document.fonts) return false;
+
+    try {
+        const fontFace = new FontFace(
+            CAPTION_FONT_FAMILY,
+            `url(${CAPTION_FONT_URL}) format('truetype')`,
+            { weight: "700", style: "normal" }
+        );
+        await fontFace.load();
+        document.fonts.add(fontFace);
+        await document.fonts.load(`700 70px "${CAPTION_FONT_FAMILY}"`);
+        console.log("[TextOverlay] caption font loaded", {
+            family: CAPTION_FONT_FAMILY,
+            source: CAPTION_FONT_URL
+        });
+        return true;
+    } catch (error) {
+        console.warn("[TextOverlay] caption font failed to load; using fallback", {
+            family: CAPTION_FONT_FAMILY,
+            source: CAPTION_FONT_URL,
+            error: error?.message ?? String(error)
+        });
+        return false;
+    }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
+    await ensureCaptionFontLoaded();
 
     // Initialize the timeline, tracks, and clips
     const timeline = await createTimeline();
@@ -1429,7 +1460,7 @@ function findClosestAudioFrame(audioFrames, timestampUs) {
 let textOverlays = [];  // Declare textOverlays in the global scope
 const DEFAULT_TEXT_OVERLAY_STYLE = Object.freeze({
     // Mirrors Drupal caption style: bevan_s_bench_portrait
-    fontFamily: "'Anton SC', 'Anton', 'Arial Black', sans-serif",
+    fontFamily: `'${CAPTION_FONT_FAMILY}', 'Anton SC', 'Anton', 'Arial Black', sans-serif`,
     fontWeight: 700,
     fontSizePx: 70,
     lineHeightPx: 86,
