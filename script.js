@@ -279,6 +279,265 @@ document.addEventListener("DOMContentLoaded", async () => {
         "text-overlay": resolveTextOverlayFragmentIntentAtTime
     };
 
+    async function configureAudioDecoderForTrack({ audioDecoder, audioTrackView }) {
+        const audioDecoderCodec = audioTrackView.codecConfig.codec === "mp4a"
+            ? "mp4a.40.2"
+            : audioTrackView.codecConfig.codec;
+
+        const extractAudioSpecificConfigBytesFromEsds = (esds) => {
+            if (!(esds instanceof Uint8Array)) return null;
+            let offset = 0;
+            while (offset < esds.length) {
+                const tag = esds[offset++];
+                let size = 0;
+                let guard = 0;
+                while (true) {
+                    if (offset >= esds.length) return null;
+                    const b = esds[offset++];
+                    size = (size << 7) | (b & 0x7F);
+                    if ((b & 0x80) === 0) break;
+                    guard++;
+                    if (guard > 4) return null;
+                }
+                if (tag === 0x05) {
+                    if (offset + size > esds.length) return null;
+                    return esds.slice(offset, offset + size);
+                }
+                offset += size;
+            }
+            return null;
+        };
+
+        const createAacLcAudioSpecificConfig = ({ sampleRate, channelCount }) => {
+            const samplingFrequencies = [
+                96000, 88200, 64000, 48000, 44100, 32000,
+                24000, 22050, 16000, 12000, 11025, 8000, 7350
+            ];
+            const audioObjectType = 2; // AAC-LC
+            const samplingFrequencyIndex = samplingFrequencies.indexOf(sampleRate);
+            if (samplingFrequencyIndex === -1) return null;
+            if (!Number.isInteger(channelCount) || channelCount <= 0 || channelCount > 7) return null;
+
+            const byte0 = (audioObjectType << 3) | (samplingFrequencyIndex >> 1);
+            const byte1 = ((samplingFrequencyIndex & 1) << 7) | (channelCount << 3);
+            return new Uint8Array([byte0, byte1]);
+        };
+
+        const sourceEsds = audioTrackView.codecConfig.esds;
+        const aacAsc = sourceEsds
+            ? parseAudioSpecificConfigFromEsds({ esds: sourceEsds })
+            : null;
+        const audioDecoderCodecFromSource = audioTrackView.codecConfig.codec === "mp4a" && aacAsc?.audioObjectType
+            ? `mp4a.40.${aacAsc.audioObjectType}`
+            : audioDecoderCodec;
+        const normalizedAudioSampleRate = (audioTrackView.codecConfig.sampleRate ?? 48_000) > 192_000
+            ? ((audioTrackView.codecConfig.sampleRate ?? 48_000) >>> 16)
+            : (audioTrackView.codecConfig.sampleRate ?? 48_000);
+
+        let audioDecoderDescription = audioTrackView.codecConfig.codec === "mp4a"
+            ? extractAudioSpecificConfigBytesFromEsds(sourceEsds)
+            : (audioTrackView.codecConfig.dOps ?? audioTrackView.codecConfig.esds);
+        const audioDecoderChannelCount = audioTrackView.codecConfig.channelCount ?? 2;
+        const audioDecoderSampleRate = normalizedAudioSampleRate;
+
+        if (!audioDecoderDescription && audioTrackView.codecConfig.codec === "mp4a") {
+            audioDecoderDescription = createAacLcAudioSpecificConfig({
+                sampleRate: audioDecoderSampleRate,
+                channelCount: audioDecoderChannelCount
+            });
+        }
+
+        const audioDecoderCandidates = [
+            {
+                codec: audioDecoderCodecFromSource,
+                numberOfChannels: audioDecoderChannelCount,
+                sampleRate: audioDecoderSampleRate,
+                ...(audioDecoderDescription ? { description: audioDecoderDescription } : {})
+            },
+            {
+                codec: audioDecoderCodecFromSource,
+                numberOfChannels: audioDecoderChannelCount,
+                sampleRate: audioDecoderSampleRate
+            },
+            {
+                codec: "mp4a.40.2",
+                numberOfChannels: audioDecoderChannelCount,
+                sampleRate: audioDecoderSampleRate,
+                ...(audioDecoderDescription ? { description: audioDecoderDescription } : {})
+            },
+            {
+                codec: "mp4a.40.2",
+                numberOfChannels: audioDecoderChannelCount,
+                sampleRate: audioDecoderSampleRate
+            }
+        ];
+
+        const preflightAudioDecoderConfigs = async () => {
+            const rows = [];
+            for (const candidate of audioDecoderCandidates) {
+                const row = {
+                    codec: candidate.codec,
+                    sampleRate: candidate.sampleRate,
+                    numberOfChannels: candidate.numberOfChannels,
+                    hasDescription: !!candidate.description
+                };
+
+                if (typeof AudioDecoder.isConfigSupported !== "function") {
+                    row.isConfigSupported = "not-available";
+                    rows.push(row);
+                    continue;
+                }
+
+                try {
+                    const support = await AudioDecoder.isConfigSupported(candidate);
+                    row.isConfigSupported = support.supported ? "yes" : "no";
+                    if (!support.supported) {
+                        row.reason = "reported unsupported";
+                    }
+                } catch (error) {
+                    row.isConfigSupported = "error";
+                    row.reason = error?.message ?? String(error);
+                }
+
+                rows.push(row);
+            }
+
+            console.group("AudioDecoder preflight");
+            console.table(rows);
+            console.groupEnd();
+        };
+
+        await preflightAudioDecoderConfigs();
+        console.log("[Encode] audio decoder preflight complete");
+
+        for (const candidate of audioDecoderCandidates) {
+            try {
+                if (typeof AudioDecoder.isConfigSupported === "function") {
+                    const support = await AudioDecoder.isConfigSupported(candidate);
+                    if (!support.supported) {
+                        continue;
+                    }
+                }
+                audioDecoder.configure(candidate);
+                return candidate;
+            } catch {
+                // Try next candidate.
+            }
+        }
+
+        throw new Error("AudioDecoder could not be configured for source audio track.");
+    }
+
+    async function configureVideoEncoderForTrack({ videoEncoder, videoTrackView, exportFps }) {
+        const sourceWidth =
+            videoTrackView?.containerMeta?.codedWidth ??
+            videoTrackView?.codecConfig?.codedWidth ??
+            1080;
+        const sourceHeight =
+            videoTrackView?.containerMeta?.codedHeight ??
+            videoTrackView?.codecConfig?.codedHeight ??
+            1920;
+        const sourceAspect = sourceWidth > 0 && sourceHeight > 0
+            ? sourceWidth / sourceHeight
+            : (16 / 9);
+        const FORCE_DEBUG_RESOLUTION = true;
+        const DEBUG_FORCED_RESOLUTION = { width: 720, height: 1280 };
+
+        const toEven = (value) => {
+            const rounded = Math.max(2, Math.round(value));
+            return rounded % 2 === 0 ? rounded : rounded - 1;
+        };
+
+        const makeResolutionFromHeight = (height) => {
+            const h = toEven(height);
+            const w = toEven(h * sourceAspect);
+            return { width: w, height: h };
+        };
+
+        const resolutionLadder = FORCE_DEBUG_RESOLUTION
+            ? [DEBUG_FORCED_RESOLUTION]
+            : [
+                {
+                    width: toEven(Math.min(sourceWidth, 1920)),
+                    height: toEven(Math.min(sourceHeight, 1080))
+                },
+                makeResolutionFromHeight(1280),
+                makeResolutionFromHeight(960),
+                makeResolutionFromHeight(720),
+                makeResolutionFromHeight(540),
+                { width: 640, height: 360 }
+            ];
+
+        const dedupedResolutions = [];
+        const seenResolutionKeys = new Set();
+        for (const resolution of resolutionLadder) {
+            const key = `${resolution.width}x${resolution.height}`;
+            if (seenResolutionKeys.has(key)) continue;
+            seenResolutionKeys.add(key);
+            dedupedResolutions.push(resolution);
+        }
+
+        const estimateBitrate = ({ width, height }) => {
+            const pixels = width * height;
+            const targetBitsPerPixelPerFrame = 0.12;
+            const estimated = Math.round(pixels * exportFps * targetBitsPerPixelPerFrame);
+            return Math.max(1_200_000, Math.min(8_000_000, estimated));
+        };
+
+        const videoEncoderConfigs = [];
+        for (const resolution of dedupedResolutions) {
+            const bitrate = estimateBitrate(resolution);
+            // MVP constraint:
+            // Keep timeline export on the same simple WebCodecs shape used by
+            // NativeMuxer's semantic E2E test. Prefer realtime configs and
+            // avoid quality-oriented reorder paths.
+            videoEncoderConfigs.push(
+                {
+                    codec: "avc1.4D401F",
+                    width: resolution.width,
+                    height: resolution.height,
+                    bitrate,
+                    framerate: exportFps,
+                    latencyMode: "realtime",
+                    avc: { format: "avc" }
+                },
+                {
+                    codec: "avc1.42001E",
+                    width: resolution.width,
+                    height: resolution.height,
+                    bitrate,
+                    framerate: exportFps,
+                    latencyMode: "realtime",
+                    avc: { format: "avc" }
+                }
+            );
+        }
+
+        for (const candidate of videoEncoderConfigs) {
+            try {
+                if (typeof VideoEncoder.isConfigSupported === "function") {
+                    const support = await VideoEncoder.isConfigSupported(candidate);
+                    if (!support.supported) {
+                        continue;
+                    }
+                }
+                videoEncoder.configure(candidate);
+                console.log("[Encode] video encoder configured", {
+                    codec: candidate.codec,
+                    latencyMode: candidate.latencyMode ?? "quality",
+                    width: candidate.width,
+                    height: candidate.height,
+                    bitrate: candidate.bitrate
+                });
+                return candidate;
+            } catch {
+                // Try next candidate.
+            }
+        }
+
+        throw new Error("VideoEncoder could not be configured for export.");
+    }
+
     previewBtn.onclick = () => {
         console.log("Preview button clicked");
 
@@ -533,72 +792,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 description: avcC
             });
 
-            const audioDecoderCodec = audioTrackView.codecConfig.codec === "mp4a"
-                ? "mp4a.40.2"
-                : audioTrackView.codecConfig.codec;
-
-            const extractAudioSpecificConfigBytesFromEsds = (esds) => {
-                if (!(esds instanceof Uint8Array)) return null;
-                let offset = 0;
-                while (offset < esds.length) {
-                    const tag = esds[offset++];
-                    let size = 0;
-                    let guard = 0;
-                    while (true) {
-                        if (offset >= esds.length) return null;
-                        const b = esds[offset++];
-                        size = (size << 7) | (b & 0x7F);
-                        if ((b & 0x80) === 0) break;
-                        guard++;
-                        if (guard > 4) return null;
-                    }
-                    if (tag === 0x05) {
-                        if (offset + size > esds.length) return null;
-                        return esds.slice(offset, offset + size);
-                    }
-                    offset += size;
-                }
-                return null;
-            };
-
-            const createAacLcAudioSpecificConfig = ({ sampleRate, channelCount }) => {
-                const samplingFrequencies = [
-                    96000, 88200, 64000, 48000, 44100, 32000,
-                    24000, 22050, 16000, 12000, 11025, 8000, 7350
-                ];
-                const audioObjectType = 2; // AAC-LC
-                const samplingFrequencyIndex = samplingFrequencies.indexOf(sampleRate);
-                if (samplingFrequencyIndex === -1) return null;
-                if (!Number.isInteger(channelCount) || channelCount <= 0 || channelCount > 7) return null;
-
-                const byte0 = (audioObjectType << 3) | (samplingFrequencyIndex >> 1);
-                const byte1 = ((samplingFrequencyIndex & 1) << 7) | (channelCount << 3);
-                return new Uint8Array([byte0, byte1]);
-            };
-
-            const sourceEsds = audioTrackView.codecConfig.esds;
-            const aacAsc = sourceEsds
-                ? parseAudioSpecificConfigFromEsds({ esds: sourceEsds })
-                : null;
-            const audioDecoderCodecFromSource = audioTrackView.codecConfig.codec === "mp4a" && aacAsc?.audioObjectType
-                ? `mp4a.40.${aacAsc.audioObjectType}`
-                : audioDecoderCodec;
-            const normalizedAudioSampleRate = (audioTrackView.codecConfig.sampleRate ?? 48_000) > 192_000
-                ? ((audioTrackView.codecConfig.sampleRate ?? 48_000) >>> 16)
-                : (audioTrackView.codecConfig.sampleRate ?? 48_000);
-
-            let audioDecoderDescription = audioTrackView.codecConfig.codec === "mp4a"
-                ? extractAudioSpecificConfigBytesFromEsds(sourceEsds)
-                : (audioTrackView.codecConfig.dOps ?? audioTrackView.codecConfig.esds);
-            const audioDecoderChannelCount = audioTrackView.codecConfig.channelCount ?? 2;
-            const audioDecoderSampleRate = normalizedAudioSampleRate;
-
-            if (!audioDecoderDescription && audioTrackView.codecConfig.codec === "mp4a") {
-                audioDecoderDescription = createAacLcAudioSpecificConfig({
-                    sampleRate: audioDecoderSampleRate,
-                    channelCount: audioDecoderChannelCount
-                });
-            }
             const audioDecoder = new AudioDecoder({
                 output(audioData) {
                     decodedAudioData.push(audioData);
@@ -609,89 +802,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }
             });
 
-            const audioDecoderCandidates = [
-                {
-                    codec: audioDecoderCodecFromSource,
-                    numberOfChannels: audioDecoderChannelCount,
-                    sampleRate: audioDecoderSampleRate,
-                    ...(audioDecoderDescription ? { description: audioDecoderDescription } : {})
-                },
-                {
-                    codec: audioDecoderCodecFromSource,
-                    numberOfChannels: audioDecoderChannelCount,
-                    sampleRate: audioDecoderSampleRate
-                },
-                {
-                    codec: "mp4a.40.2",
-                    numberOfChannels: audioDecoderChannelCount,
-                    sampleRate: audioDecoderSampleRate,
-                    ...(audioDecoderDescription ? { description: audioDecoderDescription } : {})
-                },
-                {
-                    codec: "mp4a.40.2",
-                    numberOfChannels: audioDecoderChannelCount,
-                    sampleRate: audioDecoderSampleRate
-                }
-            ];
-
-            const preflightAudioDecoderConfigs = async () => {
-                const rows = [];
-                for (const candidate of audioDecoderCandidates) {
-                    const row = {
-                        codec: candidate.codec,
-                        sampleRate: candidate.sampleRate,
-                        numberOfChannels: candidate.numberOfChannels,
-                        hasDescription: !!candidate.description
-                    };
-
-                    if (typeof AudioDecoder.isConfigSupported !== "function") {
-                        row.isConfigSupported = "not-available";
-                        rows.push(row);
-                        continue;
-                    }
-
-                    try {
-                        const support = await AudioDecoder.isConfigSupported(candidate);
-                        row.isConfigSupported = support.supported ? "yes" : "no";
-                        if (!support.supported) {
-                            row.reason = "reported unsupported";
-                        }
-                    } catch (error) {
-                        row.isConfigSupported = "error";
-                        row.reason = error?.message ?? String(error);
-                    }
-
-                    rows.push(row);
-                }
-
-                console.group("AudioDecoder preflight");
-                console.table(rows);
-                console.groupEnd();
-            };
-
-            await preflightAudioDecoderConfigs();
-            console.log("[Encode] audio decoder preflight complete");
-
-            let configuredAudioDecoder = false;
-            for (const candidate of audioDecoderCandidates) {
-                if (configuredAudioDecoder) break;
-                try {
-                    if (typeof AudioDecoder.isConfigSupported === "function") {
-                        const support = await AudioDecoder.isConfigSupported(candidate);
-                        if (!support.supported) {
-                            continue;
-                        }
-                    }
-                    audioDecoder.configure(candidate);
-                    configuredAudioDecoder = true;
-                } catch {
-                    // Try next candidate.
-                }
-            }
-
-            if (!configuredAudioDecoder) {
-                throw new Error("AudioDecoder could not be configured for source audio track.");
-            }
+            await configureAudioDecoderForTrack({
+                audioDecoder,
+                audioTrackView
+            });
 
             const videoEncoder = new VideoEncoder({
                 output(chunk, metadata) {
@@ -706,119 +820,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }
             });
 
-            const sourceWidth =
-                videoTrackView?.containerMeta?.codedWidth ??
-                videoTrackView?.codecConfig?.codedWidth ??
-                1080;
-            const sourceHeight =
-                videoTrackView?.containerMeta?.codedHeight ??
-                videoTrackView?.codecConfig?.codedHeight ??
-                1920;
-            const sourceAspect = sourceWidth > 0 && sourceHeight > 0
-                ? sourceWidth / sourceHeight
-                : (16 / 9);
-            const FORCE_DEBUG_RESOLUTION = true;
-            const DEBUG_FORCED_RESOLUTION = { width: 720, height: 1280 };
-
-            const toEven = (value) => {
-                const rounded = Math.max(2, Math.round(value));
-                return rounded % 2 === 0 ? rounded : rounded - 1;
-            };
-
-            const makeResolutionFromHeight = (height) => {
-                const h = toEven(height);
-                const w = toEven(h * sourceAspect);
-                return { width: w, height: h };
-            };
-
-            const resolutionLadder = FORCE_DEBUG_RESOLUTION
-                ? [DEBUG_FORCED_RESOLUTION]
-                : [
-                    {
-                        width: toEven(Math.min(sourceWidth, 1920)),
-                        height: toEven(Math.min(sourceHeight, 1080))
-                    },
-                    makeResolutionFromHeight(1280),
-                    makeResolutionFromHeight(960),
-                    makeResolutionFromHeight(720),
-                    makeResolutionFromHeight(540),
-                    { width: 640, height: 360 }
-                ];
-
-            const dedupedResolutions = [];
-            const seenResolutionKeys = new Set();
-            for (const resolution of resolutionLadder) {
-                const key = `${resolution.width}x${resolution.height}`;
-                if (seenResolutionKeys.has(key)) continue;
-                seenResolutionKeys.add(key);
-                dedupedResolutions.push(resolution);
-            }
-
-            const estimateBitrate = ({ width, height }) => {
-                const pixels = width * height;
-                const targetBitsPerPixelPerFrame = 0.12;
-                const estimated = Math.round(pixels * exportFps * targetBitsPerPixelPerFrame);
-                return Math.max(1_200_000, Math.min(8_000_000, estimated));
-            };
-
-            const videoEncoderConfigs = [];
-            for (const resolution of dedupedResolutions) {
-                const bitrate = estimateBitrate(resolution);
-                // MVP constraint:
-                // Keep timeline export on the same simple WebCodecs shape used by
-                // NativeMuxer's semantic E2E test. Prefer realtime configs and
-                // avoid quality-oriented reorder paths.
-                videoEncoderConfigs.push(
-                    {
-                        codec: "avc1.4D401F",
-                        width: resolution.width,
-                        height: resolution.height,
-                        bitrate,
-                        framerate: exportFps,
-                        latencyMode: "realtime",
-                        avc: { format: "avc" }
-                    },
-                    {
-                        codec: "avc1.42001E",
-                        width: resolution.width,
-                        height: resolution.height,
-                        bitrate,
-                        framerate: exportFps,
-                        latencyMode: "realtime",
-                        avc: { format: "avc" }
-                    }
-                );
-            }
-
-            let configuredVideoEncoder = false;
-            let configuredVideoEncoderConfig = null;
-            for (const candidate of videoEncoderConfigs) {
-                if (configuredVideoEncoder) break;
-                try {
-                    if (typeof VideoEncoder.isConfigSupported === "function") {
-                        const support = await VideoEncoder.isConfigSupported(candidate);
-                        if (!support.supported) {
-                            continue;
-                        }
-                    }
-                    videoEncoder.configure(candidate);
-                    configuredVideoEncoder = true;
-                    configuredVideoEncoderConfig = candidate;
-                    console.log("[Encode] video encoder configured", {
-                        codec: candidate.codec,
-                        latencyMode: candidate.latencyMode ?? "quality",
-                        width: candidate.width,
-                        height: candidate.height,
-                        bitrate: candidate.bitrate
-                    });
-                } catch {
-                    // Try next candidate.
-                }
-            }
-
-            if (!configuredVideoEncoder) {
-                throw new Error("VideoEncoder could not be configured for export.");
-            }
+            const configuredVideoEncoderConfig = await configureVideoEncoderForTrack({
+                videoEncoder,
+                videoTrackView,
+                exportFps
+            });
 
             const audioEncoder = new AudioEncoder({
                 output(chunk, metadata) {
