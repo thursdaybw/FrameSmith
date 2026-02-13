@@ -199,9 +199,6 @@ import { ProceduralClip } from "./src/timeline/ProceduralClip.js";
 
 import { resolveTextOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/textOverlayFragmentIntentResolver.js";
 
-import { createRenderPlan, createImageNode } from "./renderPlan/RenderPlan.js";
-import { renderFrame } from "./renderPlan/RenderPlanRenderer.js";
-
 import { listTracksFromMp4 } from "./src/mux/native/demux/container/listTracksFromMp4.js";
 import { createContainerTrackViewFromMp4 } from "./src/mux/native/demux/trackview/createContainerTrackViewFromMp4.js";
 
@@ -226,21 +223,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Now you can interact with the timeline, tracks, and clips here
     //console.log(timeline);  // Debug log to ensure timeline is set up correctly
-
-    const renderPlan = createRenderPlan();
-
-    const logoImg = new Image();
-    logoImg.src = "./logo.png";
-
-    /* ADD THIS BLOCK HERE — ONCE */
-    const LOGO_X = 0.03;   // 3% from left
-    const LOGO_Y = 0.03;   // 3% from top
-    const LOGO_W = 0.30;   // 30% of frame width
-    const LOGO_H = null;   // TEMP — square logo
-
-    renderPlan.elements.push(
-        createImageNode(logoImg, LOGO_X, LOGO_Y, LOGO_W, LOGO_H)
-    );
 
     // -------------------------------------------------
     // Pre-render timing configuration

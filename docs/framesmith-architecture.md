@@ -97,8 +97,7 @@ current timeline-export stabilization target.
 Current state:
 
 - `preview.js` is not active in `index.html` (script tag is commented out).
-- `renderPlan/RenderPlanRenderer.js` is imported by `script.js` but its
-  `renderFrame(...)` path is not currently invoked by the active preview loop.
+- `renderPlan/*` was legacy-only and has been removed from active runtime code.
 - `textOverlayModel.js`, `textOverlayRenderer.js`, and
   `textOverlayValidator.js` are loaded/available for legacy preview paths and
   reference behavior, but are not part of the current export-critical path.

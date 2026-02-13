@@ -1,5 +1,3 @@
-import { renderFrame } from "../renderPlan/RenderPlanRenderer.js";
-
 import {
     buildVideoTrackFromWebCodecs,
     buildAudioTrackFromWebCodecs
@@ -128,13 +126,11 @@ export class ExportEngine {
             const timestamp =
                 Math.round(i * (1_000_000 / this.fps));
 
-            renderFrame({
-                context: this.ctx,
-                canvas: this.canvas,
-                renderPlan: this.renderPlan,
-                captions: this.captions,
-                t: timestamp / 1_000_000
-            });
+            // Legacy fallback compositor: fill a black frame.
+            // Historical renderPlan renderer has been removed from active code.
+            this.ctx.clearRect(0, 0, this.width, this.height);
+            this.ctx.fillStyle = "#000";
+            this.ctx.fillRect(0, 0, this.width, this.height);
 
             const frame = new VideoFrame(this.canvas, { timestamp });
             encoder.encode(frame);
