@@ -30,20 +30,21 @@ function toCssColor(background = {}) {
 }
 
 const DEFAULT_TEXT_STYLE = Object.freeze({
-    fontFamily: "Arial Black, Arial, sans-serif",
-    fontSizePx: 64,
-    lineHeightPx: 82,
-    sidePaddingPx: 64,
-    bottomPaddingPx: 148,
+    fontFamily: "'Anton SC', 'Anton', 'Arial Black', sans-serif",
+    fontWeight: 700,
+    fontSizePx: 70,
+    lineHeightPx: 86,
+    sidePaddingPx: 75,
+    bottomPaddingPx: 208,
     textAlign: "center",
-    baseFill: "#FFFFFF",
-    baseStroke: "rgba(0, 0, 0, 0.85)",
-    strokeWidthPx: 6,
-    activeFill: "#A5FF52",
-    secondaryActiveFill: "#FFD166",
+    baseFill: "#D7BD65",
+    baseStroke: "#000000",
+    strokeWidthPx: 2,
+    activeFill: "#6BC4E1",
+    secondaryActiveFill: "#665D7A",
     secondaryHighlightEvery: 5,
-    shadowColor: "rgba(0, 0, 0, 0.55)",
-    shadowBlurPx: 8
+    shadowColor: "rgba(0, 0, 0, 0)",
+    shadowBlurPx: 0
 });
 
 function normalizeTextStyle(style = {}) {
@@ -128,7 +129,8 @@ function drawStyledTextOverlayItem({ ctx, canvas, item, timeSeconds, yOffsetPx }
     const maxLineWidth = Math.max(16, canvas.width - (sidePaddingPx * 2));
     const highlightEvery = Math.max(1, Math.round(style.secondaryHighlightEvery));
 
-    ctx.font = `${fontSizePx}px ${style.fontFamily}`;
+    const fontWeight = style.fontWeight ?? 700;
+    ctx.font = `${fontWeight} ${fontSizePx}px ${style.fontFamily}`;
     ctx.textBaseline = "alphabetic";
     ctx.textAlign = "left";
     ctx.lineJoin = "round";

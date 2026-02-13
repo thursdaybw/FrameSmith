@@ -1428,20 +1428,32 @@ function findClosestAudioFrame(audioFrames, timestampUs) {
 
 let textOverlays = [];  // Declare textOverlays in the global scope
 const DEFAULT_TEXT_OVERLAY_STYLE = Object.freeze({
-    fontFamily: "Arial Black, Arial, sans-serif",
-    fontSizePx: 64,
-    lineHeightPx: 82,
-    sidePaddingPx: 64,
-    bottomPaddingPx: 148,
+    // Mirrors Drupal caption style: bevan_s_bench_portrait
+    fontFamily: "'Anton SC', 'Anton', 'Arial Black', sans-serif",
+    fontWeight: 700,
+    fontSizePx: 70,
+    lineHeightPx: 86,
+    // Drupal ASS style uses MarginL/MarginR=200 on 1920 and MarginV=175 on 1080.
+    // For 720x1280 export this maps closely to:
+    sidePaddingPx: 75,
+    bottomPaddingPx: 208,
     textAlign: "center",
-    baseFill: "#FFFFFF",
-    baseStroke: "rgba(0, 0, 0, 0.85)",
-    strokeWidthPx: 6,
-    activeFill: "#A5FF52",
-    secondaryActiveFill: "#FFD166",
+    // ASS colors use AABBGGRR; values below are converted to CSS RGB.
+    // primaryColour: &H0065bdd7 -> #d7bd65
+    // primaryHighlight.primaryColour: &H00e1c46b -> #6bc4e1
+    // secondaryHighlight.primaryColour: &H007a5d66 -> #665d7a
+    baseFill: "#D7BD65",
+    baseStroke: "#000000",
+    strokeWidthPx: 2,
+    activeFill: "#6BC4E1",
+    secondaryActiveFill: "#665D7A",
     secondaryHighlightEvery: 5,
-    shadowColor: "rgba(0, 0, 0, 0.55)",
-    shadowBlurPx: 8
+    // Old Drupal ASS chunking defaults (AssSubtitleGenerator)
+    maxWordsPerChunk: 6,
+    maxChunkDurationSeconds: 2.0,
+    pauseSplitThresholdSeconds: 0.3,
+    shadowColor: "rgba(0, 0, 0, 0)",
+    shadowBlurPx: 0
 });
 
 function tokenizeTranscriptText(text) {
@@ -1494,24 +1506,62 @@ function buildTimedWordsFromSegment(segment) {
 function buildTextOverlayItemsFromWhisperJson(whisperJson) {
     if (!whisperJson || !Array.isArray(whisperJson.segments)) return [];
 
-    return whisperJson.segments
-        .map((segment, segmentIndex) => {
-            const words = buildTimedWordsFromSegment(segment);
-            if (words.length === 0) return null;
-            const startSeconds = typeof segment.start === "number" ? segment.start : words[0].start;
-            const endSeconds = typeof segment.end === "number" ? segment.end : words[words.length - 1].end;
+    const styleDefaults = { ...DEFAULT_TEXT_OVERLAY_STYLE };
+    const maxWordsPerChunk = Math.max(1, Math.floor(styleDefaults.maxWordsPerChunk ?? 6));
+    const maxChunkDurationSeconds = Math.max(0.1, Number(styleDefaults.maxChunkDurationSeconds ?? 2.0));
+    const pauseSplitThresholdSeconds = Math.max(0, Number(styleDefaults.pauseSplitThresholdSeconds ?? 0.3));
 
-            return {
-                id: `whisper-segment-${segmentIndex}`,
-                startSeconds,
-                endSeconds,
-                words,
-                style: {
-                    ...DEFAULT_TEXT_OVERLAY_STYLE
-                },
-                override: [],
-                animate: []
+    let nextOverlayIndex = 0;
+
+    return whisperJson.segments
+        .flatMap((segment) => {
+            const words = buildTimedWordsFromSegment(segment);
+            if (words.length === 0) return [];
+
+            const segmentItems = [];
+            let chunkWords = [];
+            let chunkStartSeconds = words[0].start;
+
+            const pushChunk = () => {
+                if (chunkWords.length === 0) return;
+                const firstWord = chunkWords[0];
+                const lastWord = chunkWords[chunkWords.length - 1];
+                segmentItems.push({
+                    id: `whisper-segment-${nextOverlayIndex++}`,
+                    startSeconds: firstWord.start,
+                    endSeconds: lastWord.end,
+                    words: chunkWords.map((word) => ({ ...word })),
+                    style: {
+                        ...styleDefaults
+                    },
+                    override: [],
+                    animate: []
+                });
             };
+
+            for (let index = 0; index < words.length; index += 1) {
+                const word = words[index];
+                const nextWord = words[index + 1];
+
+                if (chunkWords.length === 0) {
+                    chunkStartSeconds = word.start;
+                }
+                chunkWords.push(word);
+
+                const chunkDurationSeconds = word.end - chunkStartSeconds;
+                const pauseSeconds = nextWord ? (nextWord.start - word.end) : 0;
+                const reachedMaxWords = chunkWords.length >= maxWordsPerChunk;
+                const reachedMaxDuration = chunkDurationSeconds >= maxChunkDurationSeconds;
+                const reachedPauseSplit = !!nextWord && pauseSeconds >= pauseSplitThresholdSeconds;
+                const reachedEndOfSegment = !nextWord;
+
+                if (reachedMaxWords || reachedMaxDuration || reachedPauseSplit || reachedEndOfSegment) {
+                    pushChunk();
+                    chunkWords = [];
+                }
+            }
+
+            return segmentItems;
         })
         .filter(Boolean);
 }
