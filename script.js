@@ -205,8 +205,6 @@ import { openContainerFromMp4 } from "./src/mux/native/demux/container/openConta
 // to future API
 import { buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.js";
 
-import { createId } from "./src/core/identity/createId.js";
-
 import { routeProceduralFragmentAtTimeToResolver } from "./src/timeline/procedural/routeProceduralFragmentAtTimeToResolver.js";
 
 import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
@@ -1441,23 +1439,6 @@ window.testDownload = () => {
     const blob = new Blob(["hello"], { type: "text/plain" });
     downloadBlob(blob, "test.txt");
 };
-
-function findClosestAudioFrame(audioFrames, timestampUs) {
-    let closest = audioFrames[0];
-    let minDelta = Math.abs(audioFrames[0].timestamp - timestampUs);
-
-    for (const frame of audioFrames) {
-        const delta = Math.abs(frame.timestamp - timestampUs);
-        if (delta < minDelta) {
-            minDelta = delta;
-            closest = frame;
-        }
-    }
-
-    return { closest, deltaUs: minDelta };
-}
-
-let textOverlays = [];  // Declare textOverlays in the global scope
 const DEFAULT_TEXT_OVERLAY_STYLE = Object.freeze({
     // Mirrors Drupal caption style: bevan_s_bench_portrait
     fontFamily: `'${CAPTION_FONT_FAMILY}', 'Anton SC', 'Anton', 'Arial Black', sans-serif`,
@@ -1645,7 +1626,6 @@ async function loadTimelineTextOverlays() {
  * - Fetch container bytes for referenced media assets
  * - Invoke demux boundary adapters
  * - Construct ContainerTrackView instances
- * - Assemble an Mp4Asset from pre-built TrackViews
  * - Select which tracks participate in the Timeline
  * - Instantiate Timeline, Track, and Clip objects
  *
@@ -1690,7 +1670,6 @@ async function createTimeline() {
 
     const mp4Bytes = new Uint8Array(await resp.arrayBuffer());
     const transcriptOverlayItems = await loadTimelineTextOverlays();
-    textOverlays = transcriptOverlayItems;
 
     const container = openContainerFromMp4({ mp4Bytes });
     const nativeTrackViews = container.createTrackViews();
@@ -1929,257 +1908,6 @@ export function createTimelineFromPreparedAssets({ trackViews, textOverlayItems 
     );
 
     return timeline;
-}
-
-/**
- * Asset
- *
- * Abstract base type for all sources referenced by the timeline.
- *
- * CURRENT STAGE RESPONSIBILITIES:
- * - Represent a source of media or procedural content
- *
- * INTENTIONALLY OUT OF SCOPE *FOR THIS STAGE*:
- * - Time-based sampling
- * - Decoding
- * - Timeline evaluation
- *
- * NOTES:
- * - Different Asset subclasses participate in different stages.
- * - Container-backed assets expose ContainerTrackViews.
- * - Procedural assets (text, images, effects) are evaluated later.
- */
-class Asset {
-    constructor(filePath) {
-        this.id = createId(); // Engine identity (opaque, stable)
-        this.filePath = filePath;
-        this.data = null;
-    }
-
-    // Define a method to be overridden by subclasses
-    async load() {
-        throw new Error('load method must be implemented by subclass');
-    }
-}
-
-/**
- * VideoAsset
- *
- * Transitional asset representing a container-backed video source.
- *
- * CURRENT STAGE RESPONSIBILITIES:
- * - Fetch raw container bytes
- *
- * INTENTIONALLY OUT OF SCOPE *FOR THIS STAGE*:
- * - Frame decoding
- * - Rendering
- * - Timeline evaluation
- *
- * NOTES:
- * - This class exists to bridge preview-era code with
- *   container-driven compilation.
- * - It will shrink or disappear as the pipeline solidifies.
- */
-class VideoAsset extends Asset {
-
-    /**
-     * Fetch raw MP4 container bytes.
-     *
-     * Contract:
-     * - Uses this.filePath
-     * - Fetches once
-     * - Stores raw container bytes
-     * - Does NOT decode
-     * - Does NOT parse tracks
-     */
-    async fetchRawBytes() {
-        console.log(`Fetching raw video data from: ${this.filePath}`);
-
-        const response = await fetch(this.filePath);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch video asset from ${this.filePath}`);
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        console.log(`Fetched ${arrayBuffer.byteLength} bytes`);
-
-        this.data = arrayBuffer;
-        return this.data;
-    }
-}
-
-/**
- * AudioAsset
- *
- * Transitional asset representing a container-backed audio source.
- *
- * CURRENT STAGE RESPONSIBILITIES:
- * - Fetch raw container bytes
- *
- * INTENTIONALLY OUT OF SCOPE *FOR THIS STAGE*:
- * - PCM decoding during compilation
- * - Time-based audio sampling
- *
- * NOTES:
- * - Any decoding here is temporary and will move
- *   into a dedicated decode stage later.
- */
-class AudioAsset extends Asset {
-
-    /**
-     * Fetch raw audio container bytes.
-     *
-     * Contract:
-     * - Uses this.filePath
-     * - Fetches once
-     * - Stores raw container bytes or decoded buffer (temporary)
-     * - Does NOT provide time-based access
-     * - Does NOT participate in timeline evaluation
-     *
-     * NOTE:
-     * Decoding here is transitional and will be removed
-     * once audio decoding moves to the prerender stage.
-     */
-    async fetchRawBytes() {
-        console.log(`Fetching raw audio data from: ${this.filePath}`);
-
-        const response = await fetch(this.filePath);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch audio asset from ${this.filePath}`);
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        console.log(`Fetched ${arrayBuffer.byteLength} bytes`);
-
-        // TEMPORARY: decoding here will be removed later
-        const audioContext = new AudioContext();
-        this.data = await audioContext.decodeAudioData(arrayBuffer);
-
-        return this.data;
-    }
-}
-
-/**
- * Mp4Asset
- *
- * Represents a container-backed media source AFTER demux.
- *
- * Contract:
- * - Owns a set of ContainerTrackViews supplied from below.
- * - Does NOT perform demux.
- * - Does NOT select tracks.
- * - Does NOT assume media types or cardinality.
- *
- * Invariants:
- * - trackViews is an array.
- * - Each entry conforms to the TrackView interface.
- *
- * Notes:
- * - Demux happens below Mp4Asset.
- * - Track selection happens above Mp4Asset.
- */
-class Mp4Asset {
-    constructor({ trackViews }) {
-        this._trackViews = trackViews;
-    }
-
-    getTrackViews() {
-        return this._trackViews;
-    }
-}
-
-/**
- * ImageAsset
- *
- * Represents a procedural, non-container visual source.
- *
- * Contract:
- * - Participates in the Timeline via TrackViews, like all other Assets.
- * - Exposes one or more procedural TrackViews via getTrackViews().
- * - Does NOT read container data.
- * - Does NOT produce access units.
- * - Does NOT depend on MP4 semantics.
- *
- * TrackView behavior:
- * - mediaType === "image"
- * - iterateSamplesByPtsRange() yields no samples.
- * - Presence of the TrackView allows Clips to bind time ranges
- *   even though no container-timed samples exist.
- *
- * Architectural purpose:
- * - Keeps the asset → track → clip pipeline uniform.
- * - Avoids special-casing non-container assets in Timeline logic.
- * - Allows future procedural evaluation stages (render graph, effects)
- *   to consume Image tracks without changing Timeline semantics.
- */
-class ImageAsset extends Asset {
-    constructor({ bitmap }) {
-        super();
-        this.bitmap = bitmap;
-        this._trackViews = null;
-    }
-
-    /**
-     * Return procedural TrackViews for this asset.
-     *
-     * @returns {Array<Object>} trackViews
-     *
-     * Invariants:
-     * - Always returns an array.
-     * - Returned TrackViews conform to the TrackView interface.
-     * - No access units are emitted at this stage.
-     */
-    getTrackViews() {
-        if (this._trackViews) return this._trackViews;
-
-        this._trackViews = [
-            {
-                mediaType: "image",
-                asset: this,
-
-                /**
-                 * Procedural image tracks emit no container-timed samples.
-                 * Timing is interpreted later by render stages, not here.
-                 */
-                *iterateSamplesByPtsRange() {
-                    // intentionally empty
-                }
-            }
-        ];
-
-        return this._trackViews;
-    }
-}
-
-/**
- * TextAsset
- *
- * Represents procedural, non-container content.
- *
- * CURRENT STAGE RESPONSIBILITIES:
- * - Describe layout and animation intent
- *
- * NOTES:
- * - Text does not participate in container compilation.
- * - It is evaluated later as part of render graph execution.
- */
-class TextAsset extends Asset {
-    constructor({ layout, animations }) {
-        super();
-        this.layout = layout;
-        this.animations = animations;
-    }
-
-    getKind() {
-        return "procedural";
-    }
-}
-
-
-function* evaluateVideoTrack(track) {
-    for (const clip of track.clips) {
-        yield* clip.iterateAccessUnits();
-    }
 }
 
 import * as TimelineCompiler from "./src/timeline/compileTimeline.js";
