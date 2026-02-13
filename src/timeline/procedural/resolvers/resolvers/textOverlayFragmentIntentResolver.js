@@ -40,10 +40,13 @@ export function resolveTextOverlayFragmentIntentAtTime({ fragment, timeSeconds }
         if (timeSeconds > item.endSeconds) continue;
 
         const activeWords = Array.isArray(item.words)
-            ? item.words.filter(word =>
-                timeSeconds >= word.start &&
-                timeSeconds <= word.end
-            )
+            ? item.words.filter((word) => {
+                const start = typeof word.start === "number" ? word.start : -Infinity;
+                const end = typeof word.end === "number" ? word.end : Infinity;
+                // Use half-open intervals to avoid boundary overlap:
+                // [start, end)
+                return timeSeconds >= start && timeSeconds < end;
+            })
             : [];
 
         if (activeWords.length === 0) continue;

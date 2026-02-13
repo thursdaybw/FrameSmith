@@ -81,7 +81,9 @@ function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) 
             const visibleWords = words.filter((word) => {
                 const start = typeof word.start === "number" ? word.start : -Infinity;
                 const end = typeof word.end === "number" ? word.end : Infinity;
-                return timeSeconds >= start && timeSeconds <= end;
+                // Keep composition semantics aligned with resolver semantics:
+                // [start, end)
+                return timeSeconds >= start && timeSeconds < end;
             });
 
             const text = visibleWords.length > 0

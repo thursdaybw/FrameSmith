@@ -101,7 +101,41 @@ export function test_textOverlayRenderer_filtersWordsByTime() {
     }
 }
 
+export function test_textOverlayRenderer_wordBoundaryDoesNotOverlap() {
+    const fragment = {
+        proceduralKind: "text-overlay",
+        items: [
+            {
+                startSeconds: 0,
+                endSeconds: 10,
+                words: [
+                    { start: 0, end: 3, text: "Hello" },
+                    { start: 3, end: 6, text: "Beautiful" }
+                ]
+            }
+        ]
+    };
+
+    const boundaryResult = resolveTextOverlayFragmentIntentAtTime({
+        fragment,
+        timeSeconds: 3
+    });
+
+    if (!Array.isArray(boundaryResult.renderIntents) || boundaryResult.renderIntents.length !== 1) {
+        throw new Error("expected one render intent at boundary");
+    }
+
+    const boundaryWords = boundaryResult.renderIntents[0].items[0].words;
+    if (boundaryWords.length !== 1) {
+        throw new Error("exactly one word must be active at boundary");
+    }
+    if (boundaryWords[0].text !== "Beautiful") {
+        throw new Error("boundary must advance directly to next word");
+    }
+}
+
 export const TEXT_OVERLAY_RENDERER_TESTS = [
     test_textOverlayRenderer_returnsStableShape,
-    test_textOverlayRenderer_filtersWordsByTime
+    test_textOverlayRenderer_filtersWordsByTime,
+    test_textOverlayRenderer_wordBoundaryDoesNotOverlap
 ];
