@@ -253,12 +253,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     await ensureCaptionFontLoaded();
     const runtimeConfig = readRuntimeConfig();
 
-    // Initialize the timeline, tracks, and clips
-    const timeline = await createTimeline();
-
-    // Now you can interact with the timeline, tracks, and clips here
-    //console.log(timeline);  // Debug log to ensure timeline is set up correctly
-
     // -------------------------------------------------
     // Pre-render timing configuration
     // -------------------------------------------------
@@ -268,6 +262,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const previewBtn = document.getElementById("previewBtn");
     const encodeBtn = document.getElementById("encodeBtn");
     const exportBtn = document.getElementById("exportBtn");
+    const videoFileInput = document.getElementById("videoFileInput");
+    const videoSourceStatus = document.getElementById("videoSourceStatus");
 
     // Demo Orchestration Only:
     // This HTMLVideoElement exists solely to support preview playback.
@@ -277,9 +273,90 @@ document.addEventListener("DOMContentLoaded", async () => {
     const canvas = document.getElementById("c");
     const context = canvas.getContext("2d");
 
+    let timeline = null;
+    let currentVideoSourceObjectUrl = null;
     let audioDataFrames = [];
     let lastExportBlob = null;
     let lastExportUrl = null;
+    let cachedSelectedVideo = null;
+
+    const setVideoSourceStatus = (message, isError = false) => {
+        if (!videoSourceStatus) return;
+        videoSourceStatus.textContent = message;
+        videoSourceStatus.style.color = isError ? "#b00020" : "";
+    };
+
+    const setWorkflowEnabled = (enabled) => {
+        previewBtn.disabled = !enabled;
+        encodeBtn.disabled = !enabled;
+        if (!enabled) {
+            exportBtn.disabled = true;
+        }
+    };
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    async function readSelectedVideoBytesWithRetry(fileInput, setStatus) {
+        const maxAttempts = 3;
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            const file = fileInput?.files?.[0];
+            if (!(file instanceof File)) {
+                throw new Error("Selected source file is not available.");
+            }
+            if (!Number.isFinite(file.size) || file.size <= 0) {
+                throw new Error("Selected file is empty.");
+            }
+
+            try {
+                if (attempt > 1) {
+                    setStatus(`Reading selected video (retry ${attempt}/${maxAttempts})...`);
+                }
+                const bytes = new Uint8Array(await file.arrayBuffer());
+                if (bytes.length === 0) {
+                    throw new Error("Selected file returned zero bytes.");
+                }
+                return { file, bytes };
+            } catch (error) {
+                lastError = error;
+                console.warn("[VideoSource] read attempt failed", {
+                    attempt,
+                    maxAttempts,
+                    fileName: file.name,
+                    fileSize: file.size,
+                    errorName: error?.name || "Error",
+                    errorMessage: error?.message || String(error)
+                });
+                if (attempt < maxAttempts) {
+                    await sleep(200 * attempt);
+                }
+            }
+        }
+
+        throw lastError || new Error("Failed to read selected file.");
+    }
+
+    async function initializeTimelineFromBytes(mp4Bytes) {
+        if (!(mp4Bytes instanceof Uint8Array) || mp4Bytes.length === 0) {
+            throw new Error("Provided in-memory MP4 bytes are empty.");
+        }
+        setWorkflowEnabled(false);
+        setVideoSourceStatus("Loading video source...");
+        try {
+            timeline = await createTimeline({ mp4Bytes });
+            setWorkflowEnabled(true);
+            setVideoSourceStatus("Video ready");
+        } catch (error) {
+            timeline = null;
+            setWorkflowEnabled(false);
+            setVideoSourceStatus(
+                `Video load failed: ${error?.message ?? String(error)}`,
+                true
+            );
+            throw error;
+        }
+    }
 
     const timecodeFragmentIntentResolvers = {
         "text-overlay": resolveTextOverlayFragmentIntentAtTime,
@@ -409,9 +486,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 rows.push(row);
             }
 
-            console.group("AudioDecoder preflight");
-            console.table(rows);
-            console.groupEnd();
+            // Keep this preflight silent unless needed again.
         };
 
         await preflightAudioDecoderConfigs();
@@ -545,6 +620,37 @@ document.addEventListener("DOMContentLoaded", async () => {
         throw new Error("VideoEncoder could not be configured for export.");
     }
 
+    async function configureVideoDecoderForTrack({
+        videoDecoder,
+        videoTrackView
+    }) {
+        const sourceVideoCodec = videoTrackView.codecConfig.codec;
+        const avcC = videoTrackView.codecConfig.avcC;
+        const decodeVideoCodec = (sourceVideoCodec === "avc1" && avcC instanceof Uint8Array && avcC.length >= 4)
+            ? `avc1.${avcC[1].toString(16).padStart(2, "0").toUpperCase()}${avcC[2].toString(16).padStart(2, "0").toUpperCase()}${avcC[3].toString(16).padStart(2, "0").toUpperCase()}`
+            : sourceVideoCodec;
+
+        const candidate = {
+            codec: decodeVideoCodec,
+            description: avcC,
+            hardwareAcceleration: "prefer-software"
+        };
+
+        if (typeof VideoDecoder.isConfigSupported === "function") {
+            const support = await VideoDecoder.isConfigSupported(candidate);
+            if (!support.supported) {
+                throw new Error(`VideoDecoder does not support software-preferred config (codec=${decodeVideoCodec}).`);
+            }
+        }
+
+        videoDecoder.configure(candidate);
+        console.log("[Encode] video decoder configured", {
+            codec: candidate.codec,
+            hardwareAcceleration: candidate.hardwareAcceleration
+        });
+        return candidate;
+    }
+
     function createSharedRenderExecutionContext({
         videoDecoder,
         audioDecoder,
@@ -584,12 +690,28 @@ document.addEventListener("DOMContentLoaded", async () => {
                     }
                     try {
                         const flushStart = performance.now();
+                        let lastDecodedOutputCount = decodedVideoFrames.length;
+                        let lastProgressAt = performance.now();
+                        let lastStallLogAt = 0;
                         const heartbeat = setInterval(() => {
-                            console.log("[VideoDecoder.flush] waiting", {
-                                elapsedMs: Math.round(performance.now() - flushStart),
-                                decodeQueueSize: videoDecoder.decodeQueueSize,
-                                hasDecoderError: !!getVideoDecoderError()
-                            });
+                            const decodedOutputCount = decodedVideoFrames.length;
+                            if (decodedOutputCount !== lastDecodedOutputCount) {
+                                lastDecodedOutputCount = decodedOutputCount;
+                                lastProgressAt = performance.now();
+                            }
+                            const now = performance.now();
+                            const noProgressMs = now - lastProgressAt;
+                            const isStalled = noProgressMs >= 3000;
+                            if (isStalled && (now - lastStallLogAt) >= 5000) {
+                                lastStallLogAt = now;
+                                console.warn("[VideoDecoder.flush][STALLED]", {
+                                    elapsedMs: Math.round(now - flushStart),
+                                    decodeQueueSize: videoDecoder.decodeQueueSize,
+                                    decodedOutputCount,
+                                    noProgressMs: Math.round(noProgressMs),
+                                    hasDecoderError: !!getVideoDecoderError()
+                                });
+                            }
                         }, 2000);
 
                         try {
@@ -733,6 +855,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     previewBtn.onclick = () => {
+        if (!timeline) {
+            console.warn("Timeline not ready. Load a video source first.");
+            return;
+        }
         console.log("Preview button clicked");
 
         const ctx = context;
@@ -857,7 +983,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
 
     encodeBtn.onclick = async () => {
+        let failedStage = "init";
+        const encodeStartedAt = performance.now();
         try {
+            failedStage = "validate";
+            if (!timeline) {
+                throw new Error("Timeline not ready. Load a video source first.");
+            }
             const tStart = performance.now();
             console.log("[Encode] start");
             if (typeof VideoEncoder !== "function" || typeof AudioEncoder !== "function") {
@@ -867,6 +999,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 throw new Error("WebCodecs VideoDecoder/AudioDecoder is not available in this browser.");
             }
 
+            failedStage = "plan";
             const exportFps = PRE_RENDER_FPS;
             const exportRange = { startSeconds: 0, endSeconds: 10 };
 
@@ -875,6 +1008,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 fragmentCount: prerenderPlan.fragments.length
             });
 
+            failedStage = "track_select";
             const videoTrackView = timeline.tracks
                 .flatMap(track => track.clips)
                 .map(clip => clip.trackView)
@@ -900,11 +1034,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             const decodedAudioData = [];
             let videoDecoderError = null;
             let audioDecoderError = null;
-
+            failedStage = "decoder_config_video";
             const videoDecoder = new VideoDecoder({
                 output(frame) {
-                    // Keep decoder callback minimal; ownership of closing decoded
-                    // source frames is handled in export strategy after composition.
                     decodedVideoFrames.push(frame);
                 },
                 error(error) {
@@ -912,18 +1044,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                     videoDecoderError = error;
                 }
             });
-
-            const sourceVideoCodec = videoTrackView.codecConfig.codec;
-            const avcC = videoTrackView.codecConfig.avcC;
-            const decodeVideoCodec = (sourceVideoCodec === "avc1" && avcC instanceof Uint8Array && avcC.length >= 4)
-                ? `avc1.${avcC[1].toString(16).padStart(2, "0").toUpperCase()}${avcC[2].toString(16).padStart(2, "0").toUpperCase()}${avcC[3].toString(16).padStart(2, "0").toUpperCase()}`
-                : sourceVideoCodec;
-
-            videoDecoder.configure({
-                codec: decodeVideoCodec,
-                description: avcC
+            await configureVideoDecoderForTrack({
+                videoDecoder,
+                videoTrackView
             });
 
+            failedStage = "decoder_config_audio";
             const audioDecoder = new AudioDecoder({
                 output(audioData) {
                     decodedAudioData.push(audioData);
@@ -939,6 +1065,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 audioTrackView
             });
 
+            failedStage = "encoder_config_video";
             const videoEncoder = new VideoEncoder({
                 output(chunk, metadata) {
                     videoEncodedChunks.push(chunk);
@@ -958,6 +1085,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 exportFps
             });
 
+            failedStage = "encoder_config_audio";
             const audioEncoder = new AudioEncoder({
                 output(chunk, metadata) {
                     audioEncodedChunks.push(chunk);
@@ -1002,10 +1130,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             const strategy = new ExportExecutionStrategy(exportExecutionContext);
 
+            failedStage = "execute_strategy";
             const result = await strategy.execute({
                 plan: prerenderPlan,
                 exportRange,
-                fps: exportFps
+                fps: exportFps,
+                retainComposedFrames: false
             });
             console.log("[Encode] strategy execution complete");
 
@@ -1019,6 +1149,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 });
             }
 
+            failedStage = "finalize_output";
             if (!(result.mp4Bytes instanceof Uint8Array)) {
                 throw new Error("Export did not produce MP4 bytes");
             }
@@ -1045,10 +1176,79 @@ document.addEventListener("DOMContentLoaded", async () => {
                 audioChunks: audioEncodedChunks.length,
                 elapsedMs: Math.round(performance.now() - tStart)
             });
+            console.log("[Encode][SUMMARY]", {
+                ok: true,
+                failedStage: null,
+                elapsedMs: Math.round(performance.now() - encodeStartedAt)
+            });
         } catch (error) {
             console.error("Encode/export failed", error);
+            console.error("[Encode][SUMMARY]", {
+                ok: false,
+                failedStage,
+                elapsedMs: Math.round(performance.now() - encodeStartedAt),
+                errorName: error?.name ?? "Error",
+                errorMessage: error?.message ?? String(error)
+            });
         }
     };
+
+    if (videoFileInput) {
+        videoFileInput.onchange = async () => {
+            const selectedFile = videoFileInput.files?.[0];
+            cachedSelectedVideo = null;
+            if (!(selectedFile instanceof File)) {
+                setVideoSourceStatus("No video loaded");
+                return;
+            }
+
+            try {
+                setWorkflowEnabled(false);
+                setVideoSourceStatus("Loading selected video...");
+                if (lastExportUrl) {
+                    URL.revokeObjectURL(lastExportUrl);
+                    lastExportUrl = null;
+                }
+                lastExportBlob = null;
+                exportBtn.disabled = true;
+                const { bytes } = await readSelectedVideoBytesWithRetry(videoFileInput, setVideoSourceStatus);
+                cachedSelectedVideo = {
+                    fileKey: `${selectedFile.name}:${selectedFile.size}:${selectedFile.lastModified}`,
+                    bytes
+                };
+                if (currentVideoSourceObjectUrl) {
+                    URL.revokeObjectURL(currentVideoSourceObjectUrl);
+                    currentVideoSourceObjectUrl = null;
+                }
+                const sourceBlob = new Blob([cachedSelectedVideo.bytes], {
+                    type: selectedFile.type || "video/mp4"
+                });
+                currentVideoSourceObjectUrl = URL.createObjectURL(sourceBlob);
+                video.src = currentVideoSourceObjectUrl;
+                video.style.display = "none";
+                video.controls = false;
+
+                await initializeTimelineFromBytes(cachedSelectedVideo.bytes);
+            } catch (error) {
+                console.error("Video source load failed", error);
+                const errorText = String(error?.message || error || "");
+                const notReadable =
+                    String(error?.name || "") === "NotReadableError" ||
+                    errorText.includes("NotReadableError");
+                if (notReadable) {
+                    setVideoSourceStatus(
+                        "Video load failed: Android picker returned an unreadable handle. Re-pick using Browse > Downloads.",
+                        true
+                    );
+                } else {
+                    setVideoSourceStatus(`Video load failed: ${errorText}`, true);
+                }
+            }
+        };
+    }
+
+    setWorkflowEnabled(false);
+    setVideoSourceStatus("No video loaded");
 
 
 });
@@ -1389,22 +1589,56 @@ async function loadTimelineTextOverlays() {
  * - Domain objects (Timeline, Track, Clip) remain container-agnostic.
  * - No HTML, playback, or browser APIs may leak past this boundary.
  */
-async function createTimeline() {
-    const videoElement = document.getElementById("v");
-
-    const resp = await fetch(videoElement.src);
-    if (!resp.ok) {
-        throw new Error("Failed to fetch MP4: " + videoElement.src);
+async function createTimeline({ mp4Bytes }) {
+    if (!(mp4Bytes instanceof Uint8Array) || mp4Bytes.length === 0) {
+        throw new Error("createTimeline: mp4Bytes must be a non-empty Uint8Array");
     }
-
-    const mp4Bytes = new Uint8Array(await resp.arrayBuffer());
     const transcriptOverlayItems = await loadTimelineTextOverlays();
     const imageOverlayItems = await loadTimelineImageOverlays();
 
     const container = openContainerFromMp4({ mp4Bytes });
     const nativeTrackViews = container.createTrackViews();
 
-    const selectedVideoDemuxer = new URLSearchParams(window.location.search).get("videoDemuxer") ?? "native";
+    // Temporary stability policy:
+    // force mp4box for video demux until native demux timing issues are fixed.
+    const selectedVideoDemuxer = "mp4box";
+
+    const summarizeTrackCadenceUs = (trackView, sampleLimit = 120) => {
+        const sampleCount = Number(trackView?.sampleCount ?? 0);
+        const limit = Math.min(sampleCount, sampleLimit);
+        const durationsUs = [];
+        for (let index = 0; index < limit; index += 1) {
+            const sample = trackView.getSampleByIndex(index);
+            const durationPts = Number(sample?.duration);
+            if (!Number.isFinite(durationPts) || durationPts <= 0) continue;
+            const durationUs = Math.round(trackView.ptsToSeconds(durationPts) * 1_000_000);
+            if (Number.isFinite(durationUs) && durationUs > 0) {
+                durationsUs.push(durationUs);
+            }
+        }
+        if (durationsUs.length === 0) return null;
+        const sorted = durationsUs.slice().sort((a, b) => a - b);
+        const medianUs = sorted[Math.floor(sorted.length / 2)];
+        return { medianUs, minUs: sorted[0], maxUs: sorted[sorted.length - 1], sampleCount: durationsUs.length };
+    };
+
+    const shouldFallbackNativeVideoTrack = (trackView) => {
+        if (!trackView || trackView.mediaType !== "video") return false;
+        const cadence = summarizeTrackCadenceUs(trackView);
+        if (!cadence) return false;
+        // Practical bounds for phone/social footage:
+        // <1ms or >200ms per frame implies broken timescale conversion.
+        const invalidCadence = cadence.medianUs < 1_000 || cadence.medianUs > 200_000;
+        if (invalidCadence) {
+            console.warn("[Timeline] native video cadence invalid; will fallback to mp4box", cadence);
+        }
+        return invalidCadence;
+    };
+
+    const shouldAutoFallbackToMp4Box =
+        selectedVideoDemuxer === "native" &&
+        shouldFallbackNativeVideoTrack(nativeTrackViews.find(trackView => trackView.mediaType === "video"));
+
     if (selectedVideoDemuxer === "mp4box") {
         const mp4BoxVideoTrackView = await createMp4BoxVideoTrackView({ mp4Bytes });
         const mergedTrackViews = [
@@ -1413,6 +1647,23 @@ async function createTimeline() {
         ];
         console.log("[Timeline] demux selection", {
             selectedVideoDemuxer,
+            trackViewMediaTypes: mergedTrackViews.map(trackView => trackView.mediaType)
+        });
+        return createTimelineFromPreparedAssets({
+            trackViews: mergedTrackViews,
+            textOverlayItems: transcriptOverlayItems,
+            imageOverlayItems
+        });
+    }
+
+    if (shouldAutoFallbackToMp4Box) {
+        const mp4BoxVideoTrackView = await createMp4BoxVideoTrackView({ mp4Bytes });
+        const mergedTrackViews = [
+            mp4BoxVideoTrackView,
+            ...nativeTrackViews.filter(trackView => trackView.mediaType !== "video")
+        ];
+        console.log("[Timeline] demux selection", {
+            selectedVideoDemuxer: "native->mp4box-fallback",
             trackViewMediaTypes: mergedTrackViews.map(trackView => trackView.mediaType)
         });
         return createTimelineFromPreparedAssets({
@@ -1584,22 +1835,72 @@ export function createTimelineFromPreparedAssets({
     const videoTrack = new Track();
     const audioTrack = new Track();
 
+    const resolveTrackClipRangeSeconds = (trackView, mediaLabel) => {
+        const sampleCount = Number(trackView?.sampleCount ?? 0);
+        if (!Number.isInteger(sampleCount) || sampleCount <= 0) {
+            throw new Error(`createTimelineFromPreparedAssets: ${mediaLabel} track has no samples`);
+        }
+
+        const firstSample = trackView.getSampleByIndex(0);
+        const lastSample = trackView.getSampleByIndex(sampleCount - 1);
+        if (!firstSample || !lastSample) {
+            throw new Error(`createTimelineFromPreparedAssets: ${mediaLabel} track samples are unavailable`);
+        }
+
+        const firstPts = Number(firstSample.pts);
+        const lastPts = Number(lastSample.pts);
+        const lastDuration = Number(lastSample.duration);
+        const trackTimescale = Number(trackView?.containerMeta?.trackTimescale);
+
+        if (!Number.isFinite(firstPts) || !Number.isFinite(lastPts)) {
+            throw new Error(
+                `createTimelineFromPreparedAssets: invalid ${mediaLabel} sample timestamps ` +
+                `(firstPts=${firstPts}, lastPts=${lastPts}, trackTimescale=${trackTimescale})`
+            );
+        }
+
+        if (!Number.isFinite(trackTimescale) || trackTimescale <= 0) {
+            throw new Error(
+                `createTimelineFromPreparedAssets: invalid ${mediaLabel} trackTimescale ` +
+                `(trackTimescale=${trackTimescale})`
+            );
+        }
+
+        const inclusiveEndPts = lastPts + (Number.isFinite(lastDuration) && lastDuration > 0 ? lastDuration : 1);
+
+        const startSeconds = trackView.ptsToSeconds(firstPts);
+        const endSeconds = trackView.ptsToSeconds(inclusiveEndPts);
+
+        if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds) || endSeconds <= startSeconds) {
+            throw new Error(
+                `createTimelineFromPreparedAssets: invalid ${mediaLabel} range ` +
+                `(startSeconds=${startSeconds}, endSeconds=${endSeconds}, ` +
+                `firstPts=${firstPts}, lastPts=${lastPts}, lastDuration=${lastDuration}, trackTimescale=${trackTimescale})`
+            );
+        }
+
+        return { startSeconds, endSeconds };
+    };
+
+    const videoClipRange = resolveTrackClipRangeSeconds(videoTracks[0], "video");
+    const audioClipRange = resolveTrackClipRangeSeconds(audioTracks[0], "audio");
+
     timeline.addTrack(videoTrack);
     timeline.addTrack(audioTrack);
 
     videoTrack.addClip(
         new Clip({
             trackView: videoTracks[0],
-            startSeconds: 0,
-            endSeconds: 10
+            startSeconds: videoClipRange.startSeconds,
+            endSeconds: videoClipRange.endSeconds
         })
     );
 
     audioTrack.addClip(
         new Clip({
             trackView: audioTracks[0],
-            startSeconds: 0,
-            endSeconds: 30
+            startSeconds: audioClipRange.startSeconds,
+            endSeconds: audioClipRange.endSeconds
         })
     );
 

@@ -70,6 +70,63 @@ Comparison tooling references:
 - `scripts/mp4box-isolation-demux.js`
 - `scripts/mp4box-isolation.html`
 
+## Mobile Hardware Decode Issue (Tracked, Not Ignored)
+
+Date updated: February 13, 2026
+
+This section is only about one thing: mobile hardware video decode.
+
+### What is happening?
+
+When export starts on the tested phone video, hardware decode begins normally.
+Then it gets stuck part-way through.
+It does not fully crash at once. It just stops making progress.
+
+In plain terms:
+
+- frames come out at first
+- then frames stop coming out
+- the decode queue stays full
+- we hit a timeout
+
+### Why was this confusing?
+
+At first, it looked like a timestamp contract bug.
+This file has frame reordering (`PTS` and `DTS` are often different), so that was a valid suspicion.
+
+### What did we test?
+
+We forced hardware decode and changed the chunk contract shape in all key ways:
+
+- chunk timestamp from `DTS`
+- chunk timestamp from `PTS`
+- duration included
+- duration omitted
+
+### What did we learn?
+
+The stall still happened in every case.
+So, for this tested file/device/browser path, the stall is not fixed by changing those chunk fields.
+
+That means we have evidence for this conclusion:
+
+- this is a hardware decode stability issue on this tested path
+- not a simple `PTS vs DTS` field-choice bug
+- not a simple `duration on/off` bug
+
+### What is the current decision?
+
+Do not ignore the issue.
+Keep it logged as a known hardware-decode problem.
+For current mobile export work, use software-preferred decode so work can continue while hardware root cause is investigated separately.
+
+### When do we revisit hardware decode?
+
+After MVP export is stable end-to-end.
+
+Treat hardware decode recovery as an optimization pass, not a launch blocker.
+The goal of that pass is better speed/battery on devices where hardware decode is reliable.
+
 ## Legacy Preview Surface (Current Status)
 
 This repository still contains a legacy preview surface that is not part of the
@@ -728,16 +785,3 @@ You have:
 ✔ Procedural time resolution
 ✔ Deterministic container decode
 ✔ Strong test coverage
-
-You are ready to design composition properly.
-
-Not hack it.
-Design it.
-
----
-
-If you want next:
-
-We define the exact object that feeds the compositor.
-That is the missing seam.
-That is the next clean move.

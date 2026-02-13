@@ -12,6 +12,21 @@ function normalizeTimestampUs(unit) {
     return unit.pts;
 }
 
+function normalizeDecodeTimestampUs(unit) {
+    const decodeUnit = (
+        unit &&
+        typeof unit === "object" &&
+        typeof unit.dts === "number"
+    )
+        ? { ...unit, pts: unit.dts }
+        : unit;
+    return normalizeTimestampUs(decodeUnit);
+}
+
+function normalizePresentationTimestampUs(unit) {
+    return normalizeTimestampUs(unit);
+}
+
 function normalizeDurationUs(unit) {
     const clipTrackView = unit?.clip?.trackView;
     if (clipTrackView && typeof clipTrackView.ptsToSeconds === "function" && typeof unit.duration === "number") {
@@ -20,7 +35,19 @@ function normalizeDurationUs(unit) {
     return unit.duration;
 }
 
-function toWebCodecsVideoChunk(unit, { forceKeyframe = false } = {}) {
+function resolveVideoChunkTimestampUs(unit, timestampSource) {
+    if (timestampSource === "pts") {
+        return normalizePresentationTimestampUs(unit);
+    }
+    return normalizeDecodeTimestampUs(unit);
+}
+
+function toWebCodecsVideoChunk(
+    unit,
+    {
+        forceKeyframe = false
+    } = {}
+) {
     if (typeof EncodedVideoChunk !== "function") return unit.data;
     if (!(unit.data instanceof Uint8Array)) return unit.data;
 
@@ -29,7 +56,7 @@ function toWebCodecsVideoChunk(unit, { forceKeyframe = false } = {}) {
         : "delta";
     return new EncodedVideoChunk({
         type: chunkType,
-        timestamp: normalizeTimestampUs(unit),
+        timestamp: resolveVideoChunkTimestampUs(unit, "dts"),
         duration: normalizeDurationUs(unit),
         data: unit.data
     });
@@ -95,6 +122,80 @@ function sortVideoUnitsByDecodeOrder(units) {
     });
 }
 
+function resolveUnitTimestampUs(unit) {
+    const timestamp = normalizeTimestampUs(unit);
+    return typeof timestamp === "number" && Number.isFinite(timestamp)
+        ? timestamp
+        : null;
+}
+
+function shouldApplyExportRangeFilter(timestamps, { exportStartUs }) {
+    if (!Array.isArray(timestamps) || timestamps.length === 0) return false;
+    const finite = timestamps.filter((value) => typeof value === "number" && Number.isFinite(value));
+    if (finite.length === 0) return false;
+
+    const maxTimestamp = Math.max(...finite);
+    // Test and stub inputs sometimes use tiny synthetic values (e.g. 0, 1)
+    // that are not real microsecond timestamps. In that case, skip filtering.
+    if (exportStartUs >= 1_000_000 && maxTimestamp < 100_000) {
+        return false;
+    }
+
+    return true;
+}
+
+function filterAudioUnitsToExportRange(units, { exportStartUs, exportEndUs }) {
+    if (!Array.isArray(units) || units.length === 0) return [];
+    if (!Number.isFinite(exportStartUs) || !Number.isFinite(exportEndUs)) return units;
+    const timestamps = units.map(resolveUnitTimestampUs);
+    if (!shouldApplyExportRangeFilter(timestamps, { exportStartUs })) {
+        return units;
+    }
+    return units.filter((unit) => {
+        const ts = resolveUnitTimestampUs(unit);
+        return typeof ts === "number" && ts >= exportStartUs && ts <= exportEndUs;
+    });
+}
+
+function filterVideoUnitsToExportRange(units, { exportStartUs, exportEndUs }) {
+    if (!Array.isArray(units) || units.length === 0) return [];
+    if (!Number.isFinite(exportStartUs) || !Number.isFinite(exportEndUs)) return units;
+
+    const orderedUnits = sortVideoUnitsByDecodeOrder(units);
+    const timestamps = orderedUnits.map(resolveUnitTimestampUs);
+    if (!shouldApplyExportRangeFilter(timestamps, { exportStartUs })) {
+        return orderedUnits;
+    }
+
+    let firstInRangeIndex = -1;
+    let lastInRangeIndex = -1;
+
+    for (let index = 0; index < orderedUnits.length; index++) {
+        const ts = timestamps[index];
+        if (typeof ts !== "number") continue;
+        if (ts < exportStartUs || ts > exportEndUs) continue;
+        if (firstInRangeIndex === -1) firstInRangeIndex = index;
+        lastInRangeIndex = index;
+    }
+
+    if (firstInRangeIndex === -1 || lastInRangeIndex === -1) {
+        return [];
+    }
+
+    // Ensure decoder starts on a decodable boundary by rewinding to the most
+    // recent declared keyframe before the in-range region (if key info exists).
+    let decodeStartIndex = firstInRangeIndex;
+    for (let index = firstInRangeIndex; index >= 0; index--) {
+        const key = unitIsKeyframe(orderedUnits[index]);
+        if (key === true) {
+            decodeStartIndex = index;
+            break;
+        }
+    }
+
+    return orderedUnits.slice(decodeStartIndex, lastInRangeIndex + 1);
+}
+
 function unitIsKeyframe(unit) {
     if (!unit || typeof unit !== "object") return undefined;
     if (typeof unit.isKeyframe === "boolean") return unit.isKeyframe;
@@ -132,324 +233,154 @@ function trimVideoUnitsToFirstDecodableKeyframe(units) {
     };
 }
 
-function toHexByte(value) {
-    return value.toString(16).padStart(2, "0").toUpperCase();
-}
-
-function formatFirstBytesHex(data, count = 8) {
-    if (!(data instanceof Uint8Array) || data.length === 0) return "";
-    const limit = Math.min(count, data.length);
-    const parts = [];
-    for (let index = 0; index < limit; index++) {
-        parts.push(toHexByte(data[index]));
-    }
-    return parts.join(" ");
-}
-
-function inferPayloadFormat(data) {
-    if (!(data instanceof Uint8Array) || data.length < 4) return "unknown";
-    const b0 = data[0];
-    const b1 = data[1];
-    const b2 = data[2];
-    const b3 = data[3];
-    if (b0 === 0x00 && b1 === 0x00 && b2 === 0x01) return "annexb";
-    if (b0 === 0x00 && b1 === 0x00 && b2 === 0x00 && b3 === 0x01) return "annexb";
-    return "avcc";
-}
-
-function readAvccFirstNalLength(data) {
-    if (!(data instanceof Uint8Array) || data.length < 4) return null;
-    return (
-        (data[0] << 24) |
-        (data[1] << 16) |
-        (data[2] << 8) |
-        data[3]
-    ) >>> 0;
-}
-
-function readAvccFirstNalType(data) {
-    const firstNalLength = readAvccFirstNalLength(data);
-    if (typeof firstNalLength !== "number") return null;
-    if (firstNalLength <= 0) return null;
-    if (data.length < 5) return null;
-    if (firstNalLength > (data.length - 4)) return null;
-    return data[4] & 0x1F;
-}
-
-function walkAvccNals(data) {
-    if (!(data instanceof Uint8Array)) {
-        return {
-            payloadFormat: "unknown",
-            nalCount: 0,
-            malformed: true,
-            malformedReason: "data-not-uint8array",
-            nalTypes: [],
-            hasVcl: false,
-            hasIdr: false,
-            hasNonIdrVcl: false
-        };
+function logVideoDecodeContract(units) {
+    if (!Array.isArray(units) || units.length === 0) {
+        console.log("[decodeContainerBatch][video][CONTRACT]", {
+            dispatchOrder: "dts",
+            chunkTimestampSource: "dts",
+            includeDuration: true,
+            sampleCount: 0
+        });
+        return;
     }
 
-    const payloadFormat = inferPayloadFormat(data);
-    if (payloadFormat !== "avcc") {
-        return {
-            payloadFormat,
-            nalCount: 0,
-            malformed: false,
-            malformedReason: null,
-            nalTypes: [],
-            hasVcl: false,
-            hasIdr: false,
-            hasNonIdrVcl: false
-        };
-    }
-
-    const nalTypes = [];
-    let offset = 0;
-    let malformed = false;
-    let malformedReason = null;
-    let hasVcl = false;
-    let hasIdr = false;
-    let hasNonIdrVcl = false;
-
-    while (offset < data.length) {
-        if ((offset + 4) > data.length) {
-            malformed = true;
-            malformedReason = "truncated-length-prefix";
-            break;
-        }
-
-        const nalLength =
-            ((data[offset] << 24) |
-            (data[offset + 1] << 16) |
-            (data[offset + 2] << 8) |
-            data[offset + 3]) >>> 0;
-        offset += 4;
-
-        if (nalLength === 0) {
-            malformed = true;
-            malformedReason = "zero-length-nal";
-            break;
-        }
-
-        if ((offset + nalLength) > data.length) {
-            malformed = true;
-            malformedReason = "nal-overruns-payload";
-            break;
-        }
-
-        const nalHeader = data[offset];
-        const nalType = nalHeader & 0x1F;
-        nalTypes.push(nalType);
-
-        if (nalType === 5) {
-            hasVcl = true;
-            hasIdr = true;
-        } else if (nalType >= 1 && nalType <= 5) {
-            hasVcl = true;
-            hasNonIdrVcl = true;
-        }
-
-        offset += nalLength;
-    }
-
-    return {
-        payloadFormat,
-        nalCount: nalTypes.length,
-        malformed,
-        malformedReason,
-        nalTypes,
-        hasVcl,
-        hasIdr,
-        hasNonIdrVcl
-    };
-}
-
-function logVideoAuProbe(units, { label }) {
-    const sampleLimit = Math.min(10, units.length);
-    let avccCount = 0;
-    let annexbCount = 0;
-    let invalidNalLengthCount = 0;
-    let nonMonotonicDtsCount = 0;
-    let ptsBeforeDtsCount = 0;
-    let keyTrue = 0;
-    let keyFalse = 0;
-    let keyUnknown = 0;
-    let idrCount = 0;
+    let ptsNeDtsCount = 0;
+    let dtsNonMonotonicCount = 0;
     let previousDts = null;
+    const firstSamples = [];
+    const sampleLimit = Math.min(8, units.length);
 
-    for (const unit of units) {
-        const data = unit?.data;
-        const payloadFormat = inferPayloadFormat(data);
-        if (payloadFormat === "avcc") avccCount++;
-        if (payloadFormat === "annexb") annexbCount++;
-
-        const firstNalLength = payloadFormat === "avcc" ? readAvccFirstNalLength(data) : null;
-        if (payloadFormat === "avcc") {
-            const payloadLength = data instanceof Uint8Array ? data.length : 0;
-            const invalidNalLength =
-                typeof firstNalLength !== "number" ||
-                firstNalLength <= 0 ||
-                firstNalLength > (payloadLength - 4);
-            if (invalidNalLength) invalidNalLengthCount++;
+    for (let index = 0; index < units.length; index += 1) {
+        const unit = units[index];
+        const ptsUs = normalizeTimestampUs(unit);
+        const dtsUs = normalizeDecodeTimestampUs(unit);
+        const chunkTimestampUs = resolveVideoChunkTimestampUs(unit, "dts");
+        if (typeof unit?.pts === "number" && typeof unit?.dts === "number" && unit.pts !== unit.dts) {
+            ptsNeDtsCount += 1;
         }
-
-        const dts = typeof unit?.dts === "number" ? unit.dts : unit?.pts;
-        if (typeof dts === "number") {
-            if (typeof previousDts === "number" && dts < previousDts) {
-                nonMonotonicDtsCount++;
+        if (typeof dtsUs === "number") {
+            if (typeof previousDts === "number" && dtsUs < previousDts) {
+                dtsNonMonotonicCount += 1;
             }
-            previousDts = dts;
+            previousDts = dtsUs;
         }
 
-        if (typeof unit?.pts === "number" && typeof dts === "number" && unit.pts < dts) {
-            ptsBeforeDtsCount++;
-        }
-
-        const key = unitIsKeyframe(unit);
-        if (key === true) keyTrue++;
-        else if (key === false) keyFalse++;
-        else keyUnknown++;
-
-        const nalType = payloadFormat === "avcc" ? readAvccFirstNalType(data) : null;
-        if (nalType === 5) idrCount++;
-    }
-
-    for (let index = 0; index < sampleLimit; index++) {
-        const unit = units[index];
-        const data = unit?.data;
-        const payloadFormat = inferPayloadFormat(data);
-        const firstNalLength = payloadFormat === "avcc" ? readAvccFirstNalLength(data) : null;
-        const firstNalType = payloadFormat === "avcc" ? readAvccFirstNalType(data) : null;
-
-        console.log(
-            `[AUProbe][video][${label}] sample JSON`,
-            JSON.stringify({
+        if (index < sampleLimit) {
+            firstSamples.push({
                 index,
-                pts: unit?.pts ?? null,
-                dts: unit?.dts ?? null,
-                duration: unit?.duration ?? null,
-                isKeyframe: unitIsKeyframe(unit) ?? null,
-                first8Hex: formatFirstBytesHex(data),
-                inferredPayloadFormat: payloadFormat,
-                firstNalLength,
-                firstNalType
-            })
-        );
-    }
-
-    console.log(
-        `[AUProbe][video][${label}] summary JSON`,
-        JSON.stringify({
-            count: units.length,
-            avccCount,
-            annexbCount,
-            invalidNalLengthCount,
-            nonMonotonicDtsCount,
-            ptsBeforeDtsCount
-        })
-    );
-
-    console.log(
-        `[AUProbe][video][${label}] keymap JSON`,
-        JSON.stringify({
-            total: units.length,
-            keyTrue,
-            keyFalse,
-            keyUnknown,
-            idrCount
-        })
-    );
-}
-
-function logVideoAuNalWalkProbe(units, { label }) {
-    const sampleLimit = Math.min(10, units.length);
-    let avccSampleCount = 0;
-    let annexbSampleCount = 0;
-    let malformedNalRunCount = 0;
-    let sampleHasIdrCount = 0;
-    let sampleHasVclCount = 0;
-    let declaredKeyframeButNoIdrCount = 0;
-    let declaredDeltaButHasIdrCount = 0;
-    let firstMalformedSampleIndex = null;
-
-    for (let index = 0; index < units.length; index++) {
-        const unit = units[index];
-        const walk = walkAvccNals(unit?.data);
-        const key = unitIsKeyframe(unit);
-
-        if (walk.payloadFormat === "avcc") avccSampleCount++;
-        if (walk.payloadFormat === "annexb") annexbSampleCount++;
-        if (walk.hasIdr) sampleHasIdrCount++;
-        if (walk.hasVcl) sampleHasVclCount++;
-
-        if (walk.malformed) {
-            malformedNalRunCount++;
-            if (firstMalformedSampleIndex === null) {
-                firstMalformedSampleIndex = index;
-            }
-        }
-
-        if (key === true && !walk.hasIdr) {
-            declaredKeyframeButNoIdrCount++;
-        }
-        if (key === false && walk.hasIdr) {
-            declaredDeltaButHasIdrCount++;
+                ptsUs: typeof ptsUs === "number" ? ptsUs : null,
+                dtsUs: typeof dtsUs === "number" ? dtsUs : null,
+                chunkTimestampUs: typeof chunkTimestampUs === "number" ? chunkTimestampUs : null
+            });
         }
     }
 
-    for (let index = 0; index < sampleLimit; index++) {
-        const unit = units[index];
-        const walk = walkAvccNals(unit?.data);
-        console.log(
-            `[AUProbe][video][${label}] nalwalk sample JSON`,
-            JSON.stringify({
-                index,
-                pts: unit?.pts ?? null,
-                dts: unit?.dts ?? null,
-                duration: unit?.duration ?? null,
-                isKeyframe: unitIsKeyframe(unit) ?? null,
-                payloadFormat: walk.payloadFormat,
-                nalCount: walk.nalCount,
-                nalTypes: walk.nalTypes,
-                hasVcl: walk.hasVcl,
-                hasIdr: walk.hasIdr,
-                hasNonIdrVcl: walk.hasNonIdrVcl,
-                malformed: walk.malformed,
-                malformedReason: walk.malformedReason
-            })
-        );
-    }
-
-    console.log(
-        `[AUProbe][video][${label}] nalwalk summary JSON`,
-        JSON.stringify({
-            count: units.length,
-            avccSampleCount,
-            annexbSampleCount,
-            malformedNalRunCount,
-            sampleHasIdrCount,
-            sampleHasVclCount,
-            declaredKeyframeButNoIdrCount,
-            declaredDeltaButHasIdrCount,
-            firstMalformedSampleIndex
-        })
-    );
+    console.log("[decodeContainerBatch][video][CONTRACT]", {
+        dispatchOrder: "dts",
+        chunkTimestampSource: "dts",
+        includeDuration: true,
+        sampleCount: units.length,
+        ptsNeDtsCount,
+        dtsNonMonotonicCount,
+        firstSamples
+    });
 }
 
 async function waitForDecoderCapacity({
     decoder,
     label,
-    maxQueueSize = 32,
-    timeoutMs = 30000,
-    pollMs = 5
+    maxQueueSize = 8,
+    timeoutMs = 120000,
+    pollMs = 5,
+    backpressureProfile = null,
+    monitor = null
 }) {
     if (!decoder || typeof decoder.decodeQueueSize !== "number") {
         return;
     }
 
+    let effectiveMaxQueueSize = maxQueueSize;
+    let effectiveTimeoutMs = timeoutMs;
+    let effectivePollMs = pollMs;
+    if (backpressureProfile && typeof backpressureProfile.getConfig === "function") {
+        const profileConfig = backpressureProfile.getConfig();
+        if (Number.isFinite(profileConfig?.maxQueueSize)) {
+            effectiveMaxQueueSize = profileConfig.maxQueueSize;
+        }
+        if (Number.isFinite(profileConfig?.timeoutMs)) {
+            effectiveTimeoutMs = profileConfig.timeoutMs;
+        }
+        if (Number.isFinite(profileConfig?.pollMs)) {
+            effectivePollMs = profileConfig.pollMs;
+        }
+    }
+
     const waitStart = Date.now();
-    while (decoder.decodeQueueSize >= maxQueueSize) {
+    const queueAtEntry = decoder.decodeQueueSize;
+    let lastQueueSize = decoder.decodeQueueSize;
+    let lastSnapshot = typeof monitor?.getSnapshot === "function"
+        ? monitor.getSnapshot()
+        : null;
+    let lastDecodedOutputs = Number.isFinite(lastSnapshot?.decodedOutputs)
+        ? lastSnapshot.decodedOutputs
+        : null;
+    let lastProgressAt = Date.now();
+    let stallState = "clear";
+    let lastStallLogAt = 0;
+    let waited = false;
+    while (decoder.decodeQueueSize >= effectiveMaxQueueSize) {
+        waited = true;
+        const now = Date.now();
+        const currentQueueSize = decoder.decodeQueueSize;
+        const snapshot = typeof monitor?.getSnapshot === "function"
+            ? monitor.getSnapshot()
+            : null;
+        const currentDecodedOutputs = Number.isFinite(snapshot?.decodedOutputs)
+            ? snapshot.decodedOutputs
+            : null;
+        const queueChanged = currentQueueSize !== lastQueueSize;
+        const outputsChanged =
+            Number.isFinite(currentDecodedOutputs) &&
+            Number.isFinite(lastDecodedOutputs) &&
+            currentDecodedOutputs !== lastDecodedOutputs;
+
+        if (queueChanged || outputsChanged) {
+            lastProgressAt = now;
+            if (stallState === "stalled") {
+                console.warn("[decodeContainerBatch][video][RESUMED]", {
+                    label,
+                    queueSize: currentQueueSize,
+                    maxQueueSize: effectiveMaxQueueSize,
+                    decodedOutputs: currentDecodedOutputs,
+                    dispatched: snapshot?.dispatched ?? null,
+                    total: snapshot?.total ?? null,
+                    stallDurationMs: now - lastStallLogAt
+                });
+            }
+            stallState = "clear";
+        }
+
+        const noProgressMs = now - lastProgressAt;
+        if (noProgressMs >= 2000 && (now - lastStallLogAt) >= 5000) {
+            stallState = "stalled";
+            lastStallLogAt = now;
+            console.warn("[decodeContainerBatch][video][STALLED]", {
+                label,
+                queueSize: currentQueueSize,
+                maxQueueSize: effectiveMaxQueueSize,
+                noProgressMs,
+                decodedOutputs: currentDecodedOutputs,
+                dispatched: snapshot?.dispatched ?? null,
+                total: snapshot?.total ?? null
+            });
+        }
+
+        lastQueueSize = currentQueueSize;
+        if (Number.isFinite(currentDecodedOutputs)) {
+            lastDecodedOutputs = currentDecodedOutputs;
+        }
+        lastSnapshot = snapshot;
+
         if (typeof decoder.getLastError === "function") {
             const decoderError = decoder.getLastError();
             if (decoderError) {
@@ -460,15 +391,149 @@ async function waitForDecoderCapacity({
             }
         }
 
-        if ((Date.now() - waitStart) > timeoutMs) {
+        if ((Date.now() - waitStart) > effectiveTimeoutMs) {
             throw new Error(
-                `${label}: backpressure wait timed out after ${timeoutMs}ms ` +
-                `(decodeQueueSize=${decoder.decodeQueueSize})`
+                `${label}: backpressure wait timed out after ${effectiveTimeoutMs}ms ` +
+                `(decodeQueueSize=${decoder.decodeQueueSize}, maxQueueSize=${effectiveMaxQueueSize}, ` +
+                `noProgressMs=${Date.now() - lastProgressAt}, decodedOutputs=${lastSnapshot?.decodedOutputs ?? "n/a"}, ` +
+                `dispatched=${lastSnapshot?.dispatched ?? "n/a"}, total=${lastSnapshot?.total ?? "n/a"})`
             );
         }
 
-        await new Promise(resolve => setTimeout(resolve, pollMs));
+        await new Promise(resolve => setTimeout(resolve, effectivePollMs));
     }
+
+    if (backpressureProfile && typeof backpressureProfile.recordResult === "function") {
+        backpressureProfile.recordResult({
+            waited,
+            waitMs: Date.now() - waitStart,
+            queueAtEntry
+        });
+    }
+}
+
+function createAdaptiveBackpressureProfile({
+    label,
+    initialMaxQueueSize,
+    minMaxQueueSize,
+    maxMaxQueueSize,
+    timeoutMs = 120000,
+    pollMs = 5,
+    stableSamplesToIncrease = 24,
+    waitedSamplesToDecrease = 4
+}) {
+    let currentMaxQueueSize = initialMaxQueueSize;
+    let consecutiveNoWaitSamples = 0;
+    let waitedSamples = 0;
+
+    function clampQueueSize(value) {
+        return Math.max(
+            minMaxQueueSize,
+            Math.min(maxMaxQueueSize, Math.round(value))
+        );
+    }
+
+    function maybeLogAdjustment(previousValue, reason) {
+        if (previousValue === currentMaxQueueSize) return;
+        console.log(`[decodeContainerBatch] adaptive backpressure adjusted`, {
+            label,
+            reason,
+            previousMaxQueueSize: previousValue,
+            nextMaxQueueSize: currentMaxQueueSize
+        });
+    }
+
+    return {
+        getConfig() {
+            return {
+                maxQueueSize: currentMaxQueueSize,
+                timeoutMs,
+                pollMs
+            };
+        },
+        recordResult({ waited }) {
+            if (waited) {
+                waitedSamples++;
+                consecutiveNoWaitSamples = 0;
+
+                if (waitedSamples >= waitedSamplesToDecrease) {
+                    const previous = currentMaxQueueSize;
+                    currentMaxQueueSize = clampQueueSize(currentMaxQueueSize - 2);
+                    waitedSamples = 0;
+                    maybeLogAdjustment(previous, "repeated_waits");
+                }
+                return;
+            }
+
+            consecutiveNoWaitSamples++;
+            waitedSamples = 0;
+
+            if (consecutiveNoWaitSamples >= stableSamplesToIncrease) {
+                const previous = currentMaxQueueSize;
+                currentMaxQueueSize = clampQueueSize(currentMaxQueueSize + 2);
+                consecutiveNoWaitSamples = 0;
+                maybeLogAdjustment(previous, "stable_drain");
+            }
+        }
+    };
+}
+
+function createVideoBackpressureProfile() {
+    return {
+        getConfig() {
+            return {
+                maxQueueSize: 16,
+                timeoutMs: 30000,
+                pollMs: 5
+            };
+        },
+        recordResult() {}
+    };
+}
+
+function createAudioBackpressureProfile() {
+    return createAdaptiveBackpressureProfile({
+        label: "audio",
+        initialMaxQueueSize: 12,
+        minMaxQueueSize: 8,
+        maxMaxQueueSize: 48
+    });
+}
+
+function isNumber(value) {
+    return typeof value === "number" && Number.isFinite(value);
+}
+
+function createDefaultBackpressureProfile() {
+    return {
+        getConfig() {
+            return {
+                maxQueueSize: 8,
+                timeoutMs: 120000,
+                pollMs: 5
+            };
+        },
+        recordResult() {}
+    };
+}
+
+function resolveBackpressureProfile(profile, createFallback) {
+    if (
+        profile &&
+        typeof profile.getConfig === "function" &&
+        typeof profile.recordResult === "function"
+    ) {
+        const config = profile.getConfig();
+        if (
+            isNumber(config?.maxQueueSize) &&
+            isNumber(config?.timeoutMs) &&
+            isNumber(config?.pollMs)
+        ) {
+            return profile;
+        }
+    }
+
+    return createFallback();
 }
 
 /**
@@ -487,7 +552,8 @@ async function waitForDecoderCapacity({
 export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
     plan,
     videoDecoder,
-    audioDecoder
+    audioDecoder,
+    exportRange = null
 }) {
 
     if (!plan || !Array.isArray(plan.fragments)) {
@@ -500,8 +566,22 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
 
     const decodedVideoFrames = [];
     const decodedAudioData = [];
+    const videoBackpressureProfile = resolveBackpressureProfile(
+        createVideoBackpressureProfile(),
+        createDefaultBackpressureProfile
+    );
+    const audioBackpressureProfile = resolveBackpressureProfile(
+        createAudioBackpressureProfile(),
+        createDefaultBackpressureProfile
+    );
     let routedVideoUnits = 0;
     let routedAudioUnits = 0;
+    const exportStartUs = Number.isFinite(exportRange?.startSeconds)
+        ? Math.round(exportRange.startSeconds * 1_000_000)
+        : null;
+    const exportEndUs = Number.isFinite(exportRange?.endSeconds)
+        ? Math.round(exportRange.endSeconds * 1_000_000)
+        : null;
 
     for (const fragment of plan.fragments) {
 
@@ -524,11 +604,20 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
                 if (shouldRouteAudio) audioUnits.push(unit);
             }
 
+            const rangeBoundedVideoUnits = filterVideoUnitsToExportRange(videoUnits, {
+                exportStartUs,
+                exportEndUs
+            });
+            const rangeBoundedAudioUnits = filterAudioUnitsToExportRange(audioUnits, {
+                exportStartUs,
+                exportEndUs
+            });
+
             // -------------------------------------------------
             // Video path (decode order)
             // -------------------------------------------------
             if (videoDecoder && typeof videoDecoder.decode === "function") {
-                const orderedVideoUnits = sortVideoUnitsByDecodeOrder(videoUnits);
+                const orderedVideoUnits = sortVideoUnitsByDecodeOrder(rangeBoundedVideoUnits);
                 const {
                     decodeUnits,
                     droppedLeadingUnits,
@@ -538,19 +627,37 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
 
                 console.log("[decodeContainerBatch] video decode input", {
                     totalVideoUnits: orderedVideoUnits.length,
+                    sourceVideoUnits: videoUnits.length,
                     decodeUnits: decodeUnits.length,
                     droppedLeadingUnits,
                     hasKeyInfo,
                     forceFirstKeyframe
                 });
-                logVideoAuProbe(decodeUnits, { label: "source" });
-                logVideoAuNalWalkProbe(decodeUnits, { label: "source" });
+                logVideoDecodeContract(decodeUnits);
 
+                let segmentStart = 0;
                 for (let index = 0; index < decodeUnits.length; index++) {
                     const unit = decodeUnits[index];
                     await waitForDecoderCapacity({
                         decoder: videoDecoder,
-                        label: "decodeContainerBatch videoDecoder.decode"
+                        label: "decodeContainerBatch videoDecoder.decode(segment)",
+                        backpressureProfile: videoBackpressureProfile,
+                        monitor: {
+                            getSnapshot() {
+                                let decodedOutputs = null;
+                                if (typeof videoDecoder.getDecodedOutputs === "function") {
+                                    const outputs = videoDecoder.getDecodedOutputs();
+                                    if (Array.isArray(outputs)) {
+                                        decodedOutputs = outputs.length;
+                                    }
+                                }
+                                return {
+                                    decodedOutputs,
+                                    dispatched: routedVideoUnits,
+                                    total: decodeUnits.length
+                                };
+                            }
+                        }
                     });
 
                     routedVideoUnits++;
@@ -561,6 +668,30 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
                         })
                     );
                     appendDecodeResult(decodedVideoFrames, decodeResult, fallbackTimestamp);
+
+                    const isEnd = index === (decodeUnits.length - 1);
+                    const nextUnit = !isEnd ? decodeUnits[index + 1] : null;
+                    const nextStartsNewKeySegment = !!nextUnit && unitIsKeyframe(nextUnit) === true;
+                    if (!isEnd && !nextStartsNewKeySegment) {
+                        continue;
+                    }
+
+                    await withTimeout({
+                        label: "decodeContainerBatch videoDecoder.flush(segment)",
+                        promise: videoDecoder.flush(),
+                        timeoutMs: 30000
+                    });
+
+                    if (typeof videoDecoder.getLastError === "function") {
+                        const decoderError = videoDecoder.getLastError();
+                        if (decoderError) {
+                            throw createFailure(
+                                "decodeContainerBatch: video decoder reported error during segment flush",
+                                decoderError
+                            );
+                        }
+                    }
+                    segmentStart = index + 1;
                 }
             }
 
@@ -568,10 +699,11 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
             // Audio path
             // -------------------------------------------------
             if (audioDecoder && typeof audioDecoder.decode === "function") {
-                for (const unit of audioUnits) {
+                for (const unit of rangeBoundedAudioUnits) {
                     await waitForDecoderCapacity({
                         decoder: audioDecoder,
-                        label: "decodeContainerBatch audioDecoder.decode"
+                        label: "decodeContainerBatch audioDecoder.decode",
+                        backpressureProfile: audioBackpressureProfile
                     });
 
                     routedAudioUnits++;

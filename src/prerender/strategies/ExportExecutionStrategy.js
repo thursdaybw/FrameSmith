@@ -88,7 +88,8 @@ export class ExportExecutionStrategy {
     async execute({
         plan,
         exportRange = { startSeconds: 0, endSeconds: 0 },
-        fps = 30
+        fps = 30,
+        retainComposedFrames = true
     }) {
         // Retention and loop-memory policy lives here by design.
         // See docs/framesmith-architecture.md:
@@ -104,7 +105,8 @@ export class ExportExecutionStrategy {
             await decodeContainerAccessUnitsFromPreRenderPlanBatch({
                 plan,
                 videoDecoder: this.videoDecoder,
-                audioDecoder: this.audioDecoder
+                audioDecoder: this.audioDecoder,
+                exportRange
             });
         const sourceVideoFramesToClose = new Set();
         try {
@@ -116,6 +118,12 @@ export class ExportExecutionStrategy {
 
             const composedFrames = [];
             const encodedAccessUnits = [];
+            const shouldRetainComposedFrames = retainComposedFrames === true;
+            if (!shouldRetainComposedFrames) {
+                console.log("[ExportExecutionStrategy] memory mode", {
+                    retainComposedFrames: false
+                });
+            }
 
             const encodedVideoChunks = [];
             const encodedAudioChunks = [];
@@ -231,19 +239,20 @@ export class ExportExecutionStrategy {
                 if (isVideoFrameInstance(mappedDecodedVideoFrame) && typeof mappedDecodedVideoFrame.close === "function") {
                     sourceVideoFramesToClose.add(mappedDecodedVideoFrame);
                 }
-                composedFrames.push(
-                    composeAtTime({
-                        timeSeconds,
-                        decodedContainerBackedFragmentBatch: perTimeDecodedBatch,
-                        activeLayers: this.activeLayers,
-                        renderIntents,
-                        options: this.options
-                    })
-                );
+                const compositionOutput = composeAtTime({
+                    timeSeconds,
+                    decodedContainerBackedFragmentBatch: perTimeDecodedBatch,
+                    activeLayers: this.activeLayers,
+                    renderIntents,
+                    options: this.options
+                });
+                if (shouldRetainComposedFrames) {
+                    composedFrames.push(compositionOutput);
+                }
 
                 const encodedAtTimeResult = encodeAtTime({
                     timeSeconds,
-                    compositionOutput: composedFrames.at(-1),
+                    compositionOutput,
                     provenance: {
                         planId: plan.id ?? null
                     },
@@ -384,7 +393,7 @@ export class ExportExecutionStrategy {
 
             return {
                 decodedContainerBackedFragmentBatch,
-                composedFrames,
+                composedFrames: shouldRetainComposedFrames ? composedFrames : [],
                 encodedAccessUnits,
                 mp4BuildInput,
                 mp4Bytes
