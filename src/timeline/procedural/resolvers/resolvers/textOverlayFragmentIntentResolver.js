@@ -39,21 +39,29 @@ export function resolveTextOverlayFragmentIntentAtTime({ fragment, timeSeconds }
         if (timeSeconds < item.startSeconds) continue;
         if (timeSeconds > item.endSeconds) continue;
 
-        const activeWords = Array.isArray(item.words)
-            ? item.words.filter((word) => {
+        const sourceWords = Array.isArray(item.words) ? item.words : [];
+        const activeWords = sourceWords
+            .filter((word) => {
                 const start = typeof word.start === "number" ? word.start : -Infinity;
                 const end = typeof word.end === "number" ? word.end : Infinity;
                 // Use half-open intervals to avoid boundary overlap:
                 // [start, end)
                 return timeSeconds >= start && timeSeconds < end;
-            })
-            : [];
+            });
 
         if (activeWords.length === 0) continue;
 
+        const activeWordIndex = sourceWords.findIndex((word) => {
+            const start = typeof word.start === "number" ? word.start : -Infinity;
+            const end = typeof word.end === "number" ? word.end : Infinity;
+            return timeSeconds >= start && timeSeconds < end;
+        });
+
         activeItems.push({
             ...item,
-            words: activeWords
+            words: activeWords,
+            allWords: sourceWords,
+            activeWordIndex
         });
     }
 

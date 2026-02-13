@@ -250,31 +250,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         "text-overlay": resolveTextOverlayFragmentIntentAtTime
     };
 
-    const textOverlays = [
-        {
-            start: 0,
-            end: 30,
-            override: [],
-            animate: [],
-            words: [
-                {
-                    start: 0,
-                    end: 30,
-                    text: "Hello",
-                    override: ["muted"],
-                    animate: []
-                },
-                {
-                    start: 0,
-                    end: 30,
-                    text: "World",
-                    override: [],
-                    animate: ["pulse"]
-                }
-            ]
-        }
-    ];
-
     previewBtn.onclick = () => {
         console.log("Preview button clicked");
 
@@ -1452,6 +1427,123 @@ function findClosestAudioFrame(audioFrames, timestampUs) {
 }
 
 let textOverlays = [];  // Declare textOverlays in the global scope
+const DEFAULT_TEXT_OVERLAY_STYLE = Object.freeze({
+    fontFamily: "Arial Black, Arial, sans-serif",
+    fontSizePx: 64,
+    lineHeightPx: 82,
+    sidePaddingPx: 64,
+    bottomPaddingPx: 148,
+    textAlign: "center",
+    baseFill: "#FFFFFF",
+    baseStroke: "rgba(0, 0, 0, 0.85)",
+    strokeWidthPx: 6,
+    activeFill: "#A5FF52",
+    secondaryActiveFill: "#FFD166",
+    secondaryHighlightEvery: 5,
+    shadowColor: "rgba(0, 0, 0, 0.55)",
+    shadowBlurPx: 8
+});
+
+function tokenizeTranscriptText(text) {
+    if (typeof text !== "string") return [];
+    const matches = text.match(/\S+/g);
+    return Array.isArray(matches) ? matches : [];
+}
+
+function buildTimedWordsFromSegment(segment) {
+    if (!segment || typeof segment.start !== "number" || typeof segment.end !== "number") {
+        return [];
+    }
+
+    if (Array.isArray(segment.words) && segment.words.length > 0) {
+        return segment.words
+            .map((word) => {
+                const text = typeof word?.word === "string" ? word.word.trim() : "";
+                const start = typeof word?.start === "number" ? word.start : null;
+                const end = typeof word?.end === "number" ? word.end : null;
+                if (!text || typeof start !== "number" || typeof end !== "number") return null;
+                return { text, start, end };
+            })
+            .filter(Boolean);
+    }
+
+    const tokens = tokenizeTranscriptText(segment.text);
+    if (tokens.length === 0) return [];
+
+    const startSeconds = segment.start;
+    const endSeconds = Math.max(segment.end, startSeconds + 0.001);
+    const totalDuration = endSeconds - startSeconds;
+    const totalWeight = tokens.reduce((sum, token) => sum + Math.max(token.length, 1), 0);
+
+    let cursor = startSeconds;
+    return tokens.map((token, index) => {
+        const weight = Math.max(token.length, 1);
+        const idealDuration = totalDuration * (weight / totalWeight);
+        const start = cursor;
+        const isLastToken = index === tokens.length - 1;
+        const end = isLastToken ? endSeconds : Math.min(endSeconds, cursor + idealDuration);
+        cursor = end;
+        return {
+            text: token,
+            start,
+            end
+        };
+    });
+}
+
+function buildTextOverlayItemsFromWhisperJson(whisperJson) {
+    if (!whisperJson || !Array.isArray(whisperJson.segments)) return [];
+
+    return whisperJson.segments
+        .map((segment, segmentIndex) => {
+            const words = buildTimedWordsFromSegment(segment);
+            if (words.length === 0) return null;
+            const startSeconds = typeof segment.start === "number" ? segment.start : words[0].start;
+            const endSeconds = typeof segment.end === "number" ? segment.end : words[words.length - 1].end;
+
+            return {
+                id: `whisper-segment-${segmentIndex}`,
+                startSeconds,
+                endSeconds,
+                words,
+                style: {
+                    ...DEFAULT_TEXT_OVERLAY_STYLE
+                },
+                override: [],
+                animate: []
+            };
+        })
+        .filter(Boolean);
+}
+
+async function loadTimelineTextOverlays() {
+    const transcriptCandidates = [
+        "./90502899-3eba-43a0-a8ed-3834d685e7b4.json"
+    ];
+
+    for (const transcriptPath of transcriptCandidates) {
+        try {
+            const response = await fetch(transcriptPath);
+            if (!response.ok) continue;
+            const json = await response.json();
+            const overlayItems = buildTextOverlayItemsFromWhisperJson(json);
+            if (overlayItems.length === 0) continue;
+            console.log("[Timeline][text-overlay] loaded transcript overlay items", {
+                transcriptPath,
+                itemCount: overlayItems.length
+            });
+            return overlayItems;
+        } catch (error) {
+            console.warn("[Timeline][text-overlay] failed to load transcript candidate", {
+                transcriptPath,
+                error: error?.message ?? String(error)
+            });
+        }
+    }
+
+    console.warn("[Timeline][text-overlay] no transcript overlay loaded; falling back to default demo overlay");
+    return [];
+}
 
 /**
  * createTimeline
@@ -1516,6 +1608,8 @@ async function createTimeline() {
     }
 
     const mp4Bytes = new Uint8Array(await resp.arrayBuffer());
+    const transcriptOverlayItems = await loadTimelineTextOverlays();
+    textOverlays = transcriptOverlayItems;
 
     const container = openContainerFromMp4({ mp4Bytes });
     const nativeTrackViews = container.createTrackViews();
@@ -1531,7 +1625,10 @@ async function createTimeline() {
             selectedVideoDemuxer,
             trackViewMediaTypes: mergedTrackViews.map(trackView => trackView.mediaType)
         });
-        return createTimelineFromPreparedAssets({ trackViews: mergedTrackViews });
+        return createTimelineFromPreparedAssets({
+            trackViews: mergedTrackViews,
+            textOverlayItems: transcriptOverlayItems
+        });
     }
 
     console.log("[Timeline] demux selection", {
@@ -1539,7 +1636,10 @@ async function createTimeline() {
         trackViewMediaTypes: nativeTrackViews.map(trackView => trackView.mediaType)
     });
 
-    return createTimelineFromPreparedAssets({ trackViews: nativeTrackViews });
+    return createTimelineFromPreparedAssets({
+        trackViews: nativeTrackViews,
+        textOverlayItems: transcriptOverlayItems
+    });
 }
 
 async function createMp4BoxVideoTrackView({ mp4Bytes }) {
@@ -1668,7 +1768,7 @@ async function createMp4BoxVideoTrackView({ mp4Bytes }) {
  * -------
  * - Timeline
  */
-export function createTimelineFromPreparedAssets({ trackViews }) {
+export function createTimelineFromPreparedAssets({ trackViews, textOverlayItems = [] }) {
     if (!Array.isArray(trackViews)) {
         throw new Error("createTimelineFromPreparedAssets: trackViews must be array");
     }
@@ -1710,22 +1810,40 @@ export function createTimelineFromPreparedAssets({ trackViews }) {
     const overlayTrack = new Track();
     timeline.addTrack(overlayTrack);
 
+    const overlayItems = Array.isArray(textOverlayItems) && textOverlayItems.length > 0
+        ? textOverlayItems
+        : [
+            {
+                id: "fallback-overlay",
+                startSeconds: 0,
+                endSeconds: 10,
+                words: [
+                    { start: 0, end: 3, text: "Hello" },
+                    { start: 3, end: 6, text: "Beautiful" },
+                    { start: 6, end: 9, text: "World" }
+                ],
+                style: {
+                    ...DEFAULT_TEXT_OVERLAY_STYLE
+                },
+                override: [],
+                animate: []
+            }
+        ];
+    const overlayClipStartSeconds = overlayItems.reduce((minStart, item) => {
+        const start = typeof item?.startSeconds === "number" ? item.startSeconds : minStart;
+        return Math.min(minStart, start);
+    }, Number.POSITIVE_INFINITY);
+    const overlayClipEndSeconds = overlayItems.reduce((maxEnd, item) => {
+        const end = typeof item?.endSeconds === "number" ? item.endSeconds : maxEnd;
+        return Math.max(maxEnd, end);
+    }, 0);
+
     overlayTrack.addClip(
         new ProceduralClip({
             kind: "text-overlay",
-            startSeconds: 0,
-            endSeconds: 10,
-            items: [
-                {
-                    words: [
-                        { start: 0, end: 3, text: "Hello" },
-                        { start: 3, end: 6, text: "Beautiful" },
-                        { start: 6, end: 9, text: "World" }
-                    ],
-                    override: [],
-                    animate: []
-                }
-            ]
+            startSeconds: Number.isFinite(overlayClipStartSeconds) ? overlayClipStartSeconds : 0,
+            endSeconds: overlayClipEndSeconds > 0 ? overlayClipEndSeconds : 10,
+            items: overlayItems
         })
     );
 

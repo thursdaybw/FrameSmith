@@ -29,6 +29,149 @@ function toCssColor(background = {}) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
+const DEFAULT_TEXT_STYLE = Object.freeze({
+    fontFamily: "Arial Black, Arial, sans-serif",
+    fontSizePx: 64,
+    lineHeightPx: 82,
+    sidePaddingPx: 64,
+    bottomPaddingPx: 148,
+    textAlign: "center",
+    baseFill: "#FFFFFF",
+    baseStroke: "rgba(0, 0, 0, 0.85)",
+    strokeWidthPx: 6,
+    activeFill: "#A5FF52",
+    secondaryActiveFill: "#FFD166",
+    secondaryHighlightEvery: 5,
+    shadowColor: "rgba(0, 0, 0, 0.55)",
+    shadowBlurPx: 8
+});
+
+function normalizeTextStyle(style = {}) {
+    return {
+        ...DEFAULT_TEXT_STYLE,
+        ...(style || {})
+    };
+}
+
+function isWordActiveAtTime(word, timeSeconds) {
+    const start = typeof word?.start === "number" ? word.start : -Infinity;
+    const end = typeof word?.end === "number" ? word.end : Infinity;
+    return timeSeconds >= start && timeSeconds < end;
+}
+
+function getWordsForRendering(item = {}, timeSeconds) {
+    const allWords = Array.isArray(item.allWords) && item.allWords.length > 0
+        ? item.allWords
+        : (Array.isArray(item.words) ? item.words : []);
+
+    if (allWords.length === 0) return { words: [], activeWordIndex: -1 };
+
+    const activeWordIndex = Number.isInteger(item.activeWordIndex) && item.activeWordIndex >= 0
+        ? item.activeWordIndex
+        : allWords.findIndex((word) => isWordActiveAtTime(word, timeSeconds));
+
+    return { words: allWords, activeWordIndex };
+}
+
+function wrapWordsToLines(ctx, words, maxLineWidth) {
+    const lines = [];
+    let currentLine = [];
+    let currentLineWidth = 0;
+
+    for (let index = 0; index < words.length; index += 1) {
+        const word = words[index];
+        const text = typeof word?.text === "string" ? word.text.trim() : "";
+        if (!text) continue;
+
+        const wordWidth = ctx.measureText(text).width;
+        const spacerWidth = currentLine.length === 0 ? 0 : ctx.measureText(" ").width;
+        const projectedWidth = currentLineWidth + spacerWidth + wordWidth;
+
+        if (currentLine.length > 0 && projectedWidth > maxLineWidth) {
+            lines.push({ words: currentLine, width: currentLineWidth });
+            currentLine = [{ index, text, width: wordWidth }];
+            currentLineWidth = wordWidth;
+            continue;
+        }
+
+        currentLine.push({ index, text, width: wordWidth });
+        currentLineWidth = projectedWidth;
+    }
+
+    if (currentLine.length > 0) {
+        lines.push({ words: currentLine, width: currentLineWidth });
+    }
+
+    return lines;
+}
+
+function getLineStartX(style, canvasWidth, lineWidth) {
+    if (style.textAlign === "left") {
+        return style.sidePaddingPx;
+    }
+    if (style.textAlign === "right") {
+        return Math.max(style.sidePaddingPx, canvasWidth - style.sidePaddingPx - lineWidth);
+    }
+    return Math.max(style.sidePaddingPx, Math.round((canvasWidth - lineWidth) / 2));
+}
+
+function drawStyledTextOverlayItem({ ctx, canvas, item, timeSeconds, yOffsetPx }) {
+    const { words, activeWordIndex } = getWordsForRendering(item, timeSeconds);
+    if (words.length === 0) return yOffsetPx;
+
+    const style = normalizeTextStyle(item?.style);
+    const fontSizePx = Math.max(12, Math.round(style.fontSizePx));
+    const lineHeightPx = Math.max(fontSizePx + 4, Math.round(style.lineHeightPx));
+    const sidePaddingPx = Math.max(8, Math.round(style.sidePaddingPx));
+    const bottomPaddingPx = Math.max(8, Math.round(style.bottomPaddingPx));
+    const strokeWidthPx = Math.max(0, Math.round(style.strokeWidthPx));
+    const maxLineWidth = Math.max(16, canvas.width - (sidePaddingPx * 2));
+    const highlightEvery = Math.max(1, Math.round(style.secondaryHighlightEvery));
+
+    ctx.font = `${fontSizePx}px ${style.fontFamily}`;
+    ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+
+    const lines = wrapWordsToLines(ctx, words, maxLineWidth);
+    if (lines.length === 0) return yOffsetPx;
+
+    const blockHeight = lines.length * lineHeightPx;
+    const blockBottomY = canvas.height - bottomPaddingPx - yOffsetPx;
+    const blockTopY = Math.max(0, blockBottomY - blockHeight);
+
+    ctx.shadowColor = style.shadowColor;
+    ctx.shadowBlur = Math.max(0, Math.round(style.shadowBlurPx));
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        const line = lines[lineIndex];
+        const baselineY = blockTopY + ((lineIndex + 1) * lineHeightPx) - Math.round((lineHeightPx - fontSizePx) / 2);
+        let cursorX = getLineStartX(style, canvas.width, line.width);
+
+        for (let wordIndex = 0; wordIndex < line.words.length; wordIndex += 1) {
+            const word = line.words[wordIndex];
+            const isActive = word.index === activeWordIndex;
+            const isSecondaryActive = isActive && ((word.index + 1) % highlightEvery === 0);
+            const fillColor = isSecondaryActive ? style.secondaryActiveFill : (isActive ? style.activeFill : style.baseFill);
+
+            if (strokeWidthPx > 0) {
+                ctx.lineWidth = strokeWidthPx;
+                ctx.strokeStyle = style.baseStroke;
+                ctx.strokeText(word.text, cursorX, baselineY);
+            }
+
+            ctx.fillStyle = fillColor;
+            ctx.fillText(word.text, cursorX, baselineY);
+            cursorX += word.width + ctx.measureText(" ").width;
+        }
+    }
+
+    return yOffsetPx + blockHeight + 16;
+}
+
 function createCompositionCanvas({ width, height, background }) {
     const canvasWidth = Math.max(1, Math.round(width));
     const canvasHeight = Math.max(1, Math.round(height));
@@ -63,37 +206,19 @@ function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) 
     const ctx = canvas.getContext("2d");
     if (!ctx || typeof ctx.fillText !== "function") return;
 
-    ctx.fillStyle = "#FFFFFF";
-    ctx.font = "bold 36px sans-serif";
-    ctx.textBaseline = "top";
-    ctx.shadowColor = "rgba(0,0,0,0.8)";
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetX = 2;
-    ctx.shadowOffsetY = 2;
-
-    let y = 40;
+    let yOffsetPx = 0;
     for (const intent of renderIntents) {
         if (!intent || intent.kind !== "text-overlay") continue;
 
         const items = Array.isArray(intent.items) ? intent.items : [];
         for (const item of items) {
-            const words = Array.isArray(item.words) ? item.words : [];
-            const visibleWords = words.filter((word) => {
-                const start = typeof word.start === "number" ? word.start : -Infinity;
-                const end = typeof word.end === "number" ? word.end : Infinity;
-                // Keep composition semantics aligned with resolver semantics:
-                // [start, end)
-                return timeSeconds >= start && timeSeconds < end;
+            yOffsetPx = drawStyledTextOverlayItem({
+                ctx,
+                canvas,
+                item,
+                timeSeconds,
+                yOffsetPx
             });
-
-            const text = visibleWords.length > 0
-                ? visibleWords.map(w => w.text).filter(Boolean).join(" ")
-                : item.text;
-
-            if (!text) continue;
-
-            ctx.fillText(text, 40, y);
-            y += 48;
         }
     }
 }
