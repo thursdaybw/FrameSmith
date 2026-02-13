@@ -30,64 +30,45 @@ No stage cheats.
 
 ---
 
-## Demux Baseline (Locked Decision)
+## Demux Baseline (Current)
 
-Date locked: February 13, 2026
+Date updated: February 13, 2026
 
-Current operating decision for timeline export debugging:
+Current operating decision for timeline export:
 
-- Video demux in timeline defaults to `mp4box` (`script.js` `videoDemuxer` default).
-- Native demux remains available via query override for comparison (`?videoDemuxer=native`).
+- Native demux is the default path.
+- mp4box remains available as an oracle/comparison path (`?videoDemuxer=mp4box`).
 
-Why this is locked:
+Resolved issue (root cause):
 
-- Isolated compare (`scripts/demux-isolation-node.mjs`) shows native and mp4box return the same video payload bytes/count, but different video timing/key semantics.
-- Native demux currently reports all video samples as key and flattens timing to CFR-like deltas.
-- mp4box reports mixed key/delta and decode-order-aware timing (with reorder behavior visible in PTS deltas).
+- Native demux was emitting incorrect video presentation timestamps for CTTS-backed streams.
+- Specifically, `deriveSamplesFromStbl` did not expand/apply CTTS run entries to per-sample offsets.
+- Result: video PTS collapsed toward DTS semantics and produced visible playback stutter after timeline export.
 
-Implication:
+Fix:
 
-- During timeline compiler stabilization, treat native demux video semantics as known-unreliable until fixed.
-- Use mp4box video demux as the baseline to reduce problem surface to timeline decode/compose/encode/mux behavior.
+- Apply CTTS composition offsets per sample when deriving semantic samples in:
+  - `src/mux/native/tests/goldenTruthExtractors/stbl/deriveSamplesFromStbl.js`
 
-## Native Demux Remediation (Required)
+Validation:
 
-Status: confirmed issue, fix pending
+- Timeline export with native demux now plays without stutter on the phone fixture.
+- Native demux vs mp4box parity now checks sample-by-sample:
+  - `pts`, `dts`, `duration`, `isKey`
+  - not just counts/spans.
 
-Scope:
+Guardrail tests:
 
-- This is a native demux semantic issue (video timing/key metadata), not a timeline composition issue.
-- Timeline export currently defaults to mp4box video demux as a stabilization baseline.
+- `src/mux/native/tests/test_deriveSamplesFromStbl.js`
+  - `test_DeriveSamplesFromStbl_AppliesCttsOffsets`
+- `src/mux/native/tests/test_nativeDemux_vs_mp4box_phoneFixture.js`
+- `src/mux/native/tests/node/test_nativeDemux_vs_mp4box_phoneFixture.mjs`
 
-Required fixes in native demux:
+Comparison tooling references:
 
-1. Video key semantics
-- Stop reporting all video access units as key.
-- Preserve true sync/key semantics from container-derived sample tables.
-
-2. Video timing semantics
-- Preserve decode/presentation timing semantics from source sample tables.
-- Do not flatten reordered presentation into synthetic CFR-like timing semantics.
-
-3. Semantic parity tests
-- Add demux comparison regression tests (native vs mp4box on same fixture).
-- Assert parity boundaries:
-  - sample count
-  - key/delta distribution
-  - DTS monotonic properties
-  - PTS reorder characteristics
-
-References (comparison tools and evidence):
-
-- `scripts/demux-isolation-node.mjs` (node-side native vs mp4box compare)
-- `scripts/mp4box-isolation-demux.js` (browser-side isolated compare)
-- `scripts/mp4box-isolation.html` (browser harness UI)
-
-Acceptance criteria:
-
-- Timeline export using native demux produces no visual stutter on the current reference source.
-- Isolated demux comparison shows native semantic output behavior aligned with mp4box for required invariants.
-- New regression tests fail on old behavior and pass on corrected behavior.
+- `scripts/demux-isolation-node.mjs`
+- `scripts/mp4box-isolation-demux.js`
+- `scripts/mp4box-isolation.html`
 
 ## Legacy Preview Surface (Current Status)
 
