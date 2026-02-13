@@ -32,8 +32,8 @@ function toCssColor(background = {}) {
 const DEFAULT_TEXT_STYLE = Object.freeze({
     fontFamily: "'FrameSmithAntonSC', 'Anton SC', 'Anton', 'Arial Black', sans-serif",
     fontWeight: 700,
-    fontSizePx: 70,
-    lineHeightPx: 86,
+    fontSizePx: 40,
+    lineHeightPx: 50,
     sidePaddingPx: 75,
     bottomPaddingPx: 208,
     textAlign: "center",

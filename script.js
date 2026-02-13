@@ -1096,8 +1096,8 @@ const DEFAULT_TEXT_OVERLAY_STYLE = Object.freeze({
     // Mirrors Drupal caption style: bevan_s_bench_portrait
     fontFamily: `'${CAPTION_FONT_FAMILY}', 'Anton SC', 'Anton', 'Arial Black', sans-serif`,
     fontWeight: 700,
-    fontSizePx: 70,
-    lineHeightPx: 86,
+    fontSizePx: 40,
+    lineHeightPx: 50,
     // Drupal ASS style uses MarginL/MarginR=200 on 1920 and MarginV=175 on 1080.
     // For 720x1280 export this maps closely to:
     sidePaddingPx: 75,
