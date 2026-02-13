@@ -310,6 +310,16 @@ import {
 import {
     test_nativeDemux_vs_mp4box_phoneFixture
 } from "./test_nativeDemux_vs_mp4box_phoneFixture.js";
+import {
+    test_ContainerTrackView_iterateSamplesByPtsRange_reorderedPts_noEarlyBreak,
+    test_ContainerTrackView_iterateSamplesByDtsRange_filtersByDts,
+    test_ContainerTrackView_getTrackIdentity_reportsStableShape
+} from "./test_ContainerTrackView_iterators.js";
+import {
+    test_openContainerFromMp4_exposesTrackListingAndTrackViews,
+    test_openContainerFromMp4_rejectsInvalidInput,
+    test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType
+} from "./test_openContainerFromMp4.js";
 
 import { 
    test_DeriveSamplesOnePerPacketFromStbl_Definition
@@ -1063,6 +1073,12 @@ const testsAll = [
     test_DeriveSamplesFromStbl_Definition,
     test_DeriveSamplesFromStbl_SyncParityWithStss,
     test_nativeDemux_vs_mp4box_phoneFixture,
+    test_ContainerTrackView_iterateSamplesByPtsRange_reorderedPts_noEarlyBreak,
+    test_ContainerTrackView_iterateSamplesByDtsRange_filtersByDts,
+    test_ContainerTrackView_getTrackIdentity_reportsStableShape,
+    test_openContainerFromMp4_exposesTrackListingAndTrackViews,
+    test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType,
+    test_openContainerFromMp4_rejectsInvalidInput,
     testNativeMuxer_DeriveSemanticTrackFamily,
     testNativeMuxer_TrackDuration_Relationships_AllFixtures,
     testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,

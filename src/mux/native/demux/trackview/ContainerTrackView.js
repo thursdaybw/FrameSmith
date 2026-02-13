@@ -72,14 +72,38 @@ export class ContainerTrackView {
         };
     }
 
+    getTrackIdentity() {
+        return {
+            mediaType: this.mediaType,
+            sampleCount: this.sampleCount,
+            trackTimescale: this.containerMeta?.trackTimescale
+        };
+    }
+
     *iterateSamplesByPtsRange(startPts, endPts) {
         for (const s of this._semanticSamples) {
             if (s.pts < startPts) continue;
-            if (s.pts > endPts) break;
+            if (s.pts > endPts) continue;
 
             yield {
                 pts: s.pts,
                 dts: s.dts,
+                duration: s.duration,
+                isKeyframe: s.isKey,
+                data: this._mp4Bytes.slice(s.offset, s.offset + s.size)
+            };
+        }
+    }
+
+    *iterateSamplesByDtsRange(startDts, endDts) {
+        for (const s of this._semanticSamples) {
+            const dts = typeof s.dts === "number" ? s.dts : s.pts;
+            if (dts < startDts) continue;
+            if (dts > endDts) continue;
+
+            yield {
+                pts: s.pts,
+                dts,
                 duration: s.duration,
                 isKeyframe: s.isKey,
                 data: this._mp4Bytes.slice(s.offset, s.offset + s.size)

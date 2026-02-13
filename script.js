@@ -199,8 +199,7 @@ import { ProceduralClip } from "./src/timeline/ProceduralClip.js";
 
 import { resolveTextOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/textOverlayFragmentIntentResolver.js";
 
-import { listTracksFromMp4 } from "./src/mux/native/demux/container/listTracksFromMp4.js";
-import { createContainerTrackViewFromMp4 } from "./src/mux/native/demux/trackview/createContainerTrackViewFromMp4.js";
+import { openContainerFromMp4 } from "./src/mux/native/demux/container/openContainerFromMp4.js";
 
 // Only import this for current preview, which is a development pscyholgoy convenience, remove this when upgrading preview
 // to future API
@@ -1518,16 +1517,10 @@ async function createTimeline() {
 
     const mp4Bytes = new Uint8Array(await resp.arrayBuffer());
 
-    const containerTracks = listTracksFromMp4({ mp4Bytes });
+    const container = openContainerFromMp4({ mp4Bytes });
+    const nativeTrackViews = container.createTrackViews();
 
-    const nativeTrackViews = containerTracks.map(trackInfo =>
-        createContainerTrackViewFromMp4({
-            mp4Bytes,
-            trackIndex: trackInfo.zeroBasedTrackIndex
-        })
-    );
-
-    const selectedVideoDemuxer = new URLSearchParams(window.location.search).get("videoDemuxer") ?? "mp4box";
+    const selectedVideoDemuxer = new URLSearchParams(window.location.search).get("videoDemuxer") ?? "native";
     if (selectedVideoDemuxer === "mp4box") {
         const mp4BoxVideoTrackView = await createMp4BoxVideoTrackView({ mp4Bytes });
         const mergedTrackViews = [
