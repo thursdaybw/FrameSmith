@@ -126,3 +126,61 @@ export async function test_DeriveSamplesFromStbl_SyncParityWithStss() {
         );
     }
 }
+
+export async function test_DeriveSamplesFromStbl_AppliesCttsOffsets() {
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4 = new Uint8Array(await resp.arrayBuffer());
+
+    const stblReport =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia/minf/stbl"
+            )
+            .readBoxReport();
+
+    const cttsReport =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia/minf/stbl/ctts"
+            )
+            .readBoxReport();
+
+    const derivedSamples = deriveSamplesFromStbl(stblReport.raw);
+    const cttsEntries = cttsReport?.box?.fields?.entries;
+
+    assertEqual("ctts entries available", Array.isArray(cttsEntries), true);
+
+    const expandedOffsets = [];
+    for (const entry of cttsEntries) {
+        for (let i = 0; i < entry.count; i++) {
+            expandedOffsets.push(entry.offset);
+        }
+    }
+
+    assertEqual(
+        "expanded ctts length must match sample count",
+        expandedOffsets.length,
+        derivedSamples.length
+    );
+
+    let nonZeroOffsetSamples = 0;
+    for (let i = 0; i < derivedSamples.length; i++) {
+        const expectedPts = derivedSamples[i].dts + expandedOffsets[i];
+        assertEqual(
+            `sample[${i}] pts must equal dts + ctts offset`,
+            derivedSamples[i].pts,
+            expectedPts
+        );
+        if (expandedOffsets[i] !== 0) {
+            nonZeroOffsetSamples++;
+        }
+    }
+
+    assertEqual(
+        "ctts fixture must include at least one non-zero offset",
+        nonZeroOffsetSamples > 0,
+        true
+    );
+}

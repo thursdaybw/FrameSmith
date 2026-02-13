@@ -36,6 +36,32 @@ function countKeys(units) {
     return units.reduce((sum, unit) => sum + (unit.isKey ? 1 : 0), 0);
 }
 
+function assertUnitsParity({ nativeUnits, mp4boxUnits, label, toleranceUs = 1 }) {
+    if (nativeUnits.length !== mp4boxUnits.length) {
+        throw new Error(`${label}: sample count mismatch native=${nativeUnits.length} mp4box=${mp4boxUnits.length}`);
+    }
+
+    for (let i = 0; i < nativeUnits.length; i++) {
+        const nativeUnit = nativeUnits[i];
+        const mp4boxUnit = mp4boxUnits[i];
+
+        const ptsDelta = Math.abs(nativeUnit.ptsUs - mp4boxUnit.ptsUs);
+        const dtsDelta = Math.abs(nativeUnit.dtsUs - mp4boxUnit.dtsUs);
+        const durationDelta = Math.abs(nativeUnit.durationUs - mp4boxUnit.durationUs);
+        const keyParity = nativeUnit.isKey === mp4boxUnit.isKey;
+
+        if (ptsDelta > toleranceUs || dtsDelta > toleranceUs || durationDelta > toleranceUs || !keyParity) {
+            throw new Error(
+                `${label}: sample mismatch at index ${i} ` +
+                `(pts native=${nativeUnit.ptsUs} mp4box=${mp4boxUnit.ptsUs}, ` +
+                `dts native=${nativeUnit.dtsUs} mp4box=${mp4boxUnit.dtsUs}, ` +
+                `duration native=${nativeUnit.durationUs} mp4box=${mp4boxUnit.durationUs}, ` +
+                `isKey native=${nativeUnit.isKey} mp4box=${mp4boxUnit.isKey})`
+            );
+        }
+    }
+}
+
 async function demuxWithMp4Box({ mp4Bytes }) {
     return await new Promise((resolve, reject) => {
         const mp4boxFile = MP4Box.createFile(true);
@@ -221,6 +247,17 @@ export async function test_nativeDemux_vs_mp4box_phoneFixture() {
     if (countKeys(nativeVideo) !== countKeys(mp4boxVideo)) {
         throw new Error(`video keyframe count mismatch native=${countKeys(nativeVideo)} mp4box=${countKeys(mp4boxVideo)}`);
     }
+
+    assertUnitsParity({
+        nativeUnits: nativeVideo,
+        mp4boxUnits: mp4boxVideo,
+        label: "video unit parity"
+    });
+    assertUnitsParity({
+        nativeUnits: nativeAudio,
+        mp4boxUnits: mp4boxAudio,
+        label: "audio unit parity"
+    });
 
     const nativeVideoSpan = span(nativeVideo.map((unit) => unit.ptsUs));
     const mp4boxVideoSpan = span(mp4boxVideo.map((unit) => unit.ptsUs));

@@ -305,7 +305,8 @@ import {
 
 import { 
    test_DeriveSamplesFromStbl_Definition,
-   test_DeriveSamplesFromStbl_SyncParityWithStss
+   test_DeriveSamplesFromStbl_SyncParityWithStss,
+   test_DeriveSamplesFromStbl_AppliesCttsOffsets
 } from "./test_deriveSamplesFromStbl.js";
 import {
     test_nativeDemux_vs_mp4box_phoneFixture
@@ -1072,6 +1073,7 @@ const testsAll = [
 
     test_DeriveSamplesFromStbl_Definition,
     test_DeriveSamplesFromStbl_SyncParityWithStss,
+    test_DeriveSamplesFromStbl_AppliesCttsOffsets,
     test_nativeDemux_vs_mp4box_phoneFixture,
     test_ContainerTrackView_iterateSamplesByPtsRange_reorderedPts_noEarlyBreak,
     test_ContainerTrackView_iterateSamplesByDtsRange_filtersByDts,

@@ -29,6 +29,24 @@ function spanByPtsUs(units) {
     return units[units.length - 1].ptsUs - units[0].ptsUs;
 }
 
+function assertUnitsParity({ nativeUnits, mp4boxUnits, label, toleranceUs = 1 }) {
+    assertEqual(`${label} sample count parity`, nativeUnits.length, mp4boxUnits.length);
+
+    for (let i = 0; i < nativeUnits.length; i++) {
+        const nativeUnit = nativeUnits[i];
+        const mp4boxUnit = mp4boxUnits[i];
+
+        const ptsDelta = Math.abs(nativeUnit.ptsUs - mp4boxUnit.ptsUs);
+        const dtsDelta = Math.abs(nativeUnit.dtsUs - mp4boxUnit.dtsUs);
+        const durationDelta = Math.abs(nativeUnit.durationUs - mp4boxUnit.durationUs);
+
+        assertEqual(`${label}[${i}] pts parity`, ptsDelta <= toleranceUs, true);
+        assertEqual(`${label}[${i}] dts parity`, dtsDelta <= toleranceUs, true);
+        assertEqual(`${label}[${i}] duration parity`, durationDelta <= toleranceUs, true);
+        assertEqual(`${label}[${i}] key parity`, nativeUnit.isKey, mp4boxUnit.isKey);
+    }
+}
+
 async function demuxWithMp4Box({ mp4Bytes }) {
     if (typeof MP4Box === "undefined") {
         return null;
@@ -168,6 +186,16 @@ export async function test_nativeDemux_vs_mp4box_phoneFixture() {
     assertEqual("video sample count parity", nativeVideo.length, mp4boxVideo.length);
     assertEqual("audio sample count parity", nativeAudio.length, mp4boxAudio.length);
     assertEqual("video key count parity", countKeys(nativeVideo), countKeys(mp4boxVideo));
+    assertUnitsParity({
+        nativeUnits: nativeVideo,
+        mp4boxUnits: mp4boxVideo,
+        label: "video units"
+    });
+    assertUnitsParity({
+        nativeUnits: nativeAudio,
+        mp4boxUnits: mp4boxAudio,
+        label: "audio units"
+    });
 
     const nativeVideoSpan = spanByPtsUs(nativeVideo);
     const mp4boxVideoSpan = spanByPtsUs(mp4boxVideo);

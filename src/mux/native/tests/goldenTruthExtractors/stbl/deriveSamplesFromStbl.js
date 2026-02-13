@@ -165,11 +165,24 @@ function tryGetCtts(stblBoxBytes) {
                 })
                 .readBoxReport();
 
-        if (!Array.isArray(ctts?.box?.fields?.offsets)) {
+        const entries = ctts?.box?.fields?.entries;
+        if (!Array.isArray(entries)) {
             throw new Error();
         }
 
-        return ctts.box.fields.offsets.slice();
+        const offsets = [];
+        for (const entry of entries) {
+            const count = entry?.count;
+            const offset = entry?.offset;
+            if (!Number.isInteger(count) || count < 0 || !Number.isInteger(offset)) {
+                throw new Error();
+            }
+            for (let i = 0; i < count; i++) {
+                offsets.push(offset);
+            }
+        }
+
+        return offsets;
     } catch {
         return null;
     }
