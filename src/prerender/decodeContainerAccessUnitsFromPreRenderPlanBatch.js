@@ -555,6 +555,21 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
     audioDecoder,
     exportRange = null
 }) {
+    // If callers run decode in multiple passes, ensure each pass starts with
+    // empty output buffers so decoded frames do not accumulate across passes.
+    if (videoDecoder && typeof videoDecoder.getDecodedOutputs === "function") {
+        const previousVideoOutputs = videoDecoder.getDecodedOutputs();
+        if (Array.isArray(previousVideoOutputs)) {
+            previousVideoOutputs.length = 0;
+        }
+    }
+    if (audioDecoder && typeof audioDecoder.getDecodedOutputs === "function") {
+        const previousAudioOutputs = audioDecoder.getDecodedOutputs();
+        if (Array.isArray(previousAudioOutputs)) {
+            previousAudioOutputs.length = 0;
+        }
+    }
+
 
     if (!plan || !Array.isArray(plan.fragments)) {
         throw new Error(

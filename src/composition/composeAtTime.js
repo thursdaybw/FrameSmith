@@ -252,6 +252,33 @@ function createCompositionCanvas({ width, height, background }) {
     return null;
 }
 
+function getReusableCompositionCanvas({ options, width, height, background }) {
+    const canvasWidth = Math.max(1, Math.round(width));
+    const canvasHeight = Math.max(1, Math.round(height));
+    const cachedCanvas = options?.__reusableCompositionCanvas;
+    const hasCachedMatch =
+        !!cachedCanvas &&
+        cachedCanvas.width === canvasWidth &&
+        cachedCanvas.height === canvasHeight &&
+        typeof cachedCanvas.getContext === "function";
+
+    const canvas = hasCachedMatch
+        ? cachedCanvas
+        : createCompositionCanvas({ width: canvasWidth, height: canvasHeight, background });
+    if (!canvas) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.fillStyle = toCssColor(background);
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    if (options && typeof options === "object") {
+        options.__reusableCompositionCanvas = canvas;
+    }
+
+    return canvas;
+}
+
 function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) {
     if (!Array.isArray(renderIntents) || renderIntents.length === 0) return;
     if (!canvas || typeof canvas.getContext !== "function") return;
@@ -355,7 +382,7 @@ function createVideoFrameArtifact({ timeSeconds, options, decodedContainerBacked
             const width = options?.outputSpec?.width ?? sourceDrawable.displayWidth ?? sourceDrawable.codedWidth ?? sourceDrawable.width ?? 2;
             const height = options?.outputSpec?.height ?? sourceDrawable.displayHeight ?? sourceDrawable.codedHeight ?? sourceDrawable.height ?? 2;
             const background = options?.background ?? { r: 0, g: 0, b: 0, a: 1 };
-            const sourceCanvas = createCompositionCanvas({ width, height, background });
+            const sourceCanvas = getReusableCompositionCanvas({ options, width, height, background });
 
             if (sourceCanvas) {
                 const ctx = sourceCanvas.getContext("2d");
@@ -402,7 +429,7 @@ function createVideoFrameArtifact({ timeSeconds, options, decodedContainerBacked
     const width = options?.outputSpec?.width ?? 2;
     const height = options?.outputSpec?.height ?? 2;
     const background = options?.background ?? { r: 0, g: 0, b: 0, a: 1 };
-    const source = createCompositionCanvas({ width, height, background });
+    const source = getReusableCompositionCanvas({ options, width, height, background });
     if (!source) {
         return {
             value: null,
@@ -444,14 +471,22 @@ function createAudioDataArtifact({ timeSeconds, options, decodedContainerBackedF
     }
 
     const existingAudio = decodedContainerBackedFragmentBatch?.decodedAudioData;
-    if (Array.isArray(existingAudio)) {
+    const decodedAudioFrames = Array.isArray(existingAudio)
+        ? existingAudio.filter(audio => audio instanceof AudioData)
+        : [];
+    const hasDecodedAudioCadence = decodedAudioFrames.length > 0;
+
+    if (hasDecodedAudioCadence) {
         const sourceAudioData = pickClosestTimestampedItem(
-            existingAudio.filter(audio => audio instanceof AudioData),
+            decodedAudioFrames,
             secondsToMicroseconds(timeSeconds)
         );
         if (sourceAudioData) {
             return { value: sourceAudioData, issue: null };
         }
+        // Decoded audio is present for this export path. If no timestamp match is
+        // found, avoid allocating synthetic audio per video frame.
+        return { value: null, issue: null };
     }
 
     const sampleRate = options?.outputSpec?.sampleRate ?? 48_000;

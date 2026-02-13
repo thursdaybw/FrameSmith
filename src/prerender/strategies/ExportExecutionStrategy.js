@@ -101,16 +101,8 @@ export class ExportExecutionStrategy {
             throw new Error("ExportExecutionStrategy.execute: fps must be > 0");
         }
 
-        const decodedContainerBackedFragmentBatch =
-            await decodeContainerAccessUnitsFromPreRenderPlanBatch({
-                plan,
-                videoDecoder: this.videoDecoder,
-                audioDecoder: this.audioDecoder,
-                exportRange
-            });
-        const sourceVideoFramesToClose = new Set();
-        try {
-            const frameStepSeconds = 1 / fps;
+        let decodedContainerBackedFragmentBatch = null;
+        const frameStepSeconds = 1 / fps;
             const startSeconds = exportRange.startSeconds ?? 0;
             const endSeconds = exportRange.endSeconds ?? startSeconds;
             const exportStartUs = Math.round(startSeconds * 1_000_000);
@@ -135,21 +127,16 @@ export class ExportExecutionStrategy {
                 fallbackFrameTimes.push(Number(t.toFixed(6)));
             }
 
-            const decodedVideoFrames = Array.isArray(decodedContainerBackedFragmentBatch?.decodedVideoFrames)
-                ? decodedContainerBackedFragmentBatch.decodedVideoFrames
-                : [];
-            const videoFramesFromDecodedRange = decodedVideoFrames
-                .filter(isDrawableVideoFrameCandidate)
-                .filter(frame => frame.timestamp >= exportStartUs && frame.timestamp <= exportEndUs)
-                .sort((a, b) => a.timestamp - b.timestamp);
-
             // Export video as CFR on requested fps grid while selecting source
             // pixels by nearest decoded timestamp (not raw array index).
             const videoCompositionTimes = fallbackFrameTimes;
-
             const totalFrames = videoCompositionTimes.length;
-            const hasDecodedAudioSamples = Array.isArray(decodedContainerBackedFragmentBatch?.decodedAudioData) &&
-                decodedContainerBackedFragmentBatch.decodedAudioData.some(isAudioDataInstance);
+            const decodeChunkSeconds = Math.max(
+                0.5,
+                Number.isFinite(this.options.decodeChunkSeconds)
+                    ? this.options.decodeChunkSeconds
+                    : 1.0
+            );
 
             const encodeVideoFrame = this.encodeVideoFrame ? (args) => {
                 const result = this.encodeVideoFrame(args) ?? {};
@@ -173,97 +160,186 @@ export class ExportExecutionStrategy {
                 return result.accessUnit ?? result;
             } : undefined;
 
-            const hasDecodedVideoCadence = videoFramesFromDecodedRange.length > 0;
-            if (hasDecodedVideoCadence) {
-                console.log("[ExportExecutionStrategy] video compose/encode from decoded cadence", {
-                    decodedVideoFrames: decodedVideoFrames.length,
-                    exportRangeVideoFrames: videoFramesFromDecodedRange.length,
-                    cfrOutputFrames: videoCompositionTimes.length
-                });
-            }
-
-            const videoFrameSearchState = { index: 0 };
             const frameSelectionTrace = [];
             let previousMappedDecodedVideoFrame = null;
-            for (let compositionIndex = 0; compositionIndex < videoCompositionTimes.length; compositionIndex++) {
-                const timeSeconds = videoCompositionTimes[compositionIndex];
-                frameIndex++;
+            const encodedAudioTimestamps = new Set();
+            const closeDecodedBatchArtifacts = (batch) => {
+                if (!batch || typeof batch !== "object") return;
+                const videoFrames = Array.isArray(batch.decodedVideoFrames) ? batch.decodedVideoFrames : [];
+                for (const frame of videoFrames) {
+                    if (isVideoFrameInstance(frame) && typeof frame.close === "function") {
+                        try { frame.close(); } catch {}
+                    }
+                }
+                const audioFrames = Array.isArray(batch.decodedAudioData) ? batch.decodedAudioData : [];
+                for (const audioData of audioFrames) {
+                    if (isAudioDataInstance(audioData) && typeof audioData.close === "function") {
+                        try { audioData.close(); } catch {}
+                    }
+                }
+            };
 
-                if (frameIndex === 1 || frameIndex % 30 === 0 || frameIndex === totalFrames) {
-                    console.log("[ExportExecutionStrategy] compose/encode progress", {
-                        frameIndex,
-                        totalFrames,
-                        timeSeconds
+            let loggedVideoCadence = false;
+            for (let chunkStart = startSeconds; chunkStart < endSeconds + 1e-9; chunkStart += decodeChunkSeconds) {
+                const chunkEnd = Math.min(endSeconds, chunkStart + decodeChunkSeconds);
+                const isLastChunk = chunkEnd >= endSeconds - 1e-9;
+                const chunkRange = {
+                    startSeconds: chunkStart,
+                    endSeconds: chunkEnd
+                };
+                const chunkTimes = videoCompositionTimes.filter((timeSeconds) => {
+                    if (timeSeconds + 1e-9 < chunkStart) return false;
+                    if (isLastChunk) return timeSeconds <= chunkEnd + 1e-9;
+                    return timeSeconds < chunkEnd - 1e-9;
+                });
+                if (chunkTimes.length === 0) {
+                    continue;
+                }
+
+                const decodedChunkBatch = await decodeContainerAccessUnitsFromPreRenderPlanBatch({
+                    plan,
+                    videoDecoder: this.videoDecoder,
+                    audioDecoder: this.audioDecoder,
+                    exportRange: chunkRange
+                });
+                decodedContainerBackedFragmentBatch = decodedChunkBatch;
+
+                const decodedVideoFrames = Array.isArray(decodedChunkBatch?.decodedVideoFrames)
+                    ? decodedChunkBatch.decodedVideoFrames
+                    : [];
+                const videoFramesFromDecodedRange = decodedVideoFrames
+                    .filter(isDrawableVideoFrameCandidate)
+                    .filter(frame => frame.timestamp >= exportStartUs && frame.timestamp <= exportEndUs)
+                    .sort((a, b) => a.timestamp - b.timestamp);
+                const hasDecodedVideoCadence = videoFramesFromDecodedRange.length > 0;
+                const hasDecodedAudioSamples = Array.isArray(decodedChunkBatch?.decodedAudioData) &&
+                    decodedChunkBatch.decodedAudioData.some(isAudioDataInstance);
+
+                if (hasDecodedVideoCadence && !loggedVideoCadence) {
+                    loggedVideoCadence = true;
+                    console.log("[ExportExecutionStrategy] video compose/encode from decoded cadence", {
+                        decodedVideoFrames: decodedVideoFrames.length,
+                        exportRangeVideoFrames: videoFramesFromDecodedRange.length,
+                        cfrOutputFrames: videoCompositionTimes.length
                     });
                 }
 
-                const { renderIntents } = resolveProceduralFragmentsAtTimeFromPlan({
-                    plan,
-                    timeSeconds,
-                    timecodeFragmentIntentResolvers: this.timecodeFragmentIntentResolvers
-                });
+                const videoFrameSearchState = { index: 0 };
+                for (let compositionIndex = 0; compositionIndex < chunkTimes.length; compositionIndex++) {
+                    const timeSeconds = chunkTimes[compositionIndex];
+                    frameIndex++;
 
-                const targetTimestampUs = Math.round(timeSeconds * 1_000_000);
-                const mappedDecodedVideoFrame = hasDecodedVideoCadence
-                    ? pickFrameForTargetTimestampUs({
-                        frames: videoFramesFromDecodedRange,
-                        targetTimestampUs,
-                        searchState: videoFrameSearchState
-                    })
-                    : null;
-                const mappedTimestampUs =
-                    typeof mappedDecodedVideoFrame?.timestamp === "number"
-                        ? mappedDecodedVideoFrame.timestamp
+                    if (frameIndex === 1 || frameIndex % 30 === 0 || frameIndex === totalFrames) {
+                        console.log("[ExportExecutionStrategy] compose/encode progress", {
+                            frameIndex,
+                            totalFrames,
+                            timeSeconds
+                        });
+                    }
+
+                    const { renderIntents } = resolveProceduralFragmentsAtTimeFromPlan({
+                        plan,
+                        timeSeconds,
+                        timecodeFragmentIntentResolvers: this.timecodeFragmentIntentResolvers
+                    });
+
+                    const targetTimestampUs = Math.round(timeSeconds * 1_000_000);
+                    const mappedDecodedVideoFrame = hasDecodedVideoCadence
+                        ? pickFrameForTargetTimestampUs({
+                            frames: videoFramesFromDecodedRange,
+                            targetTimestampUs,
+                            searchState: videoFrameSearchState
+                        })
                         : null;
-                frameSelectionTrace.push({
-                    frameIndex,
-                    targetTimestampUs,
-                    sourceTimestampUs: mappedTimestampUs,
-                    sourceDeltaUs:
-                        typeof mappedTimestampUs === "number"
-                            ? mappedTimestampUs - targetTimestampUs
-                            : null,
-                    repeatedSourceFrame:
-                        !!mappedDecodedVideoFrame &&
-                        mappedDecodedVideoFrame === previousMappedDecodedVideoFrame
-                });
-                previousMappedDecodedVideoFrame = mappedDecodedVideoFrame;
-                const perTimeDecodedBatch =
-                    mappedDecodedVideoFrame
-                        ? {
-                            ...decodedContainerBackedFragmentBatch,
-                            decodedVideoFrames: [mappedDecodedVideoFrame]
+                    const mappedTimestampUs =
+                        typeof mappedDecodedVideoFrame?.timestamp === "number"
+                            ? mappedDecodedVideoFrame.timestamp
+                            : null;
+                    frameSelectionTrace.push({
+                        frameIndex,
+                        targetTimestampUs,
+                        sourceTimestampUs: mappedTimestampUs,
+                        sourceDeltaUs:
+                            typeof mappedTimestampUs === "number"
+                                ? mappedTimestampUs - targetTimestampUs
+                                : null,
+                        repeatedSourceFrame:
+                            !!mappedDecodedVideoFrame &&
+                            mappedDecodedVideoFrame === previousMappedDecodedVideoFrame
+                    });
+                    previousMappedDecodedVideoFrame = mappedDecodedVideoFrame;
+                    const perTimeDecodedBatch =
+                        mappedDecodedVideoFrame
+                            ? {
+                                ...decodedChunkBatch,
+                                decodedVideoFrames: [mappedDecodedVideoFrame]
+                            }
+                            : decodedChunkBatch;
+
+                    const compositionOutput = composeAtTime({
+                        timeSeconds,
+                        decodedContainerBackedFragmentBatch: perTimeDecodedBatch,
+                        activeLayers: this.activeLayers,
+                        renderIntents,
+                        options: this.options
+                    });
+                    if (shouldRetainComposedFrames) {
+                        composedFrames.push(compositionOutput);
+                    }
+
+                    const encodedAtTimeResult = encodeAtTime({
+                        timeSeconds,
+                        compositionOutput,
+                        provenance: {
+                            planId: plan.id ?? null
+                        },
+                        options: this.options,
+                        encodeVideoFrame,
+                        encodeAudioData: hasDecodedAudioSamples ? undefined : encodeAudioData
+                    });
+
+                    encodedAccessUnits.push(...encodedAtTimeResult.encodedAccessUnits);
+                }
+
+                if (hasDecodedAudioSamples && encodeAudioData) {
+                    const decodedAudioFrames = decodedChunkBatch.decodedAudioData
+                        .filter(isAudioDataInstance)
+                        .sort((a, b) => a.timestamp - b.timestamp);
+                    const exportRangeAudioFrames = decodedAudioFrames.filter((audioData) =>
+                        audioData.timestamp >= exportStartUs && audioData.timestamp <= exportEndUs
+                    );
+
+                    console.log("[ExportExecutionStrategy] audio encode from decoded cadence", {
+                        decodedAudioFrames: decodedAudioFrames.length,
+                        exportRangeAudioFrames: exportRangeAudioFrames.length
+                    });
+
+                    for (const audioData of exportRangeAudioFrames) {
+                        const audioKey = `${audioData.timestamp}:${audioData.numberOfFrames ?? 0}`;
+                        if (encodedAudioTimestamps.has(audioKey)) {
+                            continue;
                         }
-                        : decodedContainerBackedFragmentBatch;
-
-                if (isVideoFrameInstance(mappedDecodedVideoFrame) && typeof mappedDecodedVideoFrame.close === "function") {
-                    sourceVideoFramesToClose.add(mappedDecodedVideoFrame);
+                        encodedAudioTimestamps.add(audioKey);
+                        const timeSeconds = audioData.timestamp / 1_000_000;
+                        const audioAccessUnit = encodeAudioData({
+                            audioData,
+                            timeSeconds,
+                            provenance: {
+                                planId: plan.id ?? null
+                            },
+                            options: this.options
+                        });
+                        if (!audioAccessUnit || typeof audioAccessUnit !== "object") {
+                            throw new Error("ExportExecutionStrategy: encodeAudioData must return an access-unit object");
+                        }
+                        encodedAccessUnits.push(audioAccessUnit);
+                    }
                 }
-                const compositionOutput = composeAtTime({
-                    timeSeconds,
-                    decodedContainerBackedFragmentBatch: perTimeDecodedBatch,
-                    activeLayers: this.activeLayers,
-                    renderIntents,
-                    options: this.options
-                });
-                if (shouldRetainComposedFrames) {
-                    composedFrames.push(compositionOutput);
+
+                closeDecodedBatchArtifacts(decodedChunkBatch);
+                if (isLastChunk) {
+                    break;
                 }
-
-                const encodedAtTimeResult = encodeAtTime({
-                    timeSeconds,
-                    compositionOutput,
-                    provenance: {
-                        planId: plan.id ?? null
-                    },
-                    options: this.options,
-                    encodeVideoFrame,
-                    // If decoded AudioData is available, encode it in native audio cadence
-                    // after the video-frame loop to avoid re-encoding at video cadence.
-                    encodeAudioData: hasDecodedAudioSamples ? undefined : encodeAudioData
-                });
-
-                encodedAccessUnits.push(...encodedAtTimeResult.encodedAccessUnits);
             }
 
             if (frameSelectionTrace.length > 0) {
@@ -282,36 +358,6 @@ export class ExportExecutionStrategy {
                     "[ExportExecutionStrategy] video frame selection trace JSON",
                     JSON.stringify(frameSelectionTrace)
                 );
-            }
-
-            if (hasDecodedAudioSamples && encodeAudioData) {
-                const decodedAudioFrames = decodedContainerBackedFragmentBatch.decodedAudioData
-                    .filter(isAudioDataInstance)
-                    .sort((a, b) => a.timestamp - b.timestamp);
-                const exportRangeAudioFrames = decodedAudioFrames.filter((audioData) =>
-                    audioData.timestamp >= exportStartUs && audioData.timestamp <= exportEndUs
-                );
-
-                console.log("[ExportExecutionStrategy] audio encode from decoded cadence", {
-                    decodedAudioFrames: decodedAudioFrames.length,
-                    exportRangeAudioFrames: exportRangeAudioFrames.length
-                });
-
-                for (const audioData of exportRangeAudioFrames) {
-                    const timeSeconds = audioData.timestamp / 1_000_000;
-                    const audioAccessUnit = encodeAudioData({
-                        audioData,
-                        timeSeconds,
-                        provenance: {
-                            planId: plan.id ?? null
-                        },
-                        options: this.options
-                    });
-                    if (!audioAccessUnit || typeof audioAccessUnit !== "object") {
-                        throw new Error("ExportExecutionStrategy: encodeAudioData must return an access-unit object");
-                    }
-                    encodedAccessUnits.push(audioAccessUnit);
-                }
             }
 
             if (typeof this.flushVideoEncoder === "function") {
@@ -391,21 +437,12 @@ export class ExportExecutionStrategy {
                 });
             }
 
-            return {
-                decodedContainerBackedFragmentBatch,
-                composedFrames: shouldRetainComposedFrames ? composedFrames : [],
-                encodedAccessUnits,
-                mp4BuildInput,
-                mp4Bytes
-            };
-        } finally {
-            for (const frame of sourceVideoFramesToClose) {
-                try {
-                    frame.close();
-                } catch {
-                    // Ignore close failures in cleanup path.
-                }
-            }
-        }
+        return {
+            decodedContainerBackedFragmentBatch,
+            composedFrames: shouldRetainComposedFrames ? composedFrames : [],
+            encodedAccessUnits,
+            mp4BuildInput,
+            mp4Bytes
+        };
     }
 }
