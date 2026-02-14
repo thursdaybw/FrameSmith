@@ -261,6 +261,66 @@ If `reference_hevc.mp4` is missing, `test_extractTrackCodecConfiguration_hvc1_re
 
 ---
 
+## **Generate a local WebM oracle (for EBML/WebM demux tests)**
+
+Generate a deterministic VP9+Opus WebM fixture:
+
+```bash
+ffmpeg -hide_banner -y \
+  -f lavfi -i testsrc2=size=128x128:rate=30:duration=2 \
+  -f lavfi -i sine=frequency=440:sample_rate=48000:duration=2 \
+  -c:v libvpx-vp9 \
+  -b:v 600k \
+  -g 30 -keyint_min 30 \
+  -row-mt 1 -tile-columns 1 \
+  -deadline good -cpu-used 4 \
+  -c:a libopus -b:a 96k -ar 48000 -ac 2 \
+  -shortest \
+  reference_webm_vp9_opus.webm
+```
+
+Extract raw ffprobe oracle JSON:
+
+```bash
+ffprobe -v quiet -print_format json \
+  -show_format -show_streams -show_packets \
+  reference_webm_vp9_opus.webm \
+  > reference_webm_vp9_opus.ffprobe.json
+```
+
+Normalize ffprobe output into stable comparison shape:
+
+```bash
+node normalize_webm_ffprobe_oracle.mjs \
+  reference_webm_vp9_opus.ffprobe.json \
+  reference_webm_vp9_opus.oracle.json
+```
+
+What this gives:
+
+- `reference_webm_vp9_opus.webm` (fixture bytes)
+- `reference_webm_vp9_opus.ffprobe.json` (full external oracle dump)
+- `reference_webm_vp9_opus.oracle.json` (stable, test-friendly summary)
+
+Verification:
+
+```bash
+ffprobe -hide_banner reference_webm_vp9_opus.webm
+```
+
+Expected:
+
+- video codec: `vp9`
+- audio codec: `opus`
+- video stream count: `1`
+- audio stream count: `1`
+
+If WebM oracle files are missing, these tests fail and point back to this README:
+
+- `test_webm_oracle_referenceFixture_isPresentAndSane`
+
+---
+
 ## **Step 2 — Extract each box into fixtures**
 
 I will generate the extractor script next, but conceptually:

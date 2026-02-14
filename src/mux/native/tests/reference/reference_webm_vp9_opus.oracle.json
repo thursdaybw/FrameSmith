@@ -1,0 +1,60 @@
+{
+  "generator": {
+    "tool": "normalize_webm_ffprobe_oracle.mjs",
+    "source": "ffprobe -show_format -show_streams -show_packets"
+  },
+  "format": {
+    "filename": "reference_webm_vp9_opus.webm",
+    "formatName": "matroska,webm",
+    "formatLongName": "Matroska / WebM",
+    "durationSeconds": 2.008,
+    "sizeBytes": 119491,
+    "bitRate": 476059
+  },
+  "streamSummary": [
+    {
+      "index": 0,
+      "codecType": "video",
+      "codecName": "vp9",
+      "codecTagString": "[0][0][0][0]",
+      "timeBase": "1/1000",
+      "width": 128,
+      "height": 128,
+      "sampleRate": null,
+      "channels": null
+    },
+    {
+      "index": 1,
+      "codecType": "audio",
+      "codecName": "opus",
+      "codecTagString": "[0][0][0][0]",
+      "timeBase": "1/1000",
+      "width": null,
+      "height": null,
+      "sampleRate": 48000,
+      "channels": 2
+    }
+  ],
+  "packetSummary": [
+    {
+      "streamIndex": 0,
+      "packetCount": 60,
+      "keyframeCount": 2,
+      "firstPts": 0,
+      "lastPts": 1967,
+      "minDuration": 33,
+      "maxDuration": 33,
+      "nonMonotonicPtsCount": 0
+    },
+    {
+      "streamIndex": 1,
+      "packetCount": 101,
+      "keyframeCount": 101,
+      "firstPts": -7,
+      "lastPts": 1994,
+      "minDuration": 20,
+      "maxDuration": 20,
+      "nonMonotonicPtsCount": 0
+    }
+  ]
+}

@@ -168,6 +168,47 @@ Target flow:
 - missing fields fail with clear errors
 - unsupported WebM features fail explicitly (not silent corruption)
 
+## Reader Oracle Agreement Plan (No WebM Writer Required Yet)
+
+We still want strict verification, even without a WebM writer in this phase.
+
+Approach:
+
+1. Generate deterministic WebM fixtures with `ffmpeg`.
+2. Use external reader oracles:
+- `ffprobe` for stream + packet facts
+- `mkvinfo` for container structure sanity
+3. Normalize oracle outputs into a stable comparison shape.
+4. Compare NativeMuxer WebM reader output against that shape.
+
+Comparison targets (stable fields):
+
+- track count and track types
+- codec IDs
+- timing base (`TimecodeScale` / derived timing)
+- per-track packet/sample counts
+- per-sample timestamps (and ordering)
+- keyframe flags
+- payload byte lengths
+
+Invariants to assert:
+
+- monotonic timestamps within each track (where expected)
+- no out-of-bounds element reads
+- element size accounting is exact
+- cluster/block timestamp composition is consistent
+
+Malformed fixture tests:
+
+- truncated VINT
+- invalid element sizes
+- unknown elements follow explicit policy (skip or fail), never silent corruption
+
+Outcome:
+
+- strong read correctness without expanding scope to a WebM writer yet
+- writer can be added later as a separate, symmetric phase
+
 ## Implementation Order
 
 1. Add facade `openContainer(...)` with routing skeleton.

@@ -342,6 +342,9 @@ import {
 import {
     WEBM_EBML_PRIMITIVE_TESTS
 } from "./test_webm_ebmlPrimitives.js";
+import {
+    WEBM_ORACLE_REFERENCE_FIXTURE_TESTS
+} from "./test_webm_oracle_referenceFixture.js";
 
 import { 
    test_DeriveSamplesOnePerPacketFromStbl_Definition
@@ -1125,6 +1128,7 @@ const testsAll = [
     test_openContainerFromWebmSource_rejectsInvalidSource,
     ...WEBM_READ_VINT_TESTS,
     ...WEBM_EBML_PRIMITIVE_TESTS,
+    ...WEBM_ORACLE_REFERENCE_FIXTURE_TESTS,
     testNativeMuxer_DeriveSemanticTrackFamily,
     testNativeMuxer_TrackDuration_Relationships_AllFixtures,
     testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,
