@@ -1023,6 +1023,25 @@ export const BOX_SCHEMAS = {
     },
 
     /**
+     * CO64 — Chunk Large Offset Box
+     *
+     * Layout:
+     *   uint32 entry_count
+     *   uint64[entry_count] chunkOffsets
+     *
+     * Note:
+     * - uint64 table parsing is handled by its dedicated extractor.
+     */
+    "moov/trak/mdia/minf/stbl/co64": {
+        headerLayout: "Full",
+        structuralRole: "terminal",
+        fields: {
+            entryCount: "uint32",
+            chunkOffsets: "uint64[]"
+        }
+    },
+
+    /**
      * STSS — Sync Sample Box
      *
      * Layout:

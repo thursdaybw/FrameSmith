@@ -1,5 +1,16 @@
 import { readFourCC } from "../box-schema/boxLayoutReaders.js";
 
+export class SkipTestError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "SkipTestError";
+    }
+}
+
+export function skipTest(reason) {
+    throw new SkipTestError(reason);
+}
+
 export function assertEqual(message, actual, expected) {
 
     if (!deepEqual(actual, expected)) {

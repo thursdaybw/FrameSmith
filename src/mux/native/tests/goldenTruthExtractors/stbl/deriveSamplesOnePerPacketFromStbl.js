@@ -65,18 +65,7 @@ export function deriveSamplesOnePerPacketFromStbl(stblBoxBytes) {
     // ---------------------------------------------------------
     // Build chunk → samplesPerChunk table
     // ---------------------------------------------------------
-    const chunkCount =
-        getGoldenTruthBox
-            .getSemanticBoxDataFromBox({
-                boxBytes: stblBoxBytes,
-                sourceRegistryKey: "moov/trak/mdia/minf/stbl",
-                targetBoxPath: "moov/trak/mdia/minf/stbl/stco"
-            })
-            .readBoxReport()
-            .box
-            .fields
-            .chunkOffsets
-            .length;
+    const chunkCount = readChunkOffsetsFromStcoOrCo64(stblBoxBytes).length;
 
     const samplesPerChunk = new Array(chunkCount);
 
@@ -150,4 +139,32 @@ export function deriveSamplesOnePerPacketFromStbl(stblBoxBytes) {
     }
 
     return packets;
+}
+
+function readChunkOffsetsFromStcoOrCo64(stblBoxBytes) {
+    const sourceRegistryKey = "moov/trak/mdia/minf/stbl";
+    const readByPath = (targetBoxPath) => getGoldenTruthBox
+        .getSemanticBoxDataFromBox({
+            boxBytes: stblBoxBytes,
+            sourceRegistryKey,
+            targetBoxPath
+        })
+        .readBoxReport()
+        ?.box?.fields?.chunkOffsets;
+
+    try {
+        const offsets = readByPath("moov/trak/mdia/minf/stbl/stco");
+        if (Array.isArray(offsets)) {
+            return offsets;
+        }
+    } catch {}
+
+    try {
+        const offsets = readByPath("moov/trak/mdia/minf/stbl/co64");
+        if (Array.isArray(offsets)) {
+            return offsets;
+        }
+    } catch {}
+
+    throw new Error("readChunkOffsetsFromStcoOrCo64: neither stco nor co64 chunk offsets are available");
 }

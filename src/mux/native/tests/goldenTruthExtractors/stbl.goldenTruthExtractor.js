@@ -71,8 +71,8 @@ function getStblBuilderInput(boxBytes) {
         throw new Error("stbl.getEmitterInput: missing required child 'stsz'");
     }
 
-    if (!box.children.stco) {
-        throw new Error("stbl.getEmitterInput: missing required child 'stco'");
+    if (!box.children.stco && !box.children.co64) {
+        throw new Error("stbl.getEmitterInput: missing required child 'stco' or 'co64'");
     }
 
     input.stsd = getGoldenTruthBox.getSemanticBoxDataFromBox({
@@ -99,11 +99,19 @@ function getStblBuilderInput(boxBytes) {
         targetBoxPath: "moov/trak/mdia/minf/stbl/stsz"
     }).getEmitterInput();
 
-    input.stco = getGoldenTruthBox.getSemanticBoxDataFromBox({
-        boxBytes: boxBytes,
-        sourceRegistryKey: "moov/trak/mdia/minf/stbl",
-        targetBoxPath: "moov/trak/mdia/minf/stbl/stco"
-    }).getEmitterInput();
+    if (box.children.stco) {
+        input.stco = getGoldenTruthBox.getSemanticBoxDataFromBox({
+            boxBytes: boxBytes,
+            sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+            targetBoxPath: "moov/trak/mdia/minf/stbl/stco"
+        }).getEmitterInput();
+    } else {
+        input.co64 = getGoldenTruthBox.getSemanticBoxDataFromBox({
+            boxBytes: boxBytes,
+            sourceRegistryKey: "moov/trak/mdia/minf/stbl",
+            targetBoxPath: "moov/trak/mdia/minf/stbl/co64"
+        }).getEmitterInput();
+    }
 
     // ---------------------------------------------------------
     // Optional children

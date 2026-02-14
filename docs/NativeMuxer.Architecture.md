@@ -19,6 +19,45 @@ semantic input
 Each stage consumes fully-formed outputs from the previous stage.
 No stage may infer, repair, or guess missing information.
 
+## Status Snapshot (February 14, 2026)
+
+This section captures current implementation state so architectural intent and
+shipping reality stay aligned.
+
+### `co64` support status
+
+NativeMuxer now has **partial `co64` support**.
+
+Implemented:
+
+* `co64` schema wiring
+* `co64` emitter wiring
+* extractor/emitter structural agreement coverage
+* locked-layout byte equivalence at the `co64` leaf box level
+
+Not yet implemented in the compiler pipeline:
+
+* `stco` vs `co64` final selection policy
+* automatic promotion to `co64` when chunk offsets exceed 32-bit range
+* end-to-end compile proof that final MP4 emits `co64` when required
+
+Current truth:
+
+* `co64` works as a box primitive
+* full-file compile still finalizes chunk offsets via `stco`
+
+### Large-oracle test execution policy
+
+`co64` FFmpeg oracles are intentionally very large (multi-GB).
+To keep test runs practical and explicit:
+
+* browser harness marks these tests as `SKIP` (not `PASS`)
+* node harness runs the real checks
+* node test path uses partial file reads for oracle extraction
+
+This is a test harness policy, not a claim that browser production paths can
+materialize multi-GB MP4s in memory safely.
+
 
 # NativeMuxer Architecture
 

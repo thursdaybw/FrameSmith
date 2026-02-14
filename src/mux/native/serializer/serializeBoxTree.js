@@ -259,6 +259,29 @@ function writeInt(buf, offset, value) {
     buf[offset + 3] = value & 0xFF;
 }
 
+function writeUint64(buf, offset, value) {
+    const v = BigInt(value);
+    if (v < 0n || v > 0xFFFF_FFFF_FFFF_FFFFn) {
+        throw new Error(`uint64 out of range: ${value}`);
+    }
+    const hi = Number((v >> 32n) & 0xFFFF_FFFFn);
+    const lo = Number(v & 0xFFFF_FFFFn);
+    writeInt(buf, offset, hi);
+    writeInt(buf, offset + 4, lo);
+}
+
+function writeInt64(buf, offset, value) {
+    const v = BigInt(value);
+    if (v < -0x8000_0000_0000_0000n || v > 0x7FFF_FFFF_FFFF_FFFFn) {
+        throw new Error(`int64 out of range: ${value}`);
+    }
+    const twos = v < 0n ? (1n << 64n) + v : v;
+    const hi = Number((twos >> 32n) & 0xFFFF_FFFFn);
+    const lo = Number(twos & 0xFFFF_FFFFn);
+    writeInt(buf, offset, hi);
+    writeInt(buf, offset + 4, lo);
+}
+
 function normalizeFlags(node) {
     const { flags, flagBits, type } = node;
 
@@ -347,6 +370,8 @@ export function computeBoxSize(node) {
     for (const field of (node.body || [])) {
 
         if ("int" in field) size += 4;
+        else if ("uint64" in field) size += 8;
+        else if ("int64" in field) size += 8;
         else if ("short" in field) size += 2;
         else if ("byte" in field) size += 1;
         else if ("OpaqueBytesPassthrough" in field) {
@@ -358,6 +383,8 @@ export function computeBoxSize(node) {
             if (type === "int")   size += 4 * field.values.length;
             else if (type === "short") size += 2 * field.values.length;
             else if (type === "byte")  size += 1 * field.values.length;
+            else if (type === "uint64") size += 8 * field.values.length;
+            else if (type === "int64") size += 8 * field.values.length;
             else throw new Error("Unsupported array type: " + type);
         }
 
@@ -431,6 +458,16 @@ export function writeBox(node, buffer, offset) {
             offset += 4;
         }
 
+        else if ("uint64" in field) {
+            writeUint64(buffer, offset, field.uint64);
+            offset += 8;
+        }
+
+        else if ("int64" in field) {
+            writeInt64(buffer, offset, field.int64);
+            offset += 8;
+        }
+
         else if ("short" in field) {
             writeShort(buffer, offset, field.short);
             offset += 2;
@@ -455,6 +492,16 @@ export function writeBox(node, buffer, offset) {
                 for (const v of values) {
                     writeInt(buffer, offset, v);
                     offset += 4;
+                }
+            } else if (type === "uint64") {
+                for (const v of values) {
+                    writeUint64(buffer, offset, v);
+                    offset += 8;
+                }
+            } else if (type === "int64") {
+                for (const v of values) {
+                    writeInt64(buffer, offset, v);
+                    offset += 8;
                 }
             } else if (type === "short") {
                 for (const v of values) {
@@ -645,6 +692,8 @@ function validateBodyField(field, path, boxType) {
 
     if (
         "int" in field ||
+        "uint64" in field ||
+        "int64" in field ||
         "short" in field ||
         "byte" in field ||
         "OpaqueBytesPassthrough" in field ||

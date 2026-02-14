@@ -68,7 +68,7 @@
  *   4. ctts — Composition Time Offsets
  *   5. stsc — Sample-to-Chunk mapping
  *   6. stsz — Sample Sizes
- *   7. stco — Chunk Offsets
+ *   7. stco/co64 — Chunk Offsets
  *
  * This order is not arbitrary.
  * Many decoders assume it.
@@ -103,7 +103,7 @@ function emitStblBox(children) {
         );
     }
 
-    const required = ["stsd", "stts", "stsc", "stsz", "stco"];
+    const required = ["stsd", "stts", "stsc", "stsz"];
 
     for (const name of required) {
         if (!(name in children)) {
@@ -127,8 +127,17 @@ function emitStblBox(children) {
         }
     }
 
+    const hasStco = "stco" in children;
+    const hasCo64 = "co64" in children;
+    if (!hasStco && !hasCo64) {
+        throw new Error("emitStblBox: missing required child 'stco' or 'co64'");
+    }
+    if (hasStco && hasCo64) {
+        throw new Error("emitStblBox: provide only one chunk-offset child ('stco' or 'co64')");
+    }
+
     // Optional children validation
-    for (const optional of ["stss", "ctts", "sgpd", "sbgp"]) {
+    for (const optional of ["stss", "ctts", "sgpd", "sbgp", "co64"]) {
         if (optional in children) {
             const node = children[optional];
 
@@ -167,7 +176,7 @@ function emitStblBox(children) {
     // Core sample tables
     orderedChildren.push(children.stsc);
     orderedChildren.push(children.stsz);
-    orderedChildren.push(children.stco);
+    orderedChildren.push(hasStco ? children.stco : children.co64);
 
     // Sample grouping tables (audio)
     if (children.sgpd) {

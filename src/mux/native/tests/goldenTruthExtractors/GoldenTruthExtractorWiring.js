@@ -15,6 +15,7 @@ import { registerStssGoldenTruthExtractor } from "./stss.goldenTruthExtractor.js
 import { registerCttsGoldenTruthExtractor } from "./ctts.goldenTruthExtractor.js";
 import { registerStszGoldenTruthExtractor } from "./stsz.goldenTruthExtractor.js";
 import { registerStcoGoldenTruthExtractor } from "./stco.goldenTruthExtractor.js";
+import { registerCo64GoldenTruthExtractor } from "./co64.goldenTruthExtractor.js";
 import { registerDinfGoldenTruthExtractor } from "./dinf.goldenTruthExtractor.js";
 import { registerDrefGoldenTruthExtractor } from "./dref.goldenTruthExtractor.js";
 import { registerStblGoldenTruthExtractor } from "./stbl.goldenTruthExtractor.js";
@@ -81,6 +82,7 @@ export const EXTRACTOR_WIRING = [
     ["moov/trak/mdia/minf/stbl/ctts",           registerCttsGoldenTruthExtractor], 
     ["moov/trak/mdia/minf/stbl/stsz",           registerStszGoldenTruthExtractor], 
     ["moov/trak/mdia/minf/stbl/stco",           registerStcoGoldenTruthExtractor], 
+    ["moov/trak/mdia/minf/stbl/co64",           registerCo64GoldenTruthExtractor],
 
     // STSD extractor (ISO box space)
     ["moov/trak/mdia/minf/stbl/stsd", registerStsdGoldenTruthExtractor],
@@ -128,6 +130,5 @@ export const EXTRACTOR_WIRING = [
     ["moov/udta/meta/ilst/©too/data", registerDataGoldenTruthExtractor],
 
 ];
-
 
 

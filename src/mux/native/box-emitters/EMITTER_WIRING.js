@@ -23,6 +23,7 @@ import {
 import { registerSttsEmitter } from "../box-emitters/sttsBox.js";
 import { registerStscEmitter } from "../box-emitters/stscBox.js";
 import { registerStcoEmitter } from "../box-emitters/stcoBox.js";
+import { registerCo64Emitter } from "../box-emitters/co64Box.js";
 import { registerStssEmitter } from "../box-emitters/stssBox.js";
 import { registerCttsEmitter } from "../box-emitters/cttsBox.js";
 import { registerStblEmitter } from "../box-emitters/stblBox.js";
@@ -146,6 +147,7 @@ export const EMITTER_WIRING = [
     ["moov/trak/mdia/minf/stbl/stts",                   registerSttsEmitter],
     ["moov/trak/mdia/minf/stbl/stsc",                   registerStscEmitter],
     ["moov/trak/mdia/minf/stbl/stco",                   registerStcoEmitter],
+    ["moov/trak/mdia/minf/stbl/co64",                   registerCo64Emitter],
     ["moov/trak/mdia/minf/stbl/stss",                   registerStssEmitter],
     ["moov/trak/mdia/minf/stbl/ctts",                   registerCttsEmitter],
     ["moov/trak/mdia/minf/stbl",                        registerStblEmitter],

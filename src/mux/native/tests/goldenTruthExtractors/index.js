@@ -756,6 +756,51 @@ function normalizeTargetBoxPathAfterTrakResolution(targetBoxPath) {
     return normalizedTargetBoxPath;
 }
 
+function readUint32Be(bytes, offset) {
+    return (
+        ((bytes[offset] << 24) >>> 0) |
+        (bytes[offset + 1] << 16) |
+        (bytes[offset + 2] << 8) |
+        bytes[offset + 3]
+    ) >>> 0;
+}
+
+function readBoxSizeAtOffset(bytes, offset, containerEndOffset) {
+    const declaredSize = readUint32Be(bytes, offset);
+
+    if (declaredSize === 0) {
+        const boxSize = containerEndOffset - offset;
+        if (boxSize < 8) {
+            throw new Error("readBoxSizeAtOffset: size=0 box too small");
+        }
+        return boxSize;
+    }
+
+    if (declaredSize === 1) {
+        if (offset + 16 > containerEndOffset) {
+            throw new Error("readBoxSizeAtOffset: size=1 missing 64-bit largesize");
+        }
+
+        const high = readUint32Be(bytes, offset + 8);
+        const low = readUint32Be(bytes, offset + 12);
+        const largeSize = high * 2 ** 32 + low;
+
+        if (!Number.isFinite(largeSize) || largeSize < 16) {
+            throw new Error("readBoxSizeAtOffset: invalid 64-bit largesize");
+        }
+        if (largeSize > Number.MAX_SAFE_INTEGER) {
+            throw new Error("readBoxSizeAtOffset: largesize exceeds JS safe integer");
+        }
+        return largeSize;
+    }
+
+    if (declaredSize < 8) {
+        throw new Error("readBoxSizeAtOffset: invalid 32-bit box size");
+    }
+
+    return declaredSize;
+}
+
 /**
  * resolveTopLevelMp4Box
  * ====================
@@ -786,14 +831,9 @@ export function resolveTopLevelMp4Box(mp4Bytes, boxType) {
 
     while (offset + 8 <= mp4Bytes.length) {
 
-        const size =
-            (mp4Bytes[offset]     << 24) |
-            (mp4Bytes[offset + 1] << 16) |
-            (mp4Bytes[offset + 2] << 8)  |
-            mp4Bytes[offset + 3];
-
-        if (size < 8) {
-            throw new Error("resolveTopLevelMp4Box: invalid MP4 box size");
+        const size = readBoxSizeAtOffset(mp4Bytes, offset, mp4Bytes.length);
+        if (offset + size > mp4Bytes.length) {
+            throw new Error("resolveTopLevelMp4Box: box extends past file end");
         }
 
         const type =
@@ -1245,14 +1285,9 @@ function resolveTrakFromMoov(moovBytes, trackIndex) {
 
     while (offset + 8 <= moovBytes.length) {
 
-        const size =
-            (moovBytes[offset]     << 24) |
-            (moovBytes[offset + 1] << 16) |
-            (moovBytes[offset + 2] << 8)  |
-            moovBytes[offset + 3];
-
-        if (size < 8) {
-            throw new Error("resolveTrakFromMoov: invalid box size");
+        const size = readBoxSizeAtOffset(moovBytes, offset, moovBytes.length);
+        if (offset + size > moovBytes.length) {
+            throw new Error("resolveTrakFromMoov: box extends past moov end");
         }
 
         const type =

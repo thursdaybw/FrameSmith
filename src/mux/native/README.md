@@ -807,7 +807,27 @@ Goal:
 NativeMuxer currently finalizes 32-bit chunk offsets via `stco`.
 Large files require 64-bit chunk offsets via `co64`.
 
-Planned upgrade:
+Current status (February 14, 2026):
+
+Implemented:
+
+* `co64` schema support
+* `co64` emitter support
+* extractor/emitter structural agreement test coverage
+* locked-layout byte-for-byte `co64` box equivalence against FFmpeg oracle
+
+Not yet implemented in compiler path:
+
+* final offset policy decision (`stco` vs `co64`) during compile
+* automatic promotion to `co64` when resolved chunk offsets exceed 32-bit range
+* end-to-end compile test that proves final MP4 emits `co64` when required
+
+Meaning:
+
+* NativeMuxer can currently read/emit `co64` as a box primitive.
+* NativeMuxer cannot yet guarantee full-file compile output uses `co64` when needed.
+
+Remaining upgrade:
 
 * explicit `stco`/`co64` selection policy
 * deterministic `co64` emission path

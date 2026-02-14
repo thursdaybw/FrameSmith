@@ -327,6 +327,8 @@ function scalarFieldFromNode(fieldSpec, field) {
         case "uint16": return field.short;
         case "int32":  return field.int;
         case "uint32": return field.int;
+        case "uint64": return field.uint64;
+        case "int64":  return field.int64;
         case "fourcc": return field.type;
         default:       return undefined;
     }

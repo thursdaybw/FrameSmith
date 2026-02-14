@@ -52,14 +52,7 @@ function readStscEntries(stblBoxBytes) {
 }
 
 function readChunkOffsets(stblBoxBytes) {
-    return getGoldenTruthBox
-        .getSemanticBoxDataFromBox({
-            boxBytes: stblBoxBytes,
-            sourceRegistryKey: "moov/trak/mdia/minf/stbl",
-            targetBoxPath: "moov/trak/mdia/minf/stbl/stco"
-        })
-        .readBoxReport()
-        .box.fields.chunkOffsets;
+    return readChunkOffsetsFromStcoOrCo64(stblBoxBytes);
 }
 
 function buildSamplePlan({ sampleSizes }) {
@@ -252,12 +245,6 @@ function readSampleOffsets(stblBoxBytes) {
         targetBoxPath: "moov/trak/mdia/minf/stbl/stsc"
     }).readBoxReport();
 
-    const stco = getGoldenTruthBox.getSemanticBoxDataFromBox({
-        boxBytes: stblBoxBytes,
-        sourceRegistryKey: "moov/trak/mdia/minf/stbl",
-        targetBoxPath: "moov/trak/mdia/minf/stbl/stco"
-    }).readBoxReport();
-
     const stsz = getGoldenTruthBox.getSemanticBoxDataFromBox({
         boxBytes: stblBoxBytes,
         sourceRegistryKey: "moov/trak/mdia/minf/stbl",
@@ -265,15 +252,11 @@ function readSampleOffsets(stblBoxBytes) {
     }).readBoxReport();
 
 
-    if ( !stco.box.fields || !Array.isArray(stco.box.fields.chunkOffsets)) {
-        throw new Error( "stco.box.fields.chunkOffsets missing or invalid");
-    }
-
     if ( !stsc.box.fields || !Array.isArray(stsc.box.fields.entries)) {
         throw new Error( "stsc.box.fields.entries missing or invalid");
     }
 
-    const chunkOffsets = stco.box.fields.chunkOffsets;
+    const chunkOffsets = readChunkOffsetsFromStcoOrCo64(stblBoxBytes);
     const sampleSizes  = stsz.box.fields.sizes;
     const stscEntries  = stsc.box.fields.entries;
 
@@ -338,6 +321,34 @@ function readSampleOffsets(stblBoxBytes) {
     }
 
     return offsets;
+}
+
+function readChunkOffsetsFromStcoOrCo64(stblBoxBytes) {
+    const sourceRegistryKey = "moov/trak/mdia/minf/stbl";
+    const readByPath = (targetBoxPath) => getGoldenTruthBox
+        .getSemanticBoxDataFromBox({
+            boxBytes: stblBoxBytes,
+            sourceRegistryKey,
+            targetBoxPath
+        })
+        .readBoxReport()
+        ?.box?.fields?.chunkOffsets;
+
+    try {
+        const offsets = readByPath("moov/trak/mdia/minf/stbl/stco");
+        if (Array.isArray(offsets)) {
+            return offsets;
+        }
+    } catch {}
+
+    try {
+        const offsets = readByPath("moov/trak/mdia/minf/stbl/co64");
+        if (Array.isArray(offsets)) {
+            return offsets;
+        }
+    } catch {}
+
+    throw new Error("readChunkOffsetsFromStcoOrCo64: neither stco nor co64 chunk offsets are available");
 }
 
 function readSyncSamples(stblBoxBytes) {

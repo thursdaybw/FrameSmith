@@ -528,6 +528,8 @@ function schemaScalarToDslKind(fieldSpec) {
         case "int16":  return "short";
         case "uint32": return "int";
         case "int32":  return "int";
+        case "uint64": return "uint64";
+        case "int64":  return "int64";
         case "fourcc": return "type";
         default:       return null;
     }
@@ -542,6 +544,8 @@ function schemaArrayToDslKind(fieldSpec) {
         case "uint8":  return "byte";
         case "uint16": return "short";
         case "uint32": return "int";
+        case "uint64": return "uint64";
+        case "int64":  return "int64";
         default:       return null;
     }
 }
@@ -551,6 +555,8 @@ function describeEmitterField(field) {
     if ("int" in field)   return "int";
     if ("short" in field) return "short";
     if ("byte" in field)  return "byte";
+    if ("uint64" in field) return "uint64";
+    if ("int64" in field) return "int64";
     if ("array" in field) return `array(${field.array})`;
     if ("box" in field)   return "box";
     return "object";
