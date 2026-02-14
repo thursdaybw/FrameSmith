@@ -339,6 +339,9 @@ import {
 import {
     WEBM_READ_VINT_TESTS
 } from "./test_webm_readVint.js";
+import {
+    WEBM_EBML_PRIMITIVE_TESTS
+} from "./test_webm_ebmlPrimitives.js";
 
 import { 
    test_DeriveSamplesOnePerPacketFromStbl_Definition
@@ -1121,6 +1124,7 @@ const testsAll = [
     test_openContainer_rejectsWebmByByteSourceUntilImplemented,
     test_openContainerFromWebmSource_rejectsInvalidSource,
     ...WEBM_READ_VINT_TESTS,
+    ...WEBM_EBML_PRIMITIVE_TESTS,
     testNativeMuxer_DeriveSemanticTrackFamily,
     testNativeMuxer_TrackDuration_Relationships_AllFixtures,
     testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,
