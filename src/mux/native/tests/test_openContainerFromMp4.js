@@ -1,4 +1,4 @@
-import { assertEqual } from "./assertions.js";
+import { assertEqual, assertExists, assertNotExists } from "./assertions.js";
 import { listTracksFromMp4 } from "../demux/container/listTracksFromMp4.js";
 import { createContainerTrackViewFromMp4 } from "../demux/trackview/createContainerTrackViewFromMp4.js";
 import { openContainerFromMp4 } from "../demux/container/openContainerFromMp4.js";
@@ -55,6 +55,23 @@ export async function test_openContainerFromMp4_createTrackViews_returnsAllAndFi
     assertEqual("audio track view count", audioTrackViews.length, 1);
     assertEqual("video track view media type", videoTrackViews[0].mediaType, "video");
     assertEqual("audio track view media type", audioTrackViews[0].mediaType, "audio");
+
+    const displayTransform = videoTrackViews[0].containerMeta.displayTransform;
+    assertExists("video.containerMeta.displayTransform", displayTransform);
+    assertEqual(
+        "video.containerMeta.displayTransform.rotationDegrees",
+        displayTransform.rotationDegrees,
+        0
+    );
+    assertEqual(
+        "video.containerMeta.displayTransform.matrix.length",
+        Array.isArray(displayTransform.matrix) ? displayTransform.matrix.length : -1,
+        9
+    );
+    assertNotExists(
+        "audio.containerMeta.displayTransform",
+        audioTrackViews[0].containerMeta.displayTransform
+    );
 }
 
 export async function test_openContainerFromMp4_rejectsInvalidInput() {

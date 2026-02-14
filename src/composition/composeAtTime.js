@@ -362,6 +362,14 @@ function isDrawableFrameCandidate(item) {
     return !!drawable;
 }
 
+function normalizeQuarterTurnRotationDegrees(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    const normalized = ((Math.round(numeric / 90) * 90) % 360 + 360) % 360;
+    if (normalized === 90 || normalized === 180 || normalized === 270) return normalized;
+    return 0;
+}
+
 function createVideoFrameArtifact({ timeSeconds, options, decodedContainerBackedFragmentBatch, renderIntents }) {
     if (typeof VideoFrame !== "function") {
         return { value: null, issue: null };
@@ -388,7 +396,36 @@ function createVideoFrameArtifact({ timeSeconds, options, decodedContainerBacked
                 const ctx = sourceCanvas.getContext("2d");
                 if (ctx && typeof ctx.drawImage === "function") {
                     try {
-                        ctx.drawImage(sourceDrawable, 0, 0, sourceCanvas.width, sourceCanvas.height);
+                        const rotationDegrees = normalizeQuarterTurnRotationDegrees(
+                            options?.outputSpec?.videoRotationDegrees
+                        );
+                        if (rotationDegrees === 0) {
+                            ctx.drawImage(sourceDrawable, 0, 0, sourceCanvas.width, sourceCanvas.height);
+                        } else {
+                            const radians = (rotationDegrees * Math.PI) / 180;
+                            ctx.save();
+                            ctx.translate(sourceCanvas.width / 2, sourceCanvas.height / 2);
+                            ctx.rotate(radians);
+
+                            if (rotationDegrees === 90 || rotationDegrees === 270) {
+                                ctx.drawImage(
+                                    sourceDrawable,
+                                    -sourceCanvas.height / 2,
+                                    -sourceCanvas.width / 2,
+                                    sourceCanvas.height,
+                                    sourceCanvas.width
+                                );
+                            } else {
+                                ctx.drawImage(
+                                    sourceDrawable,
+                                    -sourceCanvas.width / 2,
+                                    -sourceCanvas.height / 2,
+                                    sourceCanvas.width,
+                                    sourceCanvas.height
+                                );
+                            }
+                            ctx.restore();
+                        }
                         drawRenderIntentsOnCanvas({
                             canvas: sourceCanvas,
                             renderIntents,

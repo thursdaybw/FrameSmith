@@ -209,6 +209,8 @@ import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecut
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
+import { buildDisplayTransformFromTrackMatrix } from "./src/mux/native/demux/track/displayTransform.js";
+import { deriveVideoEncoderResolutionLadderFromTrackView } from "./src/encode/deriveVideoEncoderResolutionLadderFromTrackView.js";
 
 const CAPTION_FONT_FAMILY = "FrameSmithAntonSC";
 const CAPTION_FONT_URL = "./assets/fonts/AntonSC-Regular.ttf";
@@ -242,7 +244,12 @@ async function ensureCaptionFontLoaded() {
 
 function readRuntimeConfig() {
     const searchParams = new URLSearchParams(window.location.search);
+    const requestedVideoDemuxer = searchParams.get("videoDemuxer");
+    const videoDemuxer = requestedVideoDemuxer === "mp4box" ? "mp4box" : "native";
     return {
+        demux: {
+            videoDemuxer
+        },
         debug: {
             enableEncodeDiagnostics: searchParams.get("encodeDiagnostics") !== "0"
         }
@@ -344,7 +351,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         setWorkflowEnabled(false);
         setVideoSourceStatus("Loading video source...");
         try {
-            timeline = await createTimeline({ mp4Bytes });
+            timeline = await createTimeline({ mp4Bytes, runtimeConfig });
             setWorkflowEnabled(true);
             setVideoSourceStatus("Video ready");
         } catch (error) {
@@ -511,44 +518,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     async function configureVideoEncoderForTrack({ videoEncoder, videoTrackView, exportFps }) {
-        const sourceWidth =
-            videoTrackView?.containerMeta?.codedWidth ??
-            videoTrackView?.codecConfig?.codedWidth ??
-            1080;
-        const sourceHeight =
-            videoTrackView?.containerMeta?.codedHeight ??
-            videoTrackView?.codecConfig?.codedHeight ??
-            1920;
-        const sourceAspect = sourceWidth > 0 && sourceHeight > 0
-            ? sourceWidth / sourceHeight
-            : (16 / 9);
-        const FORCE_DEBUG_RESOLUTION = true;
+        const FORCE_DEBUG_RESOLUTION = false;
         const DEBUG_FORCED_RESOLUTION = { width: 720, height: 1280 };
-
-        const toEven = (value) => {
-            const rounded = Math.max(2, Math.round(value));
-            return rounded % 2 === 0 ? rounded : rounded - 1;
-        };
-
-        const makeResolutionFromHeight = (height) => {
-            const h = toEven(height);
-            const w = toEven(h * sourceAspect);
-            return { width: w, height: h };
-        };
-
         const resolutionLadder = FORCE_DEBUG_RESOLUTION
             ? [DEBUG_FORCED_RESOLUTION]
-            : [
-                {
-                    width: toEven(Math.min(sourceWidth, 1920)),
-                    height: toEven(Math.min(sourceHeight, 1080))
-                },
-                makeResolutionFromHeight(1280),
-                makeResolutionFromHeight(960),
-                makeResolutionFromHeight(720),
-                makeResolutionFromHeight(540),
-                { width: 640, height: 360 }
-            ];
+            : deriveVideoEncoderResolutionLadderFromTrackView(videoTrackView);
 
         const dedupedResolutions = [];
         const seenResolutionKeys = new Set();
@@ -665,7 +639,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         timecodeFragmentIntentResolvers,
         timeline,
         exportFps,
-        configuredVideoEncoderConfig
+        configuredVideoEncoderConfig,
+        videoTrackView
     }) {
         return {
             videoDecoder: {
@@ -792,6 +767,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 outputSpec: {
                     width: configuredVideoEncoderConfig.width,
                     height: configuredVideoEncoderConfig.height,
+                    videoRotationDegrees:
+                        videoTrackView?.containerMeta?.displayTransform?.rotationDegrees ?? 0,
                     fps: exportFps,
                     sampleRate: 48_000,
                     channels: 2
@@ -1120,7 +1097,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 timecodeFragmentIntentResolvers,
                 timeline,
                 exportFps,
-                configuredVideoEncoderConfig
+                configuredVideoEncoderConfig,
+                videoTrackView
             });
             const exportExecutionContext = createExportExecutionContext({
                 sharedContext: sharedRenderContext,
@@ -1593,7 +1571,7 @@ async function loadTimelineTextOverlays() {
  * - Domain objects (Timeline, Track, Clip) remain container-agnostic.
  * - No HTML, playback, or browser APIs may leak past this boundary.
  */
-async function createTimeline({ mp4Bytes }) {
+async function createTimeline({ mp4Bytes, runtimeConfig }) {
     if (!(mp4Bytes instanceof Uint8Array) || mp4Bytes.length === 0) {
         throw new Error("createTimeline: mp4Bytes must be a non-empty Uint8Array");
     }
@@ -1603,9 +1581,10 @@ async function createTimeline({ mp4Bytes }) {
     const container = openContainerFromMp4({ mp4Bytes });
     const nativeTrackViews = container.createTrackViews();
 
-    // Temporary stability policy:
-    // force mp4box for video demux until native demux timing issues are fixed.
-    const selectedVideoDemuxer = "mp4box";
+    const requestedVideoDemuxer = runtimeConfig?.demux?.videoDemuxer;
+    const selectedVideoDemuxer = requestedVideoDemuxer === "mp4box"
+        ? "mp4box"
+        : "native";
 
     const summarizeTrackCadenceUs = (trackView, sampleLimit = 120) => {
         const sampleCount = Number(trackView?.sampleCount ?? 0);
@@ -1749,12 +1728,20 @@ async function createMp4BoxVideoTrackView({ mp4Bytes }) {
         normalizedSampleCount: normalizedSamples.length
     });
 
+    const displayTransform = buildDisplayTransformFromTrackMatrix(videoTrack.matrix);
+    if (displayTransform.rotationDegrees !== 0) {
+        console.log("[Timeline][mp4box] inferred track rotation", {
+            rotationDegrees: displayTransform.rotationDegrees
+        });
+    }
+
     return {
         mediaType: "video",
         containerMeta: {
             trackTimescale: 1_000_000,
             codedWidth: videoTrack.track_width,
-            codedHeight: videoTrack.track_height
+            codedHeight: videoTrack.track_height,
+            displayTransform
         },
         codecConfig: {
             codec: "avc1",

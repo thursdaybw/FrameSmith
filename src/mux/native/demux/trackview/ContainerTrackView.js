@@ -30,7 +30,7 @@ export class ContainerTrackView {
     }) {
         this.mediaType = mediaType; // "video" | "audio"
 
-        this.containerMeta = containerMeta; // { trackTimescale, codedWidth?, codedHeight? }
+        this.containerMeta = containerMeta; // { trackTimescale, codedWidth?, codedHeight?, displayTransform? }
         this.codecConfig = codecConfig;
 
         this._semanticSamples = semanticSamples;

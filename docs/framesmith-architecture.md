@@ -32,7 +32,7 @@ No stage cheats.
 
 ## Demux Baseline (Current)
 
-Date updated: February 13, 2026
+Date updated: February 14, 2026
 
 Current operating decision for timeline export:
 
@@ -57,12 +57,42 @@ Validation:
   - `pts`, `dts`, `duration`, `isKey`
   - not just counts/spans.
 
+Display orientation contract (current):
+
+- Demux provides container display facts on video track views:
+  - `trackView.containerMeta.displayTransform`
+  - includes normalized `rotationDegrees` and raw matrix values.
+- Application/export code consumes this normalized contract.
+- Application code does not parse raw MP4 matrix fields directly.
+
+Orientation sizing policy (current):
+
+- Input coded dimensions may be landscape while display orientation is portrait
+  (for example, `3648x2048` with `rotation=90`).
+- Encoder sizing is derived from display orientation, not raw coded orientation.
+- This avoids portrait source videos being encoded as stretched landscape.
+
+Implementation notes:
+
+- Runtime demux selection:
+  - default `native`
+  - optional oracle path via `?videoDemuxer=mp4box`
+- Encoder sizing policy is isolated in:
+  - `src/encode/deriveVideoEncoderResolutionLadderFromTrackView.js`
+- Script orchestration consumes that helper instead of inline orientation math.
+
 Guardrail tests:
 
 - `src/mux/native/tests/test_deriveSamplesFromStbl.js`
   - `test_DeriveSamplesFromStbl_AppliesCttsOffsets`
 - `src/mux/native/tests/test_nativeDemux_vs_mp4box_phoneFixture.js`
 - `src/mux/native/tests/node/test_nativeDemux_vs_mp4box_phoneFixture.mjs`
+- `src/mux/native/tests/test_openContainerFromMp4.js`
+  - asserts `containerMeta.displayTransform` exists for video tracks
+- `src/encode/test_deriveVideoEncoderResolutionLadderFromTrackView.js`
+  - quarter-turn rotation handling
+  - portrait vs landscape base resolution selection
+  - deduplicated resolution ladder
 
 Comparison tooling references:
 

@@ -1,4 +1,5 @@
 import { getGoldenTruthBox } from "../../tests/goldenTruthExtractors/index.js";
+import { buildDisplayTransformFromTkhdFields } from "../track/displayTransform.js";
 
 /**
  * extractTrackContainerMetadataFromMp4
@@ -20,18 +21,28 @@ import { getGoldenTruthBox } from "../../tests/goldenTruthExtractors/index.js";
  * @param {Object} params
  * @param {Uint8Array} params.mp4Bytes
  * @param {number} params.zeroBasedTrackIndex
+ * @param {boolean} [params.includeDisplayTransform=false]
  *
  * @returns {Object}
  *   {
  *     trackTimescale: number,
  *     codedWidth?: number,
- *     codedHeight?: number
+ *     codedHeight?: number,
+ *     displayTransform?: {
+ *       rotationDegrees: number,
+ *       scaleX: number,
+ *       scaleY: number,
+ *       translateX: number,
+ *       translateY: number,
+ *       matrix: number[]
+ *     }
  *   }
  */
 export function
 extractTrackContainerMetadataFromMp4({
     mp4Bytes,
-    zeroBasedTrackIndex
+    zeroBasedTrackIndex,
+    includeDisplayTransform = false
 }) {
 
     // ---------------------------------------------------------
@@ -106,6 +117,9 @@ extractTrackContainerMetadataFromMp4({
     ) {
         result.codedWidth  = width;
         result.codedHeight = height;
+        if (includeDisplayTransform) {
+            result.displayTransform = buildDisplayTransformFromTkhdFields(tkhdReport?.box?.fields);
+        }
     }
 
     return result;

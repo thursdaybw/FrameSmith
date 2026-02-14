@@ -27,7 +27,11 @@ export function extractTrackDataForNativeDemux({ mp4Bytes, zeroBasedTrackIndex }
             });
 
         const containerMetadata =
-            extractTrackContainerMetadataFromMp4({ mp4Bytes, zeroBasedTrackIndex });
+            extractTrackContainerMetadataFromMp4({
+                mp4Bytes,
+                zeroBasedTrackIndex,
+                includeDisplayTransform: true
+            });
 
         const codecProfile = requireCodecProfileByCodecName(
             codecConfig.codec,
