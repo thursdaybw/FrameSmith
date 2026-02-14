@@ -90,6 +90,36 @@ function getAccessUnitFragment(plan) {
     return fragment;
 }
 
+function resolveFullTrackRangeSeconds(trackView) {
+    const samples = Array.isArray(trackView?._semanticSamples)
+        ? trackView._semanticSamples
+        : [];
+    assert(samples.length > 0, "track must have semantic samples");
+
+    let minPts = Number.POSITIVE_INFINITY;
+    let maxInclusiveEndPts = Number.NEGATIVE_INFINITY;
+
+    for (const sample of samples) {
+        const pts = Number(sample?.pts);
+        if (!Number.isFinite(pts)) continue;
+        if (pts < minPts) minPts = pts;
+
+        const duration = Number(sample?.duration);
+        const endPts = pts + (Number.isFinite(duration) && duration > 0 ? duration : 1);
+        if (endPts > maxInclusiveEndPts) {
+            maxInclusiveEndPts = endPts;
+        }
+    }
+
+    assert(Number.isFinite(minPts), "track must expose finite sample pts values");
+    assert(Number.isFinite(maxInclusiveEndPts), "track must expose finite sample end values");
+
+    return {
+        startSeconds: trackView.ptsToSeconds(minPts),
+        endSeconds: trackView.ptsToSeconds(maxInclusiveEndPts)
+    };
+}
+
 // ------------------------------------------------------------
 // Test 1: Single clip, full track
 // ------------------------------------------------------------
@@ -102,12 +132,11 @@ async function test_singleClip_fullTrack() {
         trackIndex: 0
     });
 
+    const fullRange = resolveFullTrackRangeSeconds(videoTrackView);
     const clip = new Clip({
         trackView: videoTrackView,
-        startSeconds: 0,
-        endSeconds: videoTrackView.ptsToSeconds(
-            videoTrackView._semanticSamples.at(-1).pts
-        )
+        startSeconds: fullRange.startSeconds,
+        endSeconds: fullRange.endSeconds
     });
 
     const track = new Track();

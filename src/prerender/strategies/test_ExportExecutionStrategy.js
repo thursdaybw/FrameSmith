@@ -11,17 +11,26 @@ function assert(condition, message) {
 }
 
 export async function test_ExportExecutionStrategy_decodesOnceAndComposesAcrossRange() {
-    let videoDecodeCalls = 0;
-    let audioDecodeCalls = 0;
+    const decodeRanges = [];
 
     const strategy = new ExportExecutionStrategy({
-        videoDecoder: {
-            decode() { videoDecodeCalls++; },
-            async flush() {}
-        },
-        audioDecoder: {
-            decode() { audioDecodeCalls++; },
-            async flush() {}
+        decodePort: {
+            async decodeRange({ plan, exportRange }) {
+                decodeRanges.push({
+                    plan,
+                    exportRange
+                });
+                return {
+                    decodedVideoFrames: [
+                        { timestamp: 0, drawable: true },
+                        { timestamp: 33_333, drawable: true }
+                    ],
+                    decodedAudioData: [
+                        { timestamp: 0, numberOfFrames: 960 },
+                        { timestamp: 21_333, numberOfFrames: 960 }
+                    ]
+                };
+            }
         },
         timecodeFragmentIntentResolvers: {
             "text-overlay": () => ({
@@ -57,8 +66,16 @@ export async function test_ExportExecutionStrategy_decodesOnceAndComposesAcrossR
         fps: 2
     });
 
-    assert(videoDecodeCalls === 2, "video decode must run once per access unit");
-    assert(audioDecodeCalls === 2, "audio decode must run once per access unit");
+    assert(decodeRanges.length === 1, "decode port must be called once for the only chunk");
+    assert(
+        decodeRanges[0].plan === plan,
+        "decode port must receive the same plan reference"
+    );
+    assert(
+        decodeRanges[0].exportRange.startSeconds === 5 &&
+        decodeRanges[0].exportRange.endSeconds === 6,
+        "decode port must receive export chunk range"
+    );
 
     assert(
         result.decodedContainerBackedFragmentBatch.decodedVideoFrames.length === 2,
@@ -101,6 +118,69 @@ export async function test_ExportExecutionStrategy_rejectsInvalidFps() {
     assert(
         error.message.includes("fps must be > 0"),
         "invalid fps error message must explain required contract"
+    );
+}
+
+export async function test_ExportExecutionStrategy_requiresDecodePort() {
+    const strategy = new ExportExecutionStrategy({
+        options: { outputSpec: { width: 1280, height: 720, sampleRate: 48_000, channels: 2 } }
+    });
+
+    let error = null;
+    try {
+        await strategy.execute({
+            plan: { fragments: [] },
+            exportRange: { startSeconds: 0, endSeconds: 1 },
+            fps: 30
+        });
+    } catch (caught) {
+        error = caught;
+    }
+
+    assert(error instanceof Error, "missing decodePort must throw");
+    assert(
+        error.message.includes("decodePort.decodeRange is required"),
+        "error must explain decode port contract"
+    );
+}
+
+export async function test_ExportExecutionStrategy_wrapsDecodePortErrorWithRangeContext() {
+    const strategy = new ExportExecutionStrategy({
+        decodePort: {
+            async decodeRange() {
+                throw new Error("synthetic decode failure");
+            }
+        },
+        options: { outputSpec: { width: 1280, height: 720, sampleRate: 48_000, channels: 2 } }
+    });
+
+    let error = null;
+    try {
+        await strategy.execute({
+            plan: {
+                fragments: [
+                    {
+                        kind: PreRenderPlanFragmentKinds.ACCESS_UNITS,
+                        prerenderContributorKind: PreRenderPlanContributorKinds.CONTAINER_TRACK,
+                        access_units: [{ pts: 0, data: new Uint8Array([1]) }]
+                    }
+                ]
+            },
+            exportRange: { startSeconds: 2, endSeconds: 3 },
+            fps: 1
+        });
+    } catch (caught) {
+        error = caught;
+    }
+
+    assert(error instanceof Error, "decode port error must propagate");
+    assert(
+        error.message.includes("decodePort.decodeRange failed"),
+        "error must include decode port failure marker"
+    );
+    assert(
+        error.message.includes("startSeconds=2") && error.message.includes("endSeconds=3"),
+        "error must include chunk range context"
     );
 }
 
@@ -159,13 +239,30 @@ export async function test_ExportExecutionStrategy_adaptsEncodedOutputsAndBuilds
     let compilerInput = null;
 
     const strategy = new ExportExecutionStrategy({
-        videoDecoder: {
-            decode() {},
-            async flush() {}
-        },
-        audioDecoder: {
-            decode() {},
-            async flush() {}
+        decodePort: {
+            async decodeRange() {
+                return {
+                    decodedVideoFrames: [{ timestamp: 0, drawable: true }],
+                    decodedAudioData: [
+                        new FakeAudioData({
+                            format: "f32-planar",
+                            sampleRate: 48_000,
+                            numberOfFrames: 960,
+                            numberOfChannels: 2,
+                            timestamp: 0,
+                            data: new Float32Array(960 * 2)
+                        }),
+                        new FakeAudioData({
+                            format: "f32-planar",
+                            sampleRate: 48_000,
+                            numberOfFrames: 960,
+                            numberOfChannels: 2,
+                            timestamp: 1_000_000,
+                            data: new Float32Array(960 * 2)
+                        })
+                    ]
+                };
+            }
         },
         encodeVideoFrame({ frame, timeSeconds }) {
             assert(frame instanceof FakeVideoFrame, "video encoder must receive VideoFrame artifacts");
@@ -261,5 +358,7 @@ export async function test_ExportExecutionStrategy_adaptsEncodedOutputsAndBuilds
 export const EXPORT_EXECUTION_STRATEGY_TESTS = [
     test_ExportExecutionStrategy_decodesOnceAndComposesAcrossRange,
     test_ExportExecutionStrategy_rejectsInvalidFps,
+    test_ExportExecutionStrategy_requiresDecodePort,
+    test_ExportExecutionStrategy_wrapsDecodePortErrorWithRangeContext,
     test_ExportExecutionStrategy_adaptsEncodedOutputsAndBuildsMp4
 ];

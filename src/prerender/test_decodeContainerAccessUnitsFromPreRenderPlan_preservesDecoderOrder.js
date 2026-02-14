@@ -49,6 +49,7 @@ async function test_decodeContainerAccessUnits_preservesDecoderCallAndOutputOrde
         { pts: 2000, dts: 1000, marker: 2 }
     ];
     const expectedDecodePtsOrder = [1000, 2000, 3000];
+    const expectedDecodeDtsOrder = [0, 1000, 2000];
     const expectedDecodeMarkerOrder = [1, 2, 3];
 
     const accessUnitFragment = {
@@ -119,7 +120,7 @@ async function test_decodeContainerAccessUnits_preservesDecoderCallAndOutputOrde
 
     if (allHaveTimestamp) {
         assert(
-            decodeCallOrder.every((entry, i) => entry.timestamp === expectedDecodePtsOrder[i]),
+            decodeCallOrder.every((entry, i) => entry.timestamp === expectedDecodeDtsOrder[i]),
             "decoder calls must follow DTS order by timestamp"
         );
     } else {

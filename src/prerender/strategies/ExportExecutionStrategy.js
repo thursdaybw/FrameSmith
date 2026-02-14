@@ -1,4 +1,3 @@
-import { decodeContainerAccessUnitsFromPreRenderPlanBatch } from "../decodeContainerAccessUnitsFromPreRenderPlanBatch.js";
 import { resolveProceduralFragmentsAtTimeFromPlan } from "../resolveProceduralFragmentsAtTimeFromPlan.js";
 import { composeAtTime } from "../../composition/composeAtTime.js";
 import { encodeAtTime } from "../../encode/encodeAtTime.js";
@@ -56,8 +55,7 @@ function pickFrameForTargetTimestampUs({
 
 export class ExportExecutionStrategy {
     constructor({
-        videoDecoder,
-        audioDecoder,
+        decodePort,
         encodeVideoFrame,
         encodeAudioData,
         flushVideoEncoder,
@@ -70,8 +68,7 @@ export class ExportExecutionStrategy {
         activeLayers = [],
         options = {}
     } = {}) {
-        this.videoDecoder = videoDecoder;
-        this.audioDecoder = audioDecoder;
+        this.decodePort = decodePort;
         this.encodeVideoFrame = encodeVideoFrame;
         this.encodeAudioData = encodeAudioData;
         this.flushVideoEncoder = flushVideoEncoder;
@@ -99,6 +96,9 @@ export class ExportExecutionStrategy {
         }
         if (typeof fps !== "number" || fps <= 0) {
             throw new Error("ExportExecutionStrategy.execute: fps must be > 0");
+        }
+        if (!this.decodePort || typeof this.decodePort.decodeRange !== "function") {
+            throw new Error("ExportExecutionStrategy.execute: decodePort.decodeRange is required");
         }
 
         let decodedContainerBackedFragmentBatch = null;
@@ -196,12 +196,19 @@ export class ExportExecutionStrategy {
                     continue;
                 }
 
-                const decodedChunkBatch = await decodeContainerAccessUnitsFromPreRenderPlanBatch({
-                    plan,
-                    videoDecoder: this.videoDecoder,
-                    audioDecoder: this.audioDecoder,
-                    exportRange: chunkRange
-                });
+                let decodedChunkBatch;
+                try {
+                    decodedChunkBatch = await this.decodePort.decodeRange({
+                        plan,
+                        exportRange: chunkRange
+                    });
+                } catch (error) {
+                    throw new Error(
+                        "ExportExecutionStrategy.execute: decodePort.decodeRange failed " +
+                        `(startSeconds=${chunkRange.startSeconds}, endSeconds=${chunkRange.endSeconds}): ` +
+                        `${error?.message ?? String(error)}`
+                    );
+                }
                 decodedContainerBackedFragmentBatch = decodedChunkBatch;
 
                 const decodedVideoFrames = Array.isArray(decodedChunkBatch?.decodedVideoFrames)

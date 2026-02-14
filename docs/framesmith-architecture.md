@@ -152,6 +152,94 @@ After MVP export is stable end-to-end.
 Treat hardware decode recovery as an optimization pass, not a launch blocker.
 The goal of that pass is better speed/battery on devices where hardware decode is reliable.
 
+## Mobile HEVC Decode Gap (Current, Separate Issue)
+
+Date updated: February 14, 2026
+
+This is a different problem from the hardware stall above.
+
+### What is happening?
+
+Some phone files are HEVC (`hvc1`).
+On tested mobile Chrome runs, `VideoDecoder` reports HEVC as unsupported in all acceleration modes.
+
+In plain terms:
+
+- the browser can play the file in a `<video>` tag
+- but WebCodecs `VideoDecoder` still says "not supported" for that codec
+
+### Why this is possible (and confusing)
+
+Browser playback and WebCodecs are related, but they are not the same API contract.
+So "plays in player" does not guarantee "decodes through `VideoDecoder`".
+
+### Current runtime policy
+
+For video decode, FrameSmith now does this:
+
+1. Try WebCodecs decode first (`prefer-hardware`, then `no-preference`, then `prefer-software`).
+2. If decode setup is unsupported, or decode stalls at runtime, switch strategy.
+3. Fallback strategy: media-element video decode + WebCodecs audio decode.
+
+This keeps export moving instead of hard-failing on HEVC decode setup.
+
+### Important limitation right now
+
+Media-element fallback currently works as a survival path, but quality/timing is not yet stable for all tested HEVC phone clips (for example black first frame or frozen video frame behavior on some runs).
+
+So this is logged as "works around hard failure, still needs quality hardening."
+
+### Camera recording path (future source, not core workaround)
+
+`getUserMedia -> MediaRecorder -> Blob` is planned as an additional ingest source for MVP workflows.
+
+That path is useful for capture-first UX, but it does not replace the main architecture goal:
+
+- robust file ingest from user-provided media
+- deterministic timeline compile/export
+
+### Architecture direction
+
+- Keep decode as a strategy port (already in progress), not hard-wired to one backend.
+- Keep timeline/project settings authoritative for output.
+- Treat HEVC fallback hardening as a real engineering task, not a hidden shortcut.
+
+## Source Normalization Seam (Next Step)
+
+Date updated: February 14, 2026
+
+This is the planned boundary for unsupported/unstable source inputs.
+
+### Why we need it
+
+- Runtime decode fallback chains became complex and hard to trust.
+- We want export to stay deterministic.
+- We want unsupported input handling to happen before normal decode/export.
+
+### Contract
+
+Add a source-normalization port before decode:
+
+- input: clip/source + requested time range
+- output: normalized intermediate source (same range only), suitable for normal demux/decode
+
+Plain language:
+
+- if input is already good, use it directly
+- if input is not good, normalize only the clip window, not the whole file
+
+### Relationship to decode strategy seam
+
+- Decode strategy seam (`decodePort.decodeRange`) stays.
+- Source normalization seam sits before it.
+- Normalized output then goes through standard demux/decode path.
+
+### Current policy
+
+- Keep existing media-element runtime fallback as temporary survival code.
+- Do not expand that fallback chain further.
+- Build normalization path and then simplify runtime decode path.
+
 ## Legacy Preview Surface (Current Status)
 
 This repository still contains a legacy preview surface that is not part of the
@@ -207,6 +295,78 @@ Next step after MVP stability:
 
 - Refactor demux internals to consume `Mp4ByteSource.readRange(...)` directly
   for metadata and sample-table parsing, then decode only needed timeline windows.
+
+## WebM Demux Direction (MVP Plan)
+
+Date updated: February 14, 2026
+
+Why this exists:
+
+- HEVC decode can fail in WebCodecs on some phone/browser paths.
+- WebM ingest gives us another practical source path without writing a codec decoder.
+
+### API shape (scales to more containers)
+
+Public entry point:
+
+- `openContainer({ containerType, byteSource })`
+
+Container-specific internals:
+
+- `openContainerFromMp4Source({ mp4ByteSource })`
+- `openContainerFromWebmSource({ webmByteSource })` (new)
+
+Rule:
+
+- one public API for app code
+- separate container adapters behind it
+- same normalized output shape (`trackViews`, timing, codec config, display metadata)
+- keep MP4 legacy bytes path working during migration
+
+### Selector and registry policy
+
+Keep the same selector lookup style used today (`registry.getExtractor(selector)`).
+
+Do not create a second selector API.
+
+What changes for WebM:
+
+- parser/walker (WebM is EBML, not MP4 box headers)
+- selector builder rules
+
+What stays the same:
+
+- extractor registry pattern
+- extractor function contract
+- semantic output contract
+
+### Minimum WebM read set for FrameSmith
+
+MVP demux only needs enough to produce access units and codec config:
+
+1. Segment timing base
+- `Segment/Info/TimecodeScale` (use default when missing)
+
+2. Track metadata
+- `Tracks/TrackEntry`
+- `TrackNumber`, `TrackType`, `CodecID`
+- `CodecPrivate` (when present)
+- video dimensions for video tracks
+
+3. Media samples
+- `Cluster/Timecode`
+- `SimpleBlock` (and then `BlockGroup` as needed)
+- derive per-sample: track number, timestamp, keyframe flag, payload bytes
+
+4. Normalize into existing track contract
+- produce the same `trackViews` shape used by MP4 path
+- same access-unit fields expected by decode/export stages
+
+### Scope guardrails
+
+- Do not merge MP4 and WebM parser logic into one parser.
+- Do not branch app code on codec/container all over the place.
+- Keep branching inside container adapters and decode strategy ports.
 
 ---
 

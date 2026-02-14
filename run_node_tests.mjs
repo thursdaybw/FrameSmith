@@ -1,5 +1,6 @@
 import { PRERENDER_DECODE_CONTAINER_VIDEO_TESTS } from "./src/prerender/test_decodeContainerAccessUnits_containerVideo.js";
 import { PRERENDER_DECODE_CONTAINER_AUDIO_TESTS } from "./src/prerender/test_decodeContainerAccessUnits_containerAudio.js";
+import { MEDIA_ELEMENT_DECODE_PORT_TESTS } from "./src/prerender/decodePorts/test_createMediaElementDecodePort.js";
 import {
     PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DISPATCH_TESTS
 } from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_ignoresProceduralFragments.js";
@@ -42,6 +43,7 @@ const SKIPPED_BROWSER_ONLY_MODULES = [
 const NODE_TESTS = [
     ...PRERENDER_DECODE_CONTAINER_VIDEO_TESTS,
     ...PRERENDER_DECODE_CONTAINER_AUDIO_TESTS,
+    ...MEDIA_ELEMENT_DECODE_PORT_TESTS,
     ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DISPATCH_TESTS,
     ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_EMPTY_PLAN_TESTS,
     ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_ORDER_TESTS,

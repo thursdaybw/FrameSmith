@@ -206,6 +206,9 @@ import { buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.j
 
 import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
 import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js";
+import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/createContainerWebCodecsDecodePort.js";
+import { createMediaElementDecodePort } from "./src/prerender/decodePorts/createMediaElementDecodePort.js";
+import { DecodedContainerBackedFragmentBatch } from "./src/prerender/DecodedContainerBackedFragmentBatch.js";
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
@@ -605,164 +608,519 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     async function configureVideoDecoderForTrack({
         videoDecoder,
-        videoTrackView
+        videoTrackView,
+        accelerationOrderOverride
     }) {
         const sourceVideoCodec = videoTrackView.codecConfig.codec;
         const avcC = videoTrackView.codecConfig.avcC;
         const hvcC = videoTrackView.codecConfig.hvcC;
-        const decodeVideoCodec = (sourceVideoCodec === "avc1" && avcC instanceof Uint8Array && avcC.length >= 4)
-            ? `avc1.${avcC[1].toString(16).padStart(2, "0").toUpperCase()}${avcC[2].toString(16).padStart(2, "0").toUpperCase()}${avcC[3].toString(16).padStart(2, "0").toUpperCase()}`
-            : sourceVideoCodec;
-        const codecDescription = avcC instanceof Uint8Array
-            ? avcC
-            : (hvcC instanceof Uint8Array ? hvcC : undefined);
+        let decodeVideoCodec;
+        if (sourceVideoCodec === "avc1" && avcC instanceof Uint8Array && avcC.length >= 4) {
+            decodeVideoCodec =
+                `avc1.${avcC[1].toString(16).padStart(2, "0").toUpperCase()}` +
+                `${avcC[2].toString(16).padStart(2, "0").toUpperCase()}` +
+                `${avcC[3].toString(16).padStart(2, "0").toUpperCase()}`;
+        } else {
+            decodeVideoCodec = sourceVideoCodec;
+        }
 
-        const candidate = {
-            codec: decodeVideoCodec,
-            ...(codecDescription ? { description: codecDescription } : {}),
-            hardwareAcceleration: "prefer-software"
-        };
+        let codecDescription;
+        if (avcC instanceof Uint8Array) {
+            codecDescription = avcC;
+        } else if (hvcC instanceof Uint8Array) {
+            codecDescription = hvcC;
+        }
 
-        if (typeof VideoDecoder.isConfigSupported === "function") {
-            const support = await VideoDecoder.isConfigSupported(candidate);
-            if (!support.supported) {
-                throw new Error(`VideoDecoder does not support software-preferred config (codec=${decodeVideoCodec}).`);
+        let accelerationOrder = ["prefer-hardware", "no-preference", "prefer-software"];
+        if (Array.isArray(accelerationOrderOverride) && accelerationOrderOverride.length > 0) {
+            accelerationOrder = [];
+            for (const mode of accelerationOrderOverride) {
+                accelerationOrder.push(mode);
             }
         }
 
-        videoDecoder.configure(candidate);
-        console.log("[Encode] video decoder configured", {
-            codec: candidate.codec,
-            hardwareAcceleration: candidate.hardwareAcceleration
+        const supportChecks = [];
+        const configureFailures = [];
+
+        for (const hardwareAcceleration of accelerationOrder) {
+            const candidate = {
+                codec: decodeVideoCodec,
+                hardwareAcceleration
+            };
+            if (codecDescription) {
+                candidate.description = codecDescription;
+            }
+
+            if (typeof VideoDecoder.isConfigSupported === "function") {
+                try {
+                    const support = await VideoDecoder.isConfigSupported(candidate);
+                    supportChecks.push({
+                        hardwareAcceleration,
+                        supported: Boolean(support && support.supported)
+                    });
+                    if (!support || !support.supported) {
+                        continue;
+                    }
+                } catch (error) {
+                    supportChecks.push({
+                        hardwareAcceleration,
+                        supported: false,
+                        reason: error?.message ?? String(error)
+                    });
+                    continue;
+                }
+            }
+
+            try {
+                videoDecoder.configure(candidate);
+                console.log("[Encode] video decoder configured", {
+                    codec: candidate.codec,
+                    sourceCodec: sourceVideoCodec,
+                    hardwareAcceleration: candidate.hardwareAcceleration
+                });
+                return candidate;
+            } catch (error) {
+                configureFailures.push({
+                    hardwareAcceleration,
+                    reason: error?.message ?? String(error)
+                });
+            }
+        }
+
+        throw new Error(
+            `VideoDecoder could not be configured (codec=${decodeVideoCodec}, sourceCodec=${sourceVideoCodec}). ` +
+            `supportChecks=${JSON.stringify(supportChecks)} configureFailures=${JSON.stringify(configureFailures)}`
+        );
+    }
+
+    function waitForVideoEvent(videoElement, eventName, timeoutMs = 10000) {
+        return new Promise((resolve, reject) => {
+            let timeoutId = null;
+
+            const cleanup = () => {
+                videoElement.removeEventListener(eventName, onEvent);
+                videoElement.removeEventListener("error", onError);
+                if (timeoutId !== null) {
+                    clearTimeout(timeoutId);
+                }
+            };
+
+            const onEvent = () => {
+                cleanup();
+                resolve();
+            };
+
+            const onError = () => {
+                cleanup();
+                const mediaError = videoElement.error;
+                const details = mediaError
+                    ? `code=${mediaError.code}`
+                    : "unknown media error";
+                reject(new Error(`video element ${eventName} failed (${details})`));
+            };
+
+            timeoutId = setTimeout(() => {
+                cleanup();
+                reject(new Error(`video element ${eventName} timeout after ${timeoutMs}ms`));
+            }, timeoutMs);
+
+            videoElement.addEventListener(eventName, onEvent, { once: true });
+            videoElement.addEventListener("error", onError, { once: true });
         });
-        return candidate;
+    }
+
+    function createMediaElementVideoDecodeDriver({
+        sourceUrl,
+        fps
+    }) {
+        if (typeof document === "undefined" || typeof VideoFrame !== "function") {
+            throw new Error("media-element video decode fallback requires document + VideoFrame support");
+        }
+        if (typeof sourceUrl !== "string" || sourceUrl.length === 0) {
+            throw new Error("media-element video decode fallback requires a source URL");
+        }
+
+        const decodeFps = Number.isFinite(fps) && fps > 0 ? fps : 30;
+        const frameStepSeconds = 1 / decodeFps;
+        const videoElement = document.createElement("video");
+        videoElement.muted = true;
+        videoElement.playsInline = true;
+        videoElement.preload = "auto";
+        videoElement.src = sourceUrl;
+        let attachedToDom = false;
+        if (typeof document !== "undefined" && document.body) {
+            videoElement.style.position = "fixed";
+            videoElement.style.left = "-99999px";
+            videoElement.style.top = "-99999px";
+            videoElement.style.width = "1px";
+            videoElement.style.height = "1px";
+            videoElement.style.opacity = "0";
+            videoElement.style.pointerEvents = "none";
+            document.body.appendChild(videoElement);
+            attachedToDom = true;
+        }
+
+        let metadataReady = false;
+        let reusableCanvas = null;
+        let reusableCanvasContext = null;
+
+        const ensureMetadata = async () => {
+            if (metadataReady) return;
+            if (videoElement.readyState >= 1 && Number.isFinite(videoElement.duration)) {
+                metadataReady = true;
+                return;
+            }
+            await waitForVideoEvent(videoElement, "loadedmetadata");
+            metadataReady = true;
+        };
+
+        const seekTo = async (targetSeconds) => {
+            const currentTime = Number(videoElement.currentTime);
+            if (Math.abs(currentTime - targetSeconds) <= 0.0005) {
+                return;
+            }
+            videoElement.currentTime = targetSeconds;
+            await waitForVideoEvent(videoElement, "seeked");
+        };
+
+        const closeFrames = (frames) => {
+            if (!Array.isArray(frames)) {
+                return;
+            }
+            for (const frame of frames) {
+                if (frame && typeof frame.close === "function") {
+                    try {
+                        frame.close();
+                    } catch {
+                        // Best effort cleanup.
+                    }
+                }
+            }
+        };
+
+        const decodeVideoFramesBySeeking = async ({ startSeconds, endSeconds }) => {
+            const frames = [];
+            const epsilon = frameStepSeconds / 10;
+
+            for (let timeSeconds = startSeconds; timeSeconds <= endSeconds + epsilon; timeSeconds += frameStepSeconds) {
+                let clampedTime = timeSeconds;
+                if (clampedTime < startSeconds) {
+                    clampedTime = startSeconds;
+                }
+                if (clampedTime > endSeconds) {
+                    clampedTime = endSeconds;
+                }
+                await seekTo(clampedTime);
+                const timestampUs = Math.round(clampedTime * 1_000_000);
+                const frame = cloneFrameFromElement(timestampUs);
+                frames.push(frame);
+            }
+
+            return frames;
+        };
+
+        const decodeVideoFramesByPlayback = async ({ startSeconds, endSeconds }) => {
+            const frames = [];
+
+            await seekTo(startSeconds);
+            videoElement.pause();
+
+            await new Promise((resolve, reject) => {
+                let finished = false;
+                let captureId = null;
+                let timeoutId = null;
+                let lastCapturedMediaTime = Number.NEGATIVE_INFINITY;
+                const captureStepSeconds = Math.max(0.010, frameStepSeconds * 0.45);
+
+                const cleanup = () => {
+                    if (captureId !== null) {
+                        clearInterval(captureId);
+                    }
+                    if (timeoutId !== null) {
+                        clearTimeout(timeoutId);
+                    }
+                    videoElement.pause();
+                    videoElement.removeEventListener("error", onError);
+                };
+
+                const finish = () => {
+                    if (finished) return;
+                    finished = true;
+                    cleanup();
+                    resolve();
+                };
+
+                const fail = (error) => {
+                    if (finished) return;
+                    finished = true;
+                    cleanup();
+                    closeFrames(frames);
+                    reject(error);
+                };
+
+                const onError = () => {
+                    const mediaError = videoElement.error;
+                    let details = "unknown media error";
+                    if (mediaError) {
+                        details = `code=${mediaError.code}`;
+                    }
+                    fail(new Error(`media-element playback decode failed (${details})`));
+                };
+
+                const captureCurrentFrame = () => {
+                    if (finished) return;
+
+                    let mediaTime = Number(videoElement.currentTime);
+                    if (!Number.isFinite(mediaTime)) return;
+                    if (mediaTime < startSeconds - 0.050) return;
+                    if (mediaTime - lastCapturedMediaTime < captureStepSeconds) return;
+                    lastCapturedMediaTime = mediaTime;
+
+                    const timestampUs = Math.round(mediaTime * 1_000_000);
+                    try {
+                        const frame = cloneFrameFromElement(timestampUs);
+                        frames.push(frame);
+                    } catch (error) {
+                        fail(error);
+                    }
+                };
+
+                const checkCompletion = () => {
+                    if (finished) return;
+                    const nowTime = Number(videoElement.currentTime);
+                    if (Number.isFinite(nowTime) && nowTime >= endSeconds - 0.001) {
+                        finish();
+                    }
+                };
+
+                videoElement.addEventListener("error", onError);
+
+                const rangeDurationSeconds = Math.max(0.25, endSeconds - startSeconds);
+                const timeoutMs = Math.max(15_000, Math.round((rangeDurationSeconds * 4_000) + 5_000));
+                timeoutId = setTimeout(() => {
+                    const nowTime = Number(videoElement.currentTime);
+                    if (Number.isFinite(nowTime) && nowTime >= endSeconds - 0.001) {
+                        finish();
+                        return;
+                    }
+                    fail(new Error(`media-element playback decode timed out after ${timeoutMs}ms`));
+                }, timeoutMs);
+
+                captureId = setInterval(() => {
+                    captureCurrentFrame();
+                    checkCompletion();
+                }, 16);
+
+                const playResult = videoElement.play();
+                if (playResult && typeof playResult.then === "function") {
+                    playResult.catch((error) => {
+                        fail(new Error(`media-element playback start failed: ${error?.message ?? String(error)}`));
+                    });
+                }
+            });
+
+            return frames;
+        };
+
+        const cloneFrameFromElement = (timestampUs) => {
+            try {
+                return new VideoFrame(videoElement, { timestamp: timestampUs });
+            } catch {
+                const width = Math.max(1, videoElement.videoWidth || 2);
+                const height = Math.max(1, videoElement.videoHeight || 2);
+                const needsCanvas =
+                    !reusableCanvas ||
+                    reusableCanvas.width !== width ||
+                    reusableCanvas.height !== height;
+                if (needsCanvas) {
+                    if (typeof OffscreenCanvas === "function") {
+                        reusableCanvas = new OffscreenCanvas(width, height);
+                    } else {
+                        reusableCanvas = document.createElement("canvas");
+                        reusableCanvas.width = width;
+                        reusableCanvas.height = height;
+                    }
+                    reusableCanvasContext = reusableCanvas.getContext("2d");
+                }
+
+                if (!reusableCanvasContext) {
+                    throw new Error("unable to create fallback canvas for media-element decode");
+                }
+
+                reusableCanvasContext.clearRect(0, 0, width, height);
+                reusableCanvasContext.drawImage(videoElement, 0, 0, width, height);
+                return new VideoFrame(reusableCanvas, { timestamp: timestampUs });
+            }
+        };
+
+        return {
+            async decodeVideoFrames({ exportRange }) {
+                await ensureMetadata();
+
+                const durationSeconds = Number(videoElement.duration);
+                if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+                    throw new Error("source duration is unavailable for media-element decode fallback");
+                }
+
+                const requestedStart = Number(exportRange?.startSeconds);
+                const requestedEnd = Number(exportRange?.endSeconds);
+                const safeStart = Number.isFinite(requestedStart) ? requestedStart : 0;
+                const safeEnd = Number.isFinite(requestedEnd) ? requestedEnd : safeStart;
+
+                const maxSeekable = Math.max(0, durationSeconds - frameStepSeconds / 2);
+                const startSeconds = Math.max(0, Math.min(safeStart, maxSeekable));
+                const endSeconds = Math.max(startSeconds, Math.min(safeEnd, maxSeekable));
+
+                try {
+                    const playbackFrames = await decodeVideoFramesByPlayback({ startSeconds, endSeconds });
+                    if (playbackFrames.length >= 2) {
+                        return playbackFrames;
+                    }
+                } catch (error) {
+                    console.warn("[Encode] media-element playback decode failed; using seek sampling fallback", {
+                        reason: error?.message ?? String(error),
+                        startSeconds,
+                        endSeconds
+                    });
+                }
+
+                return decodeVideoFramesBySeeking({ startSeconds, endSeconds });
+            },
+            dispose() {
+                try {
+                    videoElement.pause();
+                } catch {
+                    // no-op
+                }
+                if (attachedToDom && videoElement.parentNode) {
+                    videoElement.parentNode.removeChild(videoElement);
+                    attachedToDom = false;
+                }
+            }
+        };
+    }
+
+    function createHybridDecodePort({
+        videoDecodePort,
+        audioDecodePort
+    }) {
+        return {
+            async decodeRange({ plan, exportRange }) {
+                const videoBatch = videoDecodePort
+                    ? await videoDecodePort.decodeRange({ plan, exportRange })
+                    : null;
+                const audioBatch = audioDecodePort
+                    ? await audioDecodePort.decodeRange({ plan, exportRange })
+                    : null;
+
+                const decodedVideoFrames = Array.isArray(videoBatch?.decodedVideoFrames)
+                    ? videoBatch.decodedVideoFrames
+                    : [];
+                const decodedAudioData = Array.isArray(audioBatch?.decodedAudioData)
+                    ? audioBatch.decodedAudioData
+                    : [];
+
+                return new DecodedContainerBackedFragmentBatch({
+                    decodedVideoFrames,
+                    decodedAudioData
+                });
+            }
+        };
+    }
+
+    function createFallbackDecodePort({
+        primaryDecodePort,
+        fallbackDecodePort,
+        onFallback
+    }) {
+        let usingFallback = false;
+
+        return {
+            async decodeRange({ plan, exportRange }) {
+                if (usingFallback || !primaryDecodePort) {
+                    if (!fallbackDecodePort) {
+                        throw new Error("Fallback decode strategy is unavailable.");
+                    }
+                    return fallbackDecodePort.decodeRange({ plan, exportRange });
+                }
+
+                try {
+                    return await primaryDecodePort.decodeRange({ plan, exportRange });
+                } catch (error) {
+                    usingFallback = true;
+                    if (typeof onFallback === "function") {
+                        onFallback(error, exportRange);
+                    }
+                    if (!fallbackDecodePort) {
+                        throw error;
+                    }
+                    return fallbackDecodePort.decodeRange({ plan, exportRange });
+                }
+            }
+        };
+    }
+
+    function getErrorMessage(error) {
+        if (error && typeof error.message === "string" && error.message.length > 0) {
+            return error.message;
+        }
+        return String(error);
+    }
+
+    function resolveSourceUrlForFallback({
+        currentVideoSourceUrl,
+        videoElement
+    }) {
+        if (typeof currentVideoSourceUrl === "string" && currentVideoSourceUrl.length > 0) {
+            return currentVideoSourceUrl;
+        }
+        if (
+            videoElement &&
+            typeof videoElement.currentSrc === "string" &&
+            videoElement.currentSrc.length > 0
+        ) {
+            return videoElement.currentSrc;
+        }
+        if (
+            videoElement &&
+            typeof videoElement.src === "string" &&
+            videoElement.src.length > 0
+        ) {
+            return videoElement.src;
+        }
+        return "";
     }
 
     function createSharedRenderExecutionContext({
-        videoDecoder,
-        audioDecoder,
-        getVideoDecoderError,
-        getAudioDecoderError,
-        decodedVideoFrames,
-        decodedAudioData,
+        decodePort,
         timecodeFragmentIntentResolvers,
         timeline,
         exportFps,
         configuredVideoEncoderConfig,
-        videoTrackView
+        videoTrackView,
+        videoRotationDegreesOverride,
+        decodeChunkSecondsOverride
     }) {
-        return {
-            videoDecoder: {
-                decode(chunk) {
-                    const videoDecoderError = getVideoDecoderError();
-                    if (videoDecoderError) {
-                        throw Object.assign(
-                            new Error("videoDecoder.decode called after decoder failure"),
-                            { cause: videoDecoderError }
-                        );
-                    }
-                    try {
-                        videoDecoder.decode(chunk);
-                    } catch (error) {
-                        console.error("videoDecoder.decode threw", error);
-                        throw error;
-                    }
-                },
-                async flush() {
-                    const videoDecoderError = getVideoDecoderError();
-                    if (videoDecoderError) {
-                        throw Object.assign(
-                            new Error("videoDecoder.flush called after decoder failure"),
-                            { cause: videoDecoderError }
-                        );
-                    }
-                    try {
-                        const flushStart = performance.now();
-                        let lastDecodedOutputCount = decodedVideoFrames.length;
-                        let lastProgressAt = performance.now();
-                        let lastStallLogAt = 0;
-                        const heartbeat = setInterval(() => {
-                            const decodedOutputCount = decodedVideoFrames.length;
-                            if (decodedOutputCount !== lastDecodedOutputCount) {
-                                lastDecodedOutputCount = decodedOutputCount;
-                                lastProgressAt = performance.now();
-                            }
-                            const now = performance.now();
-                            const noProgressMs = now - lastProgressAt;
-                            const isStalled = noProgressMs >= 3000;
-                            if (isStalled && (now - lastStallLogAt) >= 5000) {
-                                lastStallLogAt = now;
-                                console.warn("[VideoDecoder.flush][STALLED]", {
-                                    elapsedMs: Math.round(now - flushStart),
-                                    decodeQueueSize: videoDecoder.decodeQueueSize,
-                                    decodedOutputCount,
-                                    noProgressMs: Math.round(noProgressMs),
-                                    hasDecoderError: !!getVideoDecoderError()
-                                });
-                            }
-                        }, 2000);
+        let videoRotationDegrees = 0;
+        if (
+            videoTrackView &&
+            videoTrackView.containerMeta &&
+            videoTrackView.containerMeta.displayTransform &&
+            typeof videoTrackView.containerMeta.displayTransform.rotationDegrees === "number"
+        ) {
+            videoRotationDegrees = videoTrackView.containerMeta.displayTransform.rotationDegrees;
+        }
+        if (typeof videoRotationDegreesOverride === "number") {
+            videoRotationDegrees = videoRotationDegreesOverride;
+        }
 
-                        try {
-                            await videoDecoder.flush();
-                        } finally {
-                            clearInterval(heartbeat);
-                        }
-                    } catch (error) {
-                        console.error("videoDecoder.flush threw", error);
-                        throw error;
-                    }
-                },
-                getDecodedOutputs() {
-                    return decodedVideoFrames;
-                },
-                getLastError() {
-                    return getVideoDecoderError();
-                },
-                get decodeQueueSize() {
-                    return videoDecoder.decodeQueueSize;
-                }
-            },
-            audioDecoder: {
-                decode(chunk) {
-                    const audioDecoderError = getAudioDecoderError();
-                    if (audioDecoderError) {
-                        throw Object.assign(
-                            new Error("audioDecoder.decode called after decoder failure"),
-                            { cause: audioDecoderError }
-                        );
-                    }
-                    try {
-                        audioDecoder.decode(chunk);
-                    } catch (error) {
-                        console.error("audioDecoder.decode threw", error);
-                        throw error;
-                    }
-                },
-                async flush() {
-                    const audioDecoderError = getAudioDecoderError();
-                    if (audioDecoderError) {
-                        throw Object.assign(
-                            new Error("audioDecoder.flush called after decoder failure"),
-                            { cause: audioDecoderError }
-                        );
-                    }
-                    try {
-                        await audioDecoder.flush();
-                    } catch (error) {
-                        console.error("audioDecoder.flush threw", error);
-                        throw error;
-                    }
-                },
-                getDecodedOutputs() {
-                    return decodedAudioData;
-                },
-                getLastError() {
-                    return getAudioDecoderError();
-                },
-                get decodeQueueSize() {
-                    return audioDecoder.decodeQueueSize;
-                }
-            },
+        let decodeChunkSeconds = null;
+        if (typeof decodeChunkSecondsOverride === "number" && Number.isFinite(decodeChunkSecondsOverride)) {
+            decodeChunkSeconds = decodeChunkSecondsOverride;
+        }
+
+        return {
+            decodePort,
             timecodeFragmentIntentResolvers,
             activeLayers: timeline.tracks.map((track, index) => ({
                 track,
@@ -776,12 +1134,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                 outputSpec: {
                     width: configuredVideoEncoderConfig.width,
                     height: configuredVideoEncoderConfig.height,
-                    videoRotationDegrees:
-                        videoTrackView?.containerMeta?.displayTransform?.rotationDegrees ?? 0,
+                    videoRotationDegrees,
                     fps: exportFps,
                     sampleRate: 48_000,
                     channels: 2
                 },
+                decodeChunkSeconds,
                 background: { r: 0, g: 0, b: 0, a: 1 }
             }
         };
@@ -985,13 +1343,70 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (typeof VideoEncoder !== "function" || typeof AudioEncoder !== "function") {
                 throw new Error("WebCodecs VideoEncoder/AudioEncoder is not available in this browser.");
             }
-            if (typeof VideoDecoder !== "function" || typeof AudioDecoder !== "function") {
-                throw new Error("WebCodecs VideoDecoder/AudioDecoder is not available in this browser.");
+            if (typeof AudioDecoder !== "function") {
+                throw new Error("WebCodecs AudioDecoder is not available in this browser.");
             }
 
             failedStage = "plan";
             const exportFps = PRE_RENDER_FPS;
-            const exportRange = { startSeconds: 0, endSeconds: 10 };
+            let exportEndSeconds = 0;
+            let mediaClipEndSeconds = 0;
+            let hasMediaClipBound = false;
+            if (Array.isArray(timeline.tracks)) {
+                for (const track of timeline.tracks) {
+                    if (!track || !Array.isArray(track.clips)) {
+                        continue;
+                    }
+                    for (const clip of track.clips) {
+                        let clipEndSeconds = Number(clip?.endSeconds);
+                        if (!Number.isFinite(clipEndSeconds)) {
+                            const clipEndPts = Number(clip?.endPts);
+                            const clipTrackView = clip?.trackView;
+                            if (
+                                Number.isFinite(clipEndPts) &&
+                                clipTrackView &&
+                                typeof clipTrackView.ptsToSeconds === "function"
+                            ) {
+                                clipEndSeconds = Number(clipTrackView.ptsToSeconds(clipEndPts));
+                            }
+                        }
+                        if (!Number.isFinite(clipEndSeconds)) {
+                            continue;
+                        }
+                        const trackView = clip?.trackView;
+                        const mediaType = trackView?.mediaType;
+                        const isContainerMediaClip =
+                            (mediaType === "video" || mediaType === "audio") &&
+                            typeof clip?.iterateAccessUnits === "function";
+                        if (isContainerMediaClip) {
+                            hasMediaClipBound = true;
+                            if (clipEndSeconds > mediaClipEndSeconds) {
+                                mediaClipEndSeconds = clipEndSeconds;
+                            }
+                        }
+                        if (clipEndSeconds > exportEndSeconds) {
+                            exportEndSeconds = clipEndSeconds;
+                        }
+                    }
+                }
+            }
+            if (hasMediaClipBound) {
+                exportEndSeconds = mediaClipEndSeconds;
+            }
+            if (!(exportEndSeconds > 0)) {
+                const timelineDuration = Number(timeline.duration);
+                if (Number.isFinite(timelineDuration) && timelineDuration > 0) {
+                    exportEndSeconds = timelineDuration;
+                }
+            }
+            if (!(exportEndSeconds > 0)) {
+                throw new Error("Unable to derive export range from timeline.");
+            }
+            const exportRange = { startSeconds: 0, endSeconds: exportEndSeconds };
+            console.log("[Encode] export range", {
+                startSeconds: exportRange.startSeconds,
+                endSeconds: exportRange.endSeconds
+            });
 
             const prerenderPlan = buildPrerenderPlanFromTimeline({ timeline });
             console.log("[Encode] prerender plan ready", {
@@ -1020,24 +1435,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             const audioEncodedChunks = [];
             let videoDecoderConfig = null;
             let audioDecoderConfig = null;
-            const decodedVideoFrames = [];
+
             const decodedAudioData = [];
-            let videoDecoderError = null;
             let audioDecoderError = null;
-            failedStage = "decoder_config_video";
-            const videoDecoder = new VideoDecoder({
-                output(frame) {
-                    decodedVideoFrames.push(frame);
-                },
-                error(error) {
-                    console.error("VideoDecoder error", error);
-                    videoDecoderError = error;
-                }
-            });
-            await configureVideoDecoderForTrack({
-                videoDecoder,
-                videoTrackView
-            });
 
             failedStage = "decoder_config_audio";
             const audioDecoder = new AudioDecoder({
@@ -1054,6 +1454,278 @@ document.addEventListener("DOMContentLoaded", async () => {
                 audioDecoder,
                 audioTrackView
             });
+
+            const wrappedAudioDecoder = {
+                decode(chunk) {
+                    if (audioDecoderError) {
+                        throw Object.assign(
+                            new Error("audioDecoder.decode called after decoder failure"),
+                            { cause: audioDecoderError }
+                        );
+                    }
+                    audioDecoder.decode(chunk);
+                },
+                async flush() {
+                    if (audioDecoderError) {
+                        throw Object.assign(
+                            new Error("audioDecoder.flush called after decoder failure"),
+                            { cause: audioDecoderError }
+                        );
+                    }
+                    await audioDecoder.flush();
+                },
+                getDecodedOutputs() {
+                    return decodedAudioData;
+                },
+                getLastError() {
+                    return audioDecoderError;
+                },
+                get decodeQueueSize() {
+                    return audioDecoder.decodeQueueSize;
+                }
+            };
+
+            failedStage = "decoder_config_video";
+            const createWrappedVideoDecoder = async ({ accelerationOrder }) => {
+                if (typeof VideoDecoder !== "function") {
+                    return {
+                        wrappedVideoDecoder: null,
+                        setupError: new Error("VideoDecoder is not available in this browser.")
+                    };
+                }
+
+                const localDecodedVideoFrames = [];
+                let localVideoDecoderError = null;
+                const videoDecoder = new VideoDecoder({
+                    output(frame) {
+                        localDecodedVideoFrames.push(frame);
+                    },
+                    error(error) {
+                        console.error("VideoDecoder error", error);
+                        localVideoDecoderError = error;
+                    }
+                });
+
+                try {
+                    await configureVideoDecoderForTrack({
+                        videoDecoder,
+                        videoTrackView,
+                        accelerationOrderOverride: accelerationOrder
+                    });
+                } catch (error) {
+                    return {
+                        wrappedVideoDecoder: null,
+                        setupError: error
+                    };
+                }
+
+                return {
+                    wrappedVideoDecoder: {
+                        decode(chunk) {
+                            if (localVideoDecoderError) {
+                                throw Object.assign(
+                                    new Error("videoDecoder.decode called after decoder failure"),
+                                    { cause: localVideoDecoderError }
+                                );
+                            }
+                            videoDecoder.decode(chunk);
+                        },
+                        async flush() {
+                            if (localVideoDecoderError) {
+                                throw Object.assign(
+                                    new Error("videoDecoder.flush called after decoder failure"),
+                                    { cause: localVideoDecoderError }
+                                );
+                            }
+                            await videoDecoder.flush();
+                        },
+                        getDecodedOutputs() {
+                            return localDecodedVideoFrames;
+                        },
+                        getLastError() {
+                            return localVideoDecoderError;
+                        },
+                        get decodeQueueSize() {
+                            return videoDecoder.decodeQueueSize;
+                        }
+                    },
+                    setupError: null
+                };
+            };
+
+            const primaryVideoDecoderResult = await createWrappedVideoDecoder({
+                accelerationOrder: ["prefer-hardware", "no-preference", "prefer-software"]
+            });
+            const softwareVideoDecoderResult = await createWrappedVideoDecoder({
+                accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
+            });
+
+            const audioOnlyDecodePort = createContainerWebCodecsDecodePort({
+                audioDecoder: wrappedAudioDecoder
+            });
+
+            let mediaElementFallbackDecodePort = null;
+            let mediaElementFallbackActive = false;
+            const sourceUrlForFallback = resolveSourceUrlForFallback({
+                currentVideoSourceUrl: currentVideoSourceObjectUrl,
+                videoElement: video
+            });
+            if (sourceUrlForFallback) {
+                const mediaElementDriver = createMediaElementVideoDecodeDriver({
+                    sourceUrl: sourceUrlForFallback,
+                    fps: exportFps
+                });
+                const mediaElementVideoDecodePort = createMediaElementDecodePort({
+                    mediaElementDriver
+                });
+                mediaElementFallbackDecodePort = createHybridDecodePort({
+                    videoDecodePort: mediaElementVideoDecodePort,
+                    audioDecodePort: audioOnlyDecodePort
+                });
+            }
+
+            let decodePort;
+            let primaryWebCodecsDecodePort = null;
+            let softwareWebCodecsDecodePort = null;
+            if (primaryVideoDecoderResult.wrappedVideoDecoder) {
+                primaryWebCodecsDecodePort = createContainerWebCodecsDecodePort({
+                    videoDecoder: primaryVideoDecoderResult.wrappedVideoDecoder,
+                    audioDecoder: wrappedAudioDecoder
+                });
+            }
+            if (softwareVideoDecoderResult.wrappedVideoDecoder) {
+                softwareWebCodecsDecodePort = createContainerWebCodecsDecodePort({
+                    videoDecoder: softwareVideoDecoderResult.wrappedVideoDecoder,
+                    audioDecoder: wrappedAudioDecoder
+                });
+            }
+
+            // Temporary survival path:
+            // This runtime fallback chain exists to keep export alive on failing mobile decode paths.
+            // Architecture target is documented in docs/framesmith-architecture.md:
+            // "Source Normalization Seam (Next Step)" + "WebM Demux Direction (MVP Plan)".
+            // Plan: normalize unsupported clip ranges into a WebM intermediate first,
+            // then run the standard deterministic demux/decode path here.
+            if (primaryWebCodecsDecodePort && softwareWebCodecsDecodePort) {
+                let softwareThenMediaDecodePort = softwareWebCodecsDecodePort;
+                if (mediaElementFallbackDecodePort) {
+                    softwareThenMediaDecodePort = createFallbackDecodePort({
+                        primaryDecodePort: softwareWebCodecsDecodePort,
+                        fallbackDecodePort: mediaElementFallbackDecodePort,
+                        onFallback(error, range) {
+                            mediaElementFallbackActive = true;
+                            let rangeStartSeconds = null;
+                            let rangeEndSeconds = null;
+                            if (range && typeof range.startSeconds === "number") {
+                                rangeStartSeconds = range.startSeconds;
+                            }
+                            if (range && typeof range.endSeconds === "number") {
+                                rangeEndSeconds = range.endSeconds;
+                            }
+                            console.warn("[Encode] decode strategy fallback engaged", {
+                                reason: getErrorMessage(error),
+                                rangeStartSeconds,
+                                rangeEndSeconds,
+                                nextStrategy: "media-element-video + webcodecs-audio"
+                            });
+                        }
+                    });
+                }
+
+                decodePort = createFallbackDecodePort({
+                    primaryDecodePort: primaryWebCodecsDecodePort,
+                    fallbackDecodePort: softwareThenMediaDecodePort,
+                    onFallback(error, range) {
+                        let rangeStartSeconds = null;
+                        let rangeEndSeconds = null;
+                        if (range && typeof range.startSeconds === "number") {
+                            rangeStartSeconds = range.startSeconds;
+                        }
+                        if (range && typeof range.endSeconds === "number") {
+                            rangeEndSeconds = range.endSeconds;
+                        }
+                        console.warn("[Encode] decode strategy fallback engaged", {
+                            reason: getErrorMessage(error),
+                            rangeStartSeconds,
+                            rangeEndSeconds,
+                            nextStrategy: "webcodecs-video(software)"
+                        });
+                    }
+                });
+            } else if (primaryWebCodecsDecodePort) {
+                if (mediaElementFallbackDecodePort) {
+                    decodePort = createFallbackDecodePort({
+                        primaryDecodePort: primaryWebCodecsDecodePort,
+                        fallbackDecodePort: mediaElementFallbackDecodePort,
+                        onFallback(error, range) {
+                            mediaElementFallbackActive = true;
+                            let rangeStartSeconds = null;
+                            let rangeEndSeconds = null;
+                            if (range && typeof range.startSeconds === "number") {
+                                rangeStartSeconds = range.startSeconds;
+                            }
+                            if (range && typeof range.endSeconds === "number") {
+                                rangeEndSeconds = range.endSeconds;
+                            }
+                            console.warn("[Encode] decode strategy fallback engaged", {
+                                reason: getErrorMessage(error),
+                                rangeStartSeconds,
+                                rangeEndSeconds,
+                                nextStrategy: "media-element-video + webcodecs-audio"
+                            });
+                        }
+                    });
+                } else {
+                    decodePort = primaryWebCodecsDecodePort;
+                }
+            } else if (softwareWebCodecsDecodePort) {
+                if (mediaElementFallbackDecodePort) {
+                    decodePort = createFallbackDecodePort({
+                        primaryDecodePort: softwareWebCodecsDecodePort,
+                        fallbackDecodePort: mediaElementFallbackDecodePort,
+                        onFallback(error, range) {
+                            mediaElementFallbackActive = true;
+                            let rangeStartSeconds = null;
+                            let rangeEndSeconds = null;
+                            if (range && typeof range.startSeconds === "number") {
+                                rangeStartSeconds = range.startSeconds;
+                            }
+                            if (range && typeof range.endSeconds === "number") {
+                                rangeEndSeconds = range.endSeconds;
+                            }
+                            console.warn("[Encode] decode strategy fallback engaged", {
+                                reason: getErrorMessage(error),
+                                rangeStartSeconds,
+                                rangeEndSeconds,
+                                nextStrategy: "media-element-video + webcodecs-audio"
+                            });
+                        }
+                    });
+                } else {
+                    decodePort = softwareWebCodecsDecodePort;
+                }
+            } else if (mediaElementFallbackDecodePort) {
+                mediaElementFallbackActive = true;
+                let setupReason = "video decoder setup failed";
+                if (primaryVideoDecoderResult.setupError) {
+                    setupReason = getErrorMessage(primaryVideoDecoderResult.setupError);
+                } else if (softwareVideoDecoderResult.setupError) {
+                    setupReason = getErrorMessage(softwareVideoDecoderResult.setupError);
+                }
+                console.warn("[Encode] video decoder unavailable/unsupported; using fallback decode strategy", {
+                    reason: setupReason,
+                    strategy: "media-element-video + webcodecs-audio"
+                });
+                decodePort = mediaElementFallbackDecodePort;
+            } else {
+                if (primaryVideoDecoderResult.setupError) {
+                    throw primaryVideoDecoderResult.setupError;
+                }
+                if (softwareVideoDecoderResult.setupError) {
+                    throw softwareVideoDecoderResult.setupError;
+                }
+                throw new Error("Unable to configure any video decode strategy.");
+            }
 
             failedStage = "encoder_config_video";
             const videoEncoder = new VideoEncoder({
@@ -1097,18 +1769,26 @@ document.addEventListener("DOMContentLoaded", async () => {
                 bitrate: 128_000
             });
 
+            let videoRotationDegreesOverride;
+            if (mediaElementFallbackActive) {
+                videoRotationDegreesOverride = 0;
+            }
+            let decodeChunkSecondsOverride;
+            if (mediaElementFallbackActive) {
+                const exportDurationSeconds = exportRange.endSeconds - exportRange.startSeconds;
+                if (Number.isFinite(exportDurationSeconds) && exportDurationSeconds > 0) {
+                    decodeChunkSecondsOverride = exportDurationSeconds;
+                }
+            }
             const sharedRenderContext = createSharedRenderExecutionContext({
-                videoDecoder,
-                audioDecoder,
-                getVideoDecoderError: () => videoDecoderError,
-                getAudioDecoderError: () => audioDecoderError,
-                decodedVideoFrames,
-                decodedAudioData,
+                decodePort,
                 timecodeFragmentIntentResolvers,
                 timeline,
                 exportFps,
                 configuredVideoEncoderConfig,
-                videoTrackView
+                videoTrackView,
+                videoRotationDegreesOverride,
+                decodeChunkSecondsOverride
             });
             const exportExecutionContext = createExportExecutionContext({
                 sharedContext: sharedRenderContext,
