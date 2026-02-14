@@ -4,6 +4,9 @@ import { createContainerTrackViewFromMp4 } from "../demux/trackview/createContai
 import { openContainerFromMp4 } from "../demux/container/openContainerFromMp4.js";
 import { createMp4ByteSourceFromUint8Array } from "../demux/container/mp4ByteSource.js";
 import { openContainerFromMp4Source } from "../demux/container/openContainerFromMp4Source.js";
+import { openContainer } from "../demux/container/openContainer.js";
+import { createWebmByteSourceFromUint8Array } from "../demux/container/webmByteSource.js";
+import { openContainerFromWebmSource } from "../demux/container/openContainerFromWebmSource.js";
 
 export async function test_openContainerFromMp4_exposesTrackListingAndTrackViews() {
     const response = await fetch("reference/reference_av.mp4");
@@ -111,4 +114,111 @@ export async function test_openContainerFromMp4Source_seam_parityWithLegacyEntry
         sourceVideoTrack.containerMeta.trackTimescale,
         legacyVideoTrack.containerMeta.trackTimescale
     );
+}
+
+export async function test_openContainer_routesMp4ByExplicitContainerTypeFromBytes() {
+    const response = await fetch("reference/reference_av.mp4");
+    const mp4Bytes = new Uint8Array(await response.arrayBuffer());
+
+    const legacyContainer = openContainerFromMp4({ mp4Bytes });
+    const routedContainer = await openContainer({
+        containerType: "mp4",
+        bytes: mp4Bytes
+    });
+
+    assertEqual(
+        "openContainer explicit mp4 bytes listTracks parity",
+        routedContainer.listTracks(),
+        legacyContainer.listTracks()
+    );
+}
+
+export async function test_openContainer_routesMp4ByExplicitContainerTypeFromByteSource() {
+    const response = await fetch("reference/reference_av.mp4");
+    const mp4Bytes = new Uint8Array(await response.arrayBuffer());
+    const mp4ByteSource = createMp4ByteSourceFromUint8Array({ mp4Bytes });
+
+    const seamContainer = await openContainerFromMp4Source({ mp4ByteSource });
+    const routedContainer = await openContainer({
+        containerType: "mp4",
+        byteSource: mp4ByteSource
+    });
+
+    assertEqual(
+        "openContainer explicit mp4 byteSource listTracks parity",
+        routedContainer.listTracks(),
+        seamContainer.listTracks()
+    );
+}
+
+export async function test_openContainer_sniffsMp4FromBytes() {
+    const response = await fetch("reference/reference_av.mp4");
+    const mp4Bytes = new Uint8Array(await response.arrayBuffer());
+
+    const routedContainer = await openContainer({ bytes: mp4Bytes });
+    const tracks = routedContainer.listTracks();
+
+    assertEqual("openContainer sniff bytes track count", tracks.length, 2);
+}
+
+export async function test_openContainer_sniffsMp4FromByteSource() {
+    const response = await fetch("reference/reference_av.mp4");
+    const mp4Bytes = new Uint8Array(await response.arrayBuffer());
+    const mp4ByteSource = createMp4ByteSourceFromUint8Array({ mp4Bytes });
+
+    const routedContainer = await openContainer({ byteSource: mp4ByteSource });
+    const tracks = routedContainer.listTracks();
+
+    assertEqual("openContainer sniff byteSource track count", tracks.length, 2);
+}
+
+export async function test_openContainer_rejectsUnsupportedContainerType() {
+    let threw = false;
+    try {
+        await openContainer({
+            containerType: "flv",
+            bytes: new Uint8Array([0x00, 0x00, 0x00, 0x00])
+        });
+    } catch (error) {
+        threw = /unsupported containerType/.test(String(error?.message ?? error));
+    }
+    assertEqual("openContainer unsupported type should throw", threw, true);
+}
+
+export async function test_openContainer_rejectsWebmUntilImplemented() {
+    let threw = false;
+    try {
+        await openContainer({
+            containerType: "webm",
+            bytes: new Uint8Array([0x1A, 0x45, 0xDF, 0xA3])
+        });
+    } catch (error) {
+        threw = /WebM routing is not implemented yet/.test(String(error?.message ?? error));
+    }
+    assertEqual("openContainer webm should throw planned-not-implemented", threw, true);
+}
+
+export async function test_openContainer_rejectsWebmByByteSourceUntilImplemented() {
+    const webmBytes = new Uint8Array([0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00, 0x00, 0x00]);
+    const webmByteSource = createWebmByteSourceFromUint8Array({ webmBytes });
+    let threw = false;
+    try {
+        await openContainer({
+            containerType: "webm",
+            byteSource: webmByteSource
+        });
+    } catch (error) {
+        threw = /WebM routing is not implemented yet/.test(String(error?.message ?? error));
+    }
+    assertEqual("openContainer webm byteSource should throw planned-not-implemented", threw, true);
+}
+
+export async function test_openContainerFromWebmSource_rejectsInvalidSource() {
+    let threw = false;
+    try {
+        await openContainerFromWebmSource({ webmByteSource: null });
+    } catch (error) {
+        threw = /webmByteSource must be an object/.test(String(error?.message ?? error));
+    }
+    assertEqual("openContainerFromWebmSource invalid source should throw", threw, true);
 }

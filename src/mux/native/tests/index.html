@@ -326,7 +326,15 @@ import {
     test_openContainerFromMp4_exposesTrackListingAndTrackViews,
     test_openContainerFromMp4_rejectsInvalidInput,
     test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType,
-    test_openContainerFromMp4Source_seam_parityWithLegacyEntryPoint
+    test_openContainerFromMp4Source_seam_parityWithLegacyEntryPoint,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromBytes,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromByteSource,
+    test_openContainer_sniffsMp4FromBytes,
+    test_openContainer_sniffsMp4FromByteSource,
+    test_openContainer_rejectsUnsupportedContainerType,
+    test_openContainer_rejectsWebmUntilImplemented,
+    test_openContainer_rejectsWebmByByteSourceUntilImplemented,
+    test_openContainerFromWebmSource_rejectsInvalidSource
 } from "./test_openContainerFromMp4.js";
 
 import { 
@@ -1101,6 +1109,14 @@ const testsAll = [
     test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType,
     test_openContainerFromMp4_rejectsInvalidInput,
     test_openContainerFromMp4Source_seam_parityWithLegacyEntryPoint,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromBytes,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromByteSource,
+    test_openContainer_sniffsMp4FromBytes,
+    test_openContainer_sniffsMp4FromByteSource,
+    test_openContainer_rejectsUnsupportedContainerType,
+    test_openContainer_rejectsWebmUntilImplemented,
+    test_openContainer_rejectsWebmByByteSourceUntilImplemented,
+    test_openContainerFromWebmSource_rejectsInvalidSource,
     testNativeMuxer_DeriveSemanticTrackFamily,
     testNativeMuxer_TrackDuration_Relationships_AllFixtures,
     testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,
