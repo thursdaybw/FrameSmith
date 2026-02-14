@@ -210,7 +210,6 @@ import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introsp
 import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
 import { buildDisplayTransformFromTrackMatrix } from "./src/mux/native/demux/track/displayTransform.js";
-import { deriveVideoEncoderResolutionLadderFromTrackView } from "./src/encode/deriveVideoEncoderResolutionLadderFromTrackView.js";
 
 const CAPTION_FONT_FAMILY = "FrameSmithAntonSC";
 const CAPTION_FONT_URL = "./assets/fonts/AntonSC-Regular.ttf";
@@ -246,9 +245,15 @@ function readRuntimeConfig() {
     const searchParams = new URLSearchParams(window.location.search);
     const requestedVideoDemuxer = searchParams.get("videoDemuxer");
     const videoDemuxer = requestedVideoDemuxer === "mp4box" ? "mp4box" : "native";
+    const outputWidth = 720;
+    const outputHeight = 1280;
     return {
         demux: {
             videoDemuxer
+        },
+        output: {
+            width: outputWidth,
+            height: outputHeight
         },
         debug: {
             enableEncodeDiagnostics: searchParams.get("encodeDiagnostics") !== "0"
@@ -517,12 +522,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         throw new Error("AudioDecoder could not be configured for source audio track.");
     }
 
-    async function configureVideoEncoderForTrack({ videoEncoder, videoTrackView, exportFps }) {
-        const FORCE_DEBUG_RESOLUTION = false;
-        const DEBUG_FORCED_RESOLUTION = { width: 720, height: 1280 };
-        const resolutionLadder = FORCE_DEBUG_RESOLUTION
-            ? [DEBUG_FORCED_RESOLUTION]
-            : deriveVideoEncoderResolutionLadderFromTrackView(videoTrackView);
+    async function configureVideoEncoderForTrack({ videoEncoder, exportFps, outputWidth, outputHeight }) {
+        const toEven = (value) => {
+            const rounded = Math.max(2, Math.round(value));
+            return rounded % 2 === 0 ? rounded : rounded - 1;
+        };
+        const baseResolution = {
+            width: toEven(outputWidth),
+            height: toEven(outputHeight)
+        };
+        const resolutionLadder = [baseResolution];
 
         const dedupedResolutions = [];
         const seenResolutionKeys = new Set();
@@ -1062,8 +1071,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             const configuredVideoEncoderConfig = await configureVideoEncoderForTrack({
                 videoEncoder,
-                videoTrackView,
-                exportFps
+                exportFps,
+                outputWidth: runtimeConfig.output.width,
+                outputHeight: runtimeConfig.output.height
             });
 
             failedStage = "encoder_config_audio";

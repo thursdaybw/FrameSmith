@@ -18,9 +18,6 @@ import { IMAGE_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolver
 import { CONTAINER_DECODE_TESTS } from "./src/timeline/container/execution/test_executeAccessUnitFragmentDecode.js";
 import { COMPOSITION_TESTS } from "./src/composition/test_composeAtTime.js";
 import { ENCODE_TESTS } from "./src/encode/test_encodeAtTime.js";
-import {
-    DERIVE_VIDEO_ENCODER_RESOLUTION_LADDER_TESTS
-} from "./src/encode/test_deriveVideoEncoderResolutionLadderFromTrackView.js";
 import { EXPORT_ADAPTER_TESTS } from "./src/export/test_adaptEncodedOutputsToMp4BuildInput.js";
 import { INTEGRATION_TESTS } from "./src/integration/test_FrameSmith_PublicApi_EndToEnd_ExportExecutionStrategy.js";
 
@@ -57,7 +54,6 @@ const NODE_TESTS = [
     ...CONTAINER_DECODE_TESTS,
     ...COMPOSITION_TESTS,
     ...ENCODE_TESTS,
-    ...DERIVE_VIDEO_ENCODER_RESOLUTION_LADDER_TESTS,
     ...EXPORT_ADAPTER_TESTS,
     ...INTEGRATION_TESTS
 ];
