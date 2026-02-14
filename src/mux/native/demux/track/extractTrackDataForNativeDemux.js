@@ -1,6 +1,7 @@
 import { extractSemanticAccessUnitsFromMp4 } from "../container/extractSemanticAccessUnitsFromMp4.js";
 import { extractTrackCodecConfigurationFromMp4 } from "../container/extractTrackCodecConfigurationFromMp4.js";
 import { extractTrackContainerMetadataFromMp4 } from "../container/extractTrackContainerMetadataFromMp4.js";
+import { requireCodecProfileByCodecName } from "../../codecs/codecRegistry.js";
 
 /**
  * extractTrackDataForNativeDemux
@@ -28,14 +29,11 @@ export function extractTrackDataForNativeDemux({ mp4Bytes, zeroBasedTrackIndex }
         const containerMetadata =
             extractTrackContainerMetadataFromMp4({ mp4Bytes, zeroBasedTrackIndex });
 
-        let trackType = "";
-        if (codecConfig.codec === "avc1" || codecConfig.codec === "hvc1") {
-            trackType = "video";
-        } else if (codecConfig.codec === "mp4a" || codecConfig.codec === "opus") {
-            trackType = "audio";
-        } else {
-            throw new Error(`Unsupported codec type: ${codecConfig.codec}`);
-        }
+        const codecProfile = requireCodecProfileByCodecName(
+            codecConfig.codec,
+            "extractTrackDataForNativeDemux"
+        );
+        const trackType = codecProfile.mediaFamily;
 
         // IMPORTANT: semantic-only, no payload slicing here.
         const accessUnits = semanticAccessUnits.map(s => ({

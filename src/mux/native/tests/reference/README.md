@@ -192,6 +192,75 @@ mv reference_av_opus_remuxed.mp4 reference_av_opus.mp4
 ```
 ---
 
+## **Generate a local CO64 oracle (for `co64` extractor/emitter tests)**
+
+`co64` appears when chunk offsets need 64-bit storage.
+Practical rule: your MP4 must end up above ~4 GiB (32-bit `stco` limit).
+
+Recommended low-impact command in this repo (fast CPU, still forces `co64`):
+
+```bash
+ffmpeg -hide_banner -y \
+  -f lavfi -i testsrc2=size=640x360:rate=30:duration=60 \
+  -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p \
+  -b:v 600M -minrate 600M -maxrate 600M -bufsize 1200M \
+  -x264-params nal-hrd=cbr:force-cfr=1 \
+  -an \
+  reference_co64.mp4
+```
+
+Notes:
+- Produces a very large local file (~4.2 GiB in our run).
+- Keep it local; do not commit it.
+- Requires enough free disk and RAM to run co64 tests against it.
+- `co64` tests are node-only by design; browser harness skips them.
+
+If you want a smaller oracle, reduce `duration` but keep output above ~4 GiB.
+If FFmpeg writes `stco` instead of `co64`, increase duration by `+5s`.
+
+Verification:
+
+```bash
+ffprobe -v trace reference_co64.mp4 2>&1 | rg -n "co64|stco"
+```
+
+Expected:
+- output contains `type:'co64' parent:'stbl'`
+- no `stco` for that same track table
+
+If `reference_co64.mp4` is missing, co64 tests fail with an error that points back to this README section.
+
+---
+
+## **Generate a local HEVC oracle (for `hvc1` demux/config tests)**
+
+Generate a deterministic HEVC MP4 fixture (small, local, reproducible):
+
+```bash
+ffmpeg -hide_banner -y \
+  -f lavfi -i testsrc2=size=128x128:rate=30:duration=2 \
+  -c:v libx265 -preset ultrafast \
+  -x265-params keyint=30:min-keyint=30:scenecut=0 \
+  -pix_fmt yuv420p \
+  -tag:v hvc1 \
+  -an \
+  reference_hevc.mp4
+```
+
+Verification:
+
+```bash
+ffprobe -v trace reference_hevc.mp4 2>&1 | rg -n "hvc1|hev1|hvcC"
+```
+
+Expected:
+- sample entry is `hvc1` (or `hev1` on some encoders)
+- `hvcC` is present in `stsd/sample[0]`
+
+If `reference_hevc.mp4` is missing, `test_extractTrackCodecConfiguration_hvc1_referenceFixture` fails and points to this README section.
+
+---
+
 ## **Step 2 — Extract each box into fixtures**
 
 I will generate the extractor script next, but conceptually:
@@ -235,4 +304,3 @@ const expected = loadFixture("reference/mvhd.bin")
 ```
 
 You compare to your builder.
-

@@ -1,3 +1,5 @@
+import { requireCodecProfileByCodecName } from "../codecs/codecRegistry.js";
+
 /**
  * applyEditListPolicy
  * ===================
@@ -158,6 +160,10 @@ export function applyEditListPolicy({ track, mvhd }) {
     console.log("codec:", track.semanticCore?.codec?.codec);
 
     const codec = track.semanticCore?.codec?.codec;
+    const codecProfile = requireCodecProfileByCodecName(
+        codec,
+        "applyEditListPolicy"
+    );
 
     const trackTimescale = track.buildParameters.trackTimescale;
     const movieTimescale = mvhd.timescale;
@@ -192,7 +198,7 @@ export function applyEditListPolicy({ track, mvhd }) {
     // ---------------------------------------------------------
     let mediaTime;
 
-    if (codec === "opus") {
+    if (codecProfile.editListMediaTimeStrategy === "frame_quantized_encoder_delay") {
 
         // FFmpeg: frame-quantised encoder delay
         const encoderDelayFrames =

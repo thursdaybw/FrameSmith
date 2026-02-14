@@ -61,6 +61,7 @@ import {
     testCtts_LockedLayoutEquivalence_ffmpeg,
 } from "./test_ctts.js";
 import { testStco_Structure, testStco_LockedLayoutEquivalence_ffmpeg } from "./test_stco.js";
+import { testCo64_Structure, testCo64_LockedLayoutEquivalence_ffmpeg } from "./test_co64.js";
 import {
     testStbl_Structure, 
     testStbl_LockedLayoutEquivalence_ffmpeg,
@@ -302,6 +303,11 @@ import {
 import { 
    test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput
 } from "./test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput.js";
+import {
+    test_codecRegistry_ResolvesProfilesByCodecAndSampleEntry,
+    test_codecRegistry_ConfigShapeValidation_RejectsForeignKeys,
+    test_codecRegistry_ConfigShapeValidation_RequiresOwnedKey
+} from "./test_codecRegistry.js";
 
 import { 
    test_DeriveSamplesFromStbl_Definition,
@@ -319,7 +325,8 @@ import {
 import {
     test_openContainerFromMp4_exposesTrackListingAndTrackViews,
     test_openContainerFromMp4_rejectsInvalidInput,
-    test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType
+    test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType,
+    test_openContainerFromMp4Source_seam_parityWithLegacyEntryPoint
 } from "./test_openContainerFromMp4.js";
 
 import { 
@@ -350,6 +357,10 @@ import {
  test_ExtractorEmitter_StructuralAgreement_stco   
 }
     from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stco.js";
+import {
+ test_ExtractorEmitter_StructuralAgreement_co64
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_co64.js";
 
 import {
    test_ExtractorEmitter_StructuralAgreement_avcC
@@ -567,6 +578,10 @@ import {
     test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_InvalidTrackIndexThrows,
 }
 from "./test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex.js"
+import {
+    test_extractTrackCodecConfiguration_hvc1_referenceFixture
+}
+from "./test_extractTrackCodecConfiguration_hvc1_referenceFixture.js";
 
 import {
     test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Video
@@ -941,6 +956,9 @@ const testsAll = [
     test_ExtractorEmitter_StructuralAgreement_stco,
     testStco_Structure,
     testStco_LockedLayoutEquivalence_ffmpeg,
+    test_ExtractorEmitter_StructuralAgreement_co64,
+    testCo64_Structure,
+    testCo64_LockedLayoutEquivalence_ffmpeg,
 
     test_ExtractorEmitter_StructuralAgreement_stsc,
     testStsc_Structure,
@@ -1065,6 +1083,7 @@ const testsAll = [
     test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Video,
     test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Audio,
     test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_InvalidTrackIndexThrows,
+    test_extractTrackCodecConfiguration_hvc1_referenceFixture,
     test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Video,
     test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Audio,
     test_extractOpaqueUserDataFromMp4UsingRootContainer,
@@ -1081,6 +1100,7 @@ const testsAll = [
     test_openContainerFromMp4_exposesTrackListingAndTrackViews,
     test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType,
     test_openContainerFromMp4_rejectsInvalidInput,
+    test_openContainerFromMp4Source_seam_parityWithLegacyEntryPoint,
     testNativeMuxer_DeriveSemanticTrackFamily,
     testNativeMuxer_TrackDuration_Relationships_AllFixtures,
     testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,
@@ -1154,6 +1174,9 @@ const testsAll = [
     //testNativeMuxer_EndToEnd_Conformance_ffmpeg,
 /*
     test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput,
+    test_codecRegistry_ResolvesProfilesByCodecAndSampleEntry,
+    test_codecRegistry_ConfigShapeValidation_RejectsForeignKeys,
+    test_codecRegistry_ConfigShapeValidation_RequiresOwnedKey,
     test_SourceClient_WebCodecs_AV_ProducesMp4BuildInputInput,
     test_SourceClient_GoldenMp4_ProducesMp4BuildInput,
     //test_SourceClient_GoldenMp4_ProducesMp4BuildInput,
@@ -1178,6 +1201,7 @@ const testsAll = [
 
 
     let failures = 0;
+    let skips = 0;
 
     for (const test of tests) {
         try {
@@ -1196,13 +1220,29 @@ const testsAll = [
 
 
         } catch (err) {
-            failures++;
-            console.error(
-                `%cFAIL: ${test.name}`,
-                "color: red"
-            );
-            console.error(err);
+            if (err && err.name === "SkipTestError") {
+                skips++;
+                console.warn(
+                    `%cSKIP: ${test.name}`,
+                    "color: #b58900"
+                );
+                console.warn(err.message);
+            } else {
+                failures++;
+                console.error(
+                    `%cFAIL: ${test.name}`,
+                    "color: red"
+                );
+                console.error(err);
+            }
         }
+    }
+
+    if (skips > 0) {
+        console.warn(
+            `%cUnit tests skipped: ${skips}`,
+            "color: #b58900"
+        );
     }
 
     if (failures > 0) {

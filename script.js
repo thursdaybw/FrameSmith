@@ -626,13 +626,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     }) {
         const sourceVideoCodec = videoTrackView.codecConfig.codec;
         const avcC = videoTrackView.codecConfig.avcC;
+        const hvcC = videoTrackView.codecConfig.hvcC;
         const decodeVideoCodec = (sourceVideoCodec === "avc1" && avcC instanceof Uint8Array && avcC.length >= 4)
             ? `avc1.${avcC[1].toString(16).padStart(2, "0").toUpperCase()}${avcC[2].toString(16).padStart(2, "0").toUpperCase()}${avcC[3].toString(16).padStart(2, "0").toUpperCase()}`
             : sourceVideoCodec;
+        const codecDescription = avcC instanceof Uint8Array
+            ? avcC
+            : (hvcC instanceof Uint8Array ? hvcC : undefined);
 
         const candidate = {
             codec: decodeVideoCodec,
-            description: avcC,
+            ...(codecDescription ? { description: codecDescription } : {}),
             hardwareAcceleration: "prefer-software"
         };
 

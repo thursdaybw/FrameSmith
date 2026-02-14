@@ -1,6 +1,7 @@
+import { codecUsesImplicitAudioDurationTrim } from "../codecs/codecRegistry.js";
+
 export function applyAudioDurationPolicy({ codecName, rawSampleDuration, semanticHints }) {
-    // Only AAC (mp4a) has implicit encoder trimming semantics
-    if (codecName === "mp4a") {
+    if (codecUsesImplicitAudioDurationTrim(codecName)) {
 
         // Highest authority: oracle-supplied media duration
         if (Number.isInteger(semanticHints?.inputTrackDurationInTrackTimescale)) {
