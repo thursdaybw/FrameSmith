@@ -146,6 +146,43 @@ Engineering rule for now:
   cleanup pass.
 - Do not treat them as authoritative for timeline export architecture.
 
+## Large File Direction (Seam Added, Full Refactor Pending)
+
+Date updated: February 14, 2026
+
+Current reality:
+
+- Most demux entry points still expect a full `Uint8Array` in memory.
+- That is fine for small/medium files.
+- It is not the long-term shape for very large phone videos.
+
+What we added now (on purpose):
+
+- `Mp4ByteSource` seam:
+  - `src/mux/native/demux/container/mp4ByteSource.js`
+  - has `sizeBytes`, `readRange(offset,length)`, `readAll()`
+- `openContainerFromMp4Source(...)` seam:
+  - `src/mux/native/demux/container/openContainerFromMp4Source.js`
+  - currently adapts to legacy `openContainerFromMp4(...)`
+
+Why this matters:
+
+- The seam makes the intended architecture explicit.
+- We can move internals from "load whole file" to "read ranges on demand"
+  without changing every caller again.
+- This prevents architecture drift back toward full-file memory loading.
+
+`co64` test policy (practical):
+
+- `co64` oracle can be multi-GB.
+- Browser harness skips heavy `co64` oracle tests.
+- Node runs the real `co64` checks using partial file reads.
+
+Next step after MVP stability:
+
+- Refactor demux internals to consume `Mp4ByteSource.readRange(...)` directly
+  for metadata and sample-table parsing, then decode only needed timeline windows.
+
 ---
 
 ## The Pipeline
