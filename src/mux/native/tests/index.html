@@ -340,6 +340,9 @@ import {
     WEBM_READ_VINT_TESTS
 } from "./test_webm_readVint.js";
 import {
+    WEBM_SELECTOR_REGISTRY_TESTS
+} from "./test_webm_selectorRegistry.js";
+import {
     WEBM_EBML_PRIMITIVE_TESTS
 } from "./test_webm_ebmlPrimitives.js";
 import {
@@ -1127,6 +1130,7 @@ const testsAll = [
     test_openContainer_rejectsWebmByByteSourceUntilImplemented,
     test_openContainerFromWebmSource_rejectsInvalidSource,
     ...WEBM_READ_VINT_TESTS,
+    ...WEBM_SELECTOR_REGISTRY_TESTS,
     ...WEBM_EBML_PRIMITIVE_TESTS,
     ...WEBM_ORACLE_REFERENCE_FIXTURE_TESTS,
     testNativeMuxer_DeriveSemanticTrackFamily,
