@@ -40,6 +40,7 @@ import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
+import { EncodePipelineRun } from "./src/app/encode/EncodePipelineRun.js";
 import { buildDisplayTransformFromTrackMatrix } from "./src/mux/native/demux/track/displayTransform.js";
 
 function summarizeTrackViewKeys(trackView) {
@@ -1692,36 +1693,6 @@ async function normalizeUnsupportedSourceToWorkingSet({
     }
 
     /**
-     * Create per-run state used for diagnostics and cleanup.
-     *
-     * Why this exists:
-     * - Keeps `encodeBtn.onclick` readable.
-     * - Makes cleanup ownership explicit.
-     *
-     * Field meaning:
-     * - `currentPipelineStage`: current pipeline stage for error reporting.
-     * - `encodeStartedAt`: start time for elapsed duration reporting.
-     * - `normalizationSourceUrlToRevoke`: temporary object URL to free at end.
-     * - `didNormalizePredecode`: true when unsupported codec path normalized source.
-     * - `didRuntimeSoftwareFallback`: true when decode fell back to software mid-run.
-     * - `audioDecoder` / `videoEncoder` / `audioEncoder`: codec resources to close.
-     * - `releaseDecodeResources`: decode-port specific cleanup hook.
-     */
-    function createEncodeRunState() {
-        return {
-            currentPipelineStage: "init",
-            encodeStartedAt: performance.now(),
-            normalizationSourceUrlToRevoke: { value: null },
-            didNormalizePredecode: false,
-            didRuntimeSoftwareFallback: false,
-            audioDecoder: null,
-            videoEncoder: null,
-            audioEncoder: null,
-            releaseDecodeResources: () => {}
-        };
-    }
-
-    /**
      * Validate basic prerequisites before any heavy encode work starts.
      */
     function validateEncodePrerequisites(timeline) {
@@ -2093,151 +2064,39 @@ async function normalizeUnsupportedSourceToWorkingSet({
         }
     }
 
-    class EncodePipelineRun {
-        constructor({ timeline }) {
-            this.timeline = timeline;
-            this.state = createEncodeRunState();
-            this.tStart = 0;
-            this.planContext = null;
-            this.trackContext = null;
-            this.encodeOutputState = null;
-            this.audioDecoderSetup = null;
-            this.decodeSetup = null;
-            this.encoderSetup = null;
-            this.strategy = null;
-            this.result = null;
-        }
-
-        get runState() {
-            return this.state;
-        }
-
-        async run() {
-            this.runValidateStage();
-            this.runPlanStage();
-            await this.runTrackSelectStage();
-            await this.runAudioDecoderConfigStage();
-            await this.runVideoDecoderConfigStage();
-            await this.runEncoderConfigStage();
-            this.buildStrategy();
-            await this.runExecuteStrategyStage();
-            this.runFinalizeOutputStage();
-        }
-
-        runValidateStage() {
-            this.state.currentPipelineStage = "validate";
-            validateEncodePrerequisites(this.timeline);
-            clearEncodeDiagnosticsPanel();
-        }
-
-        runPlanStage() {
-            this.tStart = performance.now();
-            this.state.currentPipelineStage = "plan";
-            this.planContext = buildEncodePlanContext(this.timeline);
-        }
-
-        async runTrackSelectStage() {
-            this.state.currentPipelineStage = "track_select";
-            const selectedTracks = selectExecutionTrackViewsWithRotation(this.planContext.executionTimeline);
-            this.trackContext = await maybeNormalizeExecutionTimelineForUnsupportedDecoder({
-                executionTimeline: this.planContext.executionTimeline,
-                prerenderPlan: this.planContext.prerenderPlan,
-                exportRange: this.planContext.exportRange,
-                videoTrackView: selectedTracks.videoTrackView,
-                audioTrackView: selectedTracks.audioTrackView,
-                sourceRotationDegrees: selectedTracks.sourceRotationDegrees
-            });
-            this.state.didNormalizePredecode = this.trackContext.didNormalizePredecode;
-            this.state.normalizationSourceUrlToRevoke.value = this.trackContext.normalizationSourceUrlToRevoke;
-            this.planContext.executionTimeline = this.trackContext.executionTimeline;
-            this.planContext.prerenderPlan = this.trackContext.prerenderPlan;
-        }
-
-        async runAudioDecoderConfigStage() {
-            this.encodeOutputState = createEncodeOutputState();
-            this.state.currentPipelineStage = "decoder_config_audio";
-            this.audioDecoderSetup = await buildConfiguredAudioDecodeSetup(this.trackContext.audioTrackView);
-            this.state.audioDecoder = this.audioDecoderSetup.audioDecoder;
-        }
-
-        async runVideoDecoderConfigStage() {
-            this.state.currentPipelineStage = "decoder_config_video";
-            this.decodeSetup = await createDecodePortForTrack({
-                videoTrackView: this.trackContext.videoTrackView,
-                wrappedAudioDecoder: this.audioDecoderSetup.wrappedAudioDecoder,
-                didNormalizePredecode: this.state.didNormalizePredecode,
-                onSoftwareFallback: ({ error, range }) => {
-                    this.state.didRuntimeSoftwareFallback = true;
-                    emitDecodeFallbackSignal({ error, range });
-                }
-            });
-            this.state.releaseDecodeResources = this.decodeSetup.releaseDecoders;
-        }
-
-        async runEncoderConfigStage() {
-            this.state.currentPipelineStage = "encoder_config_video";
-            this.encoderSetup = await createConfiguredEncoders({
-                exportFps: this.planContext.exportFps,
-                outputWidth: runtimeConfig.output.width,
-                outputHeight: runtimeConfig.output.height,
-                videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
-                audioEncodedChunks: this.encodeOutputState.audioEncodedChunks,
-                setVideoDecoderConfig: (decoderConfig) => {
-                    if (!this.encodeOutputState.videoDecoderConfig) {
-                        this.encodeOutputState.videoDecoderConfig = decoderConfig;
-                    }
-                },
-                setAudioDecoderConfig: (decoderConfig) => {
-                    if (!this.encodeOutputState.audioDecoderConfig) {
-                        this.encodeOutputState.audioDecoderConfig = decoderConfig;
-                    }
-                }
-            });
-            this.state.videoEncoder = this.encoderSetup.videoEncoder;
-            this.state.audioEncoder = this.encoderSetup.audioEncoder;
-            this.state.currentPipelineStage = "encoder_config_audio";
-        }
-
-        buildStrategy() {
-            this.strategy = createExportStrategy({
-                decodePort: this.decodeSetup.decodePort,
-                executionTimeline: this.planContext.executionTimeline,
-                exportFps: this.planContext.exportFps,
-                configuredVideoEncoderConfig: this.encoderSetup.configuredVideoEncoderConfig,
-                videoTrackView: this.trackContext.videoTrackView,
-                videoEncoder: this.state.videoEncoder,
-                audioEncoder: this.state.audioEncoder,
-                videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
-                audioEncodedChunks: this.encodeOutputState.audioEncodedChunks,
-                getVideoDecoderConfig: () => this.encodeOutputState.videoDecoderConfig,
-                getAudioDecoderConfig: () => this.encodeOutputState.audioDecoderConfig
-            });
-        }
-
-        async runExecuteStrategyStage() {
-            this.state.currentPipelineStage = "execute_strategy";
-            this.result = await executeStrategyAndMaybeLogDiagnostics({
-                strategy: this.strategy,
-                prerenderPlan: this.planContext.prerenderPlan,
-                exportRange: this.planContext.exportRange,
-                exportFps: this.planContext.exportFps,
-                videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
-                audioEncodedChunks: this.encodeOutputState.audioEncodedChunks
-            });
-        }
-
-        runFinalizeOutputStage() {
-            this.state.currentPipelineStage = "finalize_output";
-            finalizeEncodeOutput({
-                result: this.result,
-                tStart: this.tStart,
-                videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
-                audioEncodedChunks: this.encodeOutputState.audioEncodedChunks,
-                didNormalizePredecode: this.state.didNormalizePredecode,
-                didRuntimeSoftwareFallback: this.state.didRuntimeSoftwareFallback,
-                encodeStartedAt: this.state.encodeStartedAt
-            });
-        }
+    /**
+     * Build port bundle for EncodePipelineRun.
+     */
+    function createEncodePipelineRunPorts() {
+        return {
+            runtime: {
+                now: () => performance.now(),
+                outputConfig: runtimeConfig.output
+            },
+            reporting: {
+                clearEncodeDiagnosticsPanel,
+                emitDecodeFallbackSignal
+            },
+            planning: {
+                validateEncodePrerequisites,
+                buildEncodePlanContext,
+                selectExecutionTrackViewsWithRotation
+            },
+            normalization: {
+                maybeNormalizeExecutionTimelineForUnsupportedDecoder
+            },
+            decoding: {
+                createEncodeOutputState,
+                buildConfiguredAudioDecodeSetup,
+                createDecodePortForTrack
+            },
+            encoding: {
+                createConfiguredEncoders,
+                createExportStrategy,
+                executeStrategyAndMaybeLogDiagnostics,
+                finalizeEncodeOutput
+            }
+        };
     }
 
     previewBtn.onclick = () => {
@@ -2373,7 +2232,24 @@ async function normalizeUnsupportedSourceToWorkingSet({
 
         if (!tryStartEncodeRun())  return;
 
-        const encodePipelineRun      = new EncodePipelineRun({ timeline });
+        const {
+            runtime,
+            reporting,
+            planning,
+            normalization,
+            decoding,
+            encoding
+        } = createEncodePipelineRunPorts();
+
+        const encodePipelineRun = new EncodePipelineRun({
+            timeline,
+            runtime,
+            reporting,
+            planning,
+            normalization,
+            decoding,
+            encoding
+        });
         const encodePipelineRunState = encodePipelineRun.runState;
 
         try {
