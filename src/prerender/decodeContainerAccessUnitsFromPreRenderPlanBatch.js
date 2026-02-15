@@ -233,59 +233,6 @@ function trimVideoUnitsToFirstDecodableKeyframe(units) {
     };
 }
 
-function logVideoDecodeContract(units) {
-    if (!Array.isArray(units) || units.length === 0) {
-        console.log("[decodeContainerBatch][video][CONTRACT]", {
-            dispatchOrder: "dts",
-            chunkTimestampSource: "dts",
-            includeDuration: true,
-            sampleCount: 0
-        });
-        return;
-    }
-
-    let ptsNeDtsCount = 0;
-    let dtsNonMonotonicCount = 0;
-    let previousDts = null;
-    const firstSamples = [];
-    const sampleLimit = Math.min(8, units.length);
-
-    for (let index = 0; index < units.length; index += 1) {
-        const unit = units[index];
-        const ptsUs = normalizeTimestampUs(unit);
-        const dtsUs = normalizeDecodeTimestampUs(unit);
-        const chunkTimestampUs = resolveVideoChunkTimestampUs(unit, "dts");
-        if (typeof unit?.pts === "number" && typeof unit?.dts === "number" && unit.pts !== unit.dts) {
-            ptsNeDtsCount += 1;
-        }
-        if (typeof dtsUs === "number") {
-            if (typeof previousDts === "number" && dtsUs < previousDts) {
-                dtsNonMonotonicCount += 1;
-            }
-            previousDts = dtsUs;
-        }
-
-        if (index < sampleLimit) {
-            firstSamples.push({
-                index,
-                ptsUs: typeof ptsUs === "number" ? ptsUs : null,
-                dtsUs: typeof dtsUs === "number" ? dtsUs : null,
-                chunkTimestampUs: typeof chunkTimestampUs === "number" ? chunkTimestampUs : null
-            });
-        }
-    }
-
-    console.log("[decodeContainerBatch][video][CONTRACT]", {
-        dispatchOrder: "dts",
-        chunkTimestampSource: "dts",
-        includeDuration: true,
-        sampleCount: units.length,
-        ptsNeDtsCount,
-        dtsNonMonotonicCount,
-        firstSamples
-    });
-}
-
 async function waitForDecoderCapacity({
     decoder,
     label,
@@ -435,12 +382,6 @@ function createAdaptiveBackpressureProfile({
 
     function maybeLogAdjustment(previousValue, reason) {
         if (previousValue === currentMaxQueueSize) return;
-        console.log(`[decodeContainerBatch] adaptive backpressure adjusted`, {
-            label,
-            reason,
-            previousMaxQueueSize: previousValue,
-            nextMaxQueueSize: currentMaxQueueSize
-        });
     }
 
     return {
@@ -642,16 +583,6 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
                     forceFirstKeyframe
                 } = trimVideoUnitsToFirstDecodableKeyframe(orderedVideoUnits);
 
-                console.log("[decodeContainerBatch] video decode input", {
-                    totalVideoUnits: orderedVideoUnits.length,
-                    sourceVideoUnits: videoUnits.length,
-                    decodeUnits: decodeUnits.length,
-                    droppedLeadingUnits,
-                    hasKeyInfo,
-                    forceFirstKeyframe
-                });
-                logVideoDecodeContract(decodeUnits);
-
                 let segmentStart = 0;
                 for (let index = 0; index < decodeUnits.length; index++) {
                     const unit = decodeUnits[index];
@@ -732,13 +663,6 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
         }
     }
 
-    console.log("[decodeContainerBatch] decode dispatch complete", {
-        routedVideoUnits,
-        routedAudioUnits,
-        provisionalVideoOutputs: decodedVideoFrames.length,
-        provisionalAudioOutputs: decodedAudioData.length
-    });
-
     if (videoDecoder && typeof videoDecoder.getLastError === "function") {
         const decoderError = videoDecoder.getLastError();
         if (decoderError) {
@@ -761,12 +685,10 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
 
     // Flush decoders if present
     if (videoDecoder && typeof videoDecoder.flush === "function") {
-        console.log("[decodeContainerBatch] videoDecoder.flush start");
         await withTimeout({
             label: "decodeContainerBatch videoDecoder.flush",
             promise: videoDecoder.flush()
         });
-        console.log("[decodeContainerBatch] videoDecoder.flush complete");
 
         if (typeof videoDecoder.getLastError === "function") {
             const decoderError = videoDecoder.getLastError();
@@ -780,12 +702,10 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
     }
 
     if (audioDecoder && typeof audioDecoder.flush === "function") {
-        console.log("[decodeContainerBatch] audioDecoder.flush start");
         await withTimeout({
             label: "decodeContainerBatch audioDecoder.flush",
             promise: audioDecoder.flush()
         });
-        console.log("[decodeContainerBatch] audioDecoder.flush complete");
 
         if (typeof audioDecoder.getLastError === "function") {
             const decoderError = audioDecoder.getLastError();

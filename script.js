@@ -1,193 +1,22 @@
 /**
- * FrameSmith, Application Driver (Pre-Alpha)
+ * FrameSmith Browser App Driver
  *
- * This file is a temporary orchestration layer used during early development.
- * It wires together preview rendering, offline pre-render planning, and future
- * prerender execution, encode, and export stages.
+ * Purpose:
+ * - Wire UI events to timeline planning, decode, compose, encode, and export.
  *
- * IMPORTANT:
- * This file is NOT the domain model.
- * This file is NOT the timeline compiler.
- * This file is glue code while the architecture is being discovered.
+ * Boundaries:
+ * - This file is app orchestration glue, not core domain architecture.
+ * - Timeline/compiler rules live in `src/` modules and docs in `docs/`.
  *
- * -------------------------------------------------
- * Core Architectural Truth
- * -------------------------------------------------
+ * Source of truth:
+ * - `docs/framesmith-architecture.md`
+ * - `docs/Architecture.md`
+ * - `docs/WebM.Demux.Architecture.md`
+ * - `docs/CodingStyle.md`
  *
- * FrameSmith is not a video player.
- * FrameSmith is a timeline compiler.
- *
- * Preview exists only to visualise timeline evaluation.
- * Pre-render planning deterministically evaluates the timeline into a plan.
- * Pre-render execution consumes the plan and produces timestamped buffers.
- * Encoding and export consume those buffers.
- *
- * Preview, planning, execution, encode, and export are separate concerns.
- *
- * -------------------------------------------------
- * Current Phases (As Implemented Today)
- * -------------------------------------------------
- *
- * 1. Preview Phase (Real-Time, Non-Deterministic)
- *    - Uses browser playback and rendering APIs.
- *    - Renders frames to a canvas for visual inspection.
- *    - Plays audio via the browser audio output.
- *    - No data produced here is used for encoding or export.
- *
- * 2. Timeline to Pre-Render Planning Phase (Offline, Deterministic)
- *    - Evaluates the Timeline without relying on playback.
- *    - Produces a PreRenderPlan, a list of plan fragments.
- *
- *    Does NOT:
- *    - decode media
- *    - generate VideoFrame
- *    - generate AudioData
- *    - sample wall-clock time
- *
- * 3. Pre-Render Execution (Offline, Deterministic)
- *    - Consumes a PreRenderPlan.
- *    - Executes plan fragments deterministically.
- *    - Uses injected executors:
- *        - container-backed fragments decode access units
- *        - procedural fragments dispatch to procedural renderers
- *    - Produces timestamped buffers (VideoFrame and or AudioData).
- *
- *    Does NOT:
- *    - use preview playback APIs
- *    - encode
- *    - write containers
- *
- * 4. Encode Phase (Planned)
- *    - Consumes VideoFrame and AudioData objects.
- *    - Uses WebCodecs to produce compressed access units.
- *
- * 5. Export Phase (Planned)
- *    - Packages encoded access units into an MP4 container.
- *
- * Notes:
- * - A fragment is not an access unit.
- * - A fragment describes work.
- * - A timeline never owns a plan.
- *
- * -------------------------------------------------
- * Architectural Note: Tracks vs Output Domains
- * -------------------------------------------------
- *
- * FrameSmith does not use "track types" (video, audio, subtitle) as a core
- * engine concept. Tracks are structural groupings that define ordering,
- * overlap, and layering of clips. Rendering semantics are derived from the
- * contribution domain of each clip or asset (video, audio, procedural),
- * not from the track it resides on.
- *
- * -------------------------------------------------
- * Demo Constraints (Non-Architectural)
- * -------------------------------------------------
- *
- * This file represents one temporary application entry point:
- * a container-backed, HTMLVideoElement-driven demo workflow.
- *
- * Assumptions made here are NOT FrameSmith domain rules.
- * FrameSmith as a system does NOT require:
- * - container-backed media
- * - video tracks
- * - HTML elements
- *
- * -------------------------------------------------
- * Scope Warning
- * -------------------------------------------------
- *
- * This file currently uses HTMLVideoElement and browser APIs as a temporary
- * stand-in for future asset and timeline systems.
- *
- * These APIs must not leak into:
- * - the timeline model
- * - the pre-render plan contract
- * - the prerender execution contract
- * - the encoder inputs
- *
- * -------------------------------------------------
- * Glossary
- * -------------------------------------------------
- *
- * * Real-Time Rendering (Preview)
- *   Frames composited live to the canvas for preview. Not used for encoding.
- *
- * * Pre-Render Planning
- *   Deterministic evaluation of a Timeline into a PreRenderPlan, without
- *   decoding, rendering, or producing VideoFrame or AudioData.
- *
- * * PreRenderPlan
- *   An ordered list of plan fragments describing work to be executed later.
- *
- * * Plan Fragment
- *   A typed unit of executable intent.
- *   Examples:
- *   - access-units fragment (container-backed decode work)
- *   - procedural fragment (dispatch to a procedural renderer)
- *
- * * Container-Backed Contributor
- *   A fragment whose execution obtains time and data from encoded access units
- *   and decodes via a media decoder (WebCodecs VideoDecoder or AudioDecoder).
- *
- * * Procedural Contributor
- *   A fragment whose execution resolves authored procedural intent at a given
- *   timecode. It does not produce VideoFrame or AudioData.
- *
- * * Timecode Fragment Intent Resolver
- *   A function registered by proceduralKind that receives
- *   { fragment, timeSeconds } and returns declarative render intent only.
- *   It must not allocate VideoFrame or AudioData.
- *
- * * Media Decoder
- *   Converts encoded access units into raw buffers (VideoFrame, AudioData).
- *
- * * Encoding (WebCodecs)
- *   Converts VideoFrame and AudioData into compressed access units for packaging.
- *
- * * Access Units / Samples
- *   The compressed outputs of encoding that are written into a container.
- *
- * -------------------------------------------------
- * TODO — Concrete Next Actions (Non-Speculative)
- * -------------------------------------------------
- *
- * Add resolver-level unit test
- *    - Assert resolver is invoked via executeProceduralFragmentAtTime.
- *    - Assert correct timeSeconds is received.
- *    - Assert fragment identity is preserved by reference.
- *    - Assert resolver emits render intent, not frames.
- *
- * Explicitly out of scope:
- * - Resolution layers
- * - Materialisation stages
- * - Plan-level orchestration
- * - New abstractions or refactors
- *
- * Container Decode Execution
- *    - Implement access-unit fragment execution via WebCodecs decoders.
- *    - Produce deterministic VideoFrame and AudioData buffers.
- *    - Keep decoding separate from composition and encoding.
- *
- * Composition + Materialisation Stage
- *    - Consume render intents from all contributors at a given timecode.
- *    - Resolve z-order, layering, and overlap deterministically.
- *    - Allocate VideoFrame and AudioData buffers.
- *    - This is the first stage where frames exist.
- *
- * Encode Stage
- *    - Consume composed VideoFrame and AudioData buffers.
- *    - Encode via WebCodecs into compressed access units.
- *
- * Export Stage
- *    - Package encoded access units into an MP4 container.
- *
- * Remove Demo Glue
- *    - Shrink or remove HTMLVideoElement usage.
- *    - Replace demo orchestration with explicit application entry points.
- *
- * Terminology Audit
- *     - Ensure "planning", "execution", "resolution", and "materialisation"
- *       are used consistently across code, tests, and documentation.
+ * Rule:
+ * - Keep this file operational and readable.
+ * - Keep deep architecture narrative out of this file.
  */
 
 import { Timeline } from "./src/timeline/Timeline.js";
@@ -978,26 +807,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         return "direct-webcodecs";
     }
 
-    function resolveSourceUrlForFallback({
-        currentVideoSourceUrl,
-        videoElement
+    function resolveNormalizationSourceUrl({
+        currentVideoSourceUrl
     }) {
         if (typeof currentVideoSourceUrl === "string" && currentVideoSourceUrl.length > 0) {
             return currentVideoSourceUrl;
-        }
-        if (
-            videoElement &&
-            typeof videoElement.currentSrc === "string" &&
-            videoElement.currentSrc.length > 0
-        ) {
-            return videoElement.currentSrc;
-        }
-        if (
-            videoElement &&
-            typeof videoElement.src === "string" &&
-            videoElement.src.length > 0
-        ) {
-            return videoElement.src;
         }
         return "";
     }
@@ -1519,6 +1333,375 @@ async function normalizeUnsupportedSourceToWorkingSet({
         };
     }
 
+    function deriveExportRangeFromTimeline(timeline) {
+        let exportEndSeconds = 0;
+        let mediaClipEndSeconds = 0;
+        let hasMediaClipBound = false;
+
+        if (Array.isArray(timeline.tracks)) {
+            for (const track of timeline.tracks) {
+                if (!track || !Array.isArray(track.clips)) {
+                    continue;
+                }
+                for (const clip of track.clips) {
+                    let clipEndSeconds = Number(clip?.endSeconds);
+                    if (!Number.isFinite(clipEndSeconds)) {
+                        const clipEndPts = Number(clip?.endPts);
+                        const clipTrackView = clip?.trackView;
+                        if (
+                            Number.isFinite(clipEndPts) &&
+                            clipTrackView &&
+                            typeof clipTrackView.ptsToSeconds === "function"
+                        ) {
+                            clipEndSeconds = Number(clipTrackView.ptsToSeconds(clipEndPts));
+                        }
+                    }
+                    if (!Number.isFinite(clipEndSeconds)) {
+                        continue;
+                    }
+
+                    const trackView = clip?.trackView;
+                    const mediaType = trackView?.mediaType;
+                    const isContainerMediaClip =
+                        (mediaType === "video" || mediaType === "audio") &&
+                        typeof clip?.iterateAccessUnits === "function";
+                    if (isContainerMediaClip) {
+                        hasMediaClipBound = true;
+                        if (clipEndSeconds > mediaClipEndSeconds) {
+                            mediaClipEndSeconds = clipEndSeconds;
+                        }
+                    }
+
+                    if (clipEndSeconds > exportEndSeconds) {
+                        exportEndSeconds = clipEndSeconds;
+                    }
+                }
+            }
+        }
+
+        if (hasMediaClipBound) {
+            exportEndSeconds = mediaClipEndSeconds;
+        }
+        if (!(exportEndSeconds > 0)) {
+            const timelineDuration = Number(timeline.duration);
+            if (Number.isFinite(timelineDuration) && timelineDuration > 0) {
+                exportEndSeconds = timelineDuration;
+            }
+        }
+        if (!(exportEndSeconds > 0)) {
+            throw new Error("Unable to derive export range from timeline.");
+        }
+
+        return {
+            startSeconds: 0,
+            endSeconds: exportEndSeconds
+        };
+    }
+
+    function selectContainerTrackViewsFromTimeline(executionTimeline) {
+        const trackViews = executionTimeline.tracks
+            .flatMap(track => track.clips)
+            .map(clip => clip.trackView);
+
+        const videoTrackView = trackViews.find(
+            (view) => view && view.mediaType === "video" && view.codecConfig
+        );
+        const audioTrackView = trackViews.find(
+            (view) => view && view.mediaType === "audio" && view.codecConfig
+        );
+
+        if (!videoTrackView) {
+            throw new Error("No container-backed video asset found on timeline.");
+        }
+        if (!audioTrackView) {
+            throw new Error("No container-backed audio asset found on timeline.");
+        }
+
+        return {
+            videoTrackView,
+            audioTrackView
+        };
+    }
+
+    function buildWrappedAudioDecoderForTrack(audioTrackView) {
+        const decodedAudioData = [];
+        let audioDecoderError = null;
+        const audioDecoder = new AudioDecoder({
+            output(audioData) {
+                decodedAudioData.push(audioData);
+            },
+            error(error) {
+                console.error("AudioDecoder error", error);
+                audioDecoderError = error;
+            }
+        });
+
+        const wrappedAudioDecoder = {
+            decode(chunk) {
+                if (audioDecoderError) {
+                    throw Object.assign(
+                        new Error("audioDecoder.decode called after decoder failure"),
+                        { cause: audioDecoderError }
+                    );
+                }
+                audioDecoder.decode(chunk);
+            },
+            async flush() {
+                if (audioDecoderError) {
+                    throw Object.assign(
+                        new Error("audioDecoder.flush called after decoder failure"),
+                        { cause: audioDecoderError }
+                    );
+                }
+                await audioDecoder.flush();
+            },
+            getDecodedOutputs() {
+                return decodedAudioData;
+            },
+            getLastError() {
+                return audioDecoderError;
+            },
+            get decodeQueueSize() {
+                return audioDecoder.decodeQueueSize;
+            },
+            close() {
+                audioDecoder.close();
+            }
+        };
+
+        return {
+            audioDecoder,
+            wrappedAudioDecoder
+        };
+    }
+
+    async function createDecodePortForTrack({
+        videoTrackView,
+        wrappedAudioDecoder,
+        didNormalizePredecode,
+        onSoftwareFallback
+    }) {
+        const createWrappedVideoDecoder = async ({ accelerationOrder }) => {
+            if (typeof VideoDecoder !== "function") {
+                return {
+                    wrappedVideoDecoder: null,
+                    setupError: new Error("VideoDecoder is not available in this browser.")
+                };
+            }
+
+            const localDecodedVideoFrames = [];
+            let localVideoDecoderError = null;
+            const videoDecoder = new VideoDecoder({
+                output(frame) {
+                    localDecodedVideoFrames.push(frame);
+                },
+                error(error) {
+                    console.error("VideoDecoder error", error);
+                    localVideoDecoderError = error;
+                }
+            });
+
+            try {
+                await configureVideoDecoderForTrack({
+                    videoDecoder,
+                    videoTrackView,
+                    accelerationOrderOverride: accelerationOrder
+                });
+            } catch (error) {
+                return {
+                    wrappedVideoDecoder: null,
+                    setupError: error
+                };
+            }
+
+            return {
+                wrappedVideoDecoder: {
+                    decode(chunk) {
+                        if (localVideoDecoderError) {
+                            throw Object.assign(
+                                new Error("videoDecoder.decode called after decoder failure"),
+                                { cause: localVideoDecoderError }
+                            );
+                        }
+                        videoDecoder.decode(chunk);
+                    },
+                    async flush() {
+                        if (localVideoDecoderError) {
+                            throw Object.assign(
+                                new Error("videoDecoder.flush called after decoder failure"),
+                                { cause: localVideoDecoderError }
+                            );
+                        }
+                        await videoDecoder.flush();
+                    },
+                    getDecodedOutputs() {
+                        return localDecodedVideoFrames;
+                    },
+                    getLastError() {
+                        return localVideoDecoderError;
+                    },
+                    get decodeQueueSize() {
+                        return videoDecoder.decodeQueueSize;
+                    },
+                    close() {
+                        videoDecoder.close();
+                    }
+                },
+                setupError: null
+            };
+        };
+
+        let primaryVideoDecoderResult;
+        let softwareVideoDecoderResult = {
+            wrappedVideoDecoder: null,
+            setupError: null
+        };
+        if (didNormalizePredecode) {
+            primaryVideoDecoderResult = await createWrappedVideoDecoder({
+                accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
+            });
+        } else {
+            primaryVideoDecoderResult = await createWrappedVideoDecoder({
+                accelerationOrder: ["prefer-hardware", "no-preference", "prefer-software"]
+            });
+            softwareVideoDecoderResult = await createWrappedVideoDecoder({
+                accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
+            });
+        }
+
+        let primaryWebCodecsDecodePort = null;
+        let softwareWebCodecsDecodePort = null;
+        if (primaryVideoDecoderResult.wrappedVideoDecoder) {
+            primaryWebCodecsDecodePort = createContainerWebCodecsDecodePort({
+                videoDecoder: primaryVideoDecoderResult.wrappedVideoDecoder,
+                audioDecoder: wrappedAudioDecoder
+            });
+        }
+        if (softwareVideoDecoderResult.wrappedVideoDecoder) {
+            softwareWebCodecsDecodePort = createContainerWebCodecsDecodePort({
+                videoDecoder: softwareVideoDecoderResult.wrappedVideoDecoder,
+                audioDecoder: wrappedAudioDecoder
+            });
+        }
+
+        if (primaryWebCodecsDecodePort) {
+            if (softwareWebCodecsDecodePort) {
+                let softwareFallbackActive = false;
+                return {
+                    decodePort: {
+                    async decodeRange({ plan, exportRange: range }) {
+                        if (softwareFallbackActive) {
+                            return softwareWebCodecsDecodePort.decodeRange({
+                                plan,
+                                exportRange: range
+                            });
+                        }
+                        try {
+                            return await primaryWebCodecsDecodePort.decodeRange({
+                                plan,
+                                exportRange: range
+                            });
+                        } catch (error) {
+                            softwareFallbackActive = true;
+                            onSoftwareFallback({
+                                error,
+                                range
+                            });
+                            return softwareWebCodecsDecodePort.decodeRange({
+                                plan,
+                                exportRange: range
+                            });
+                        }
+                    }
+                    },
+                    releaseDecoders() {
+                        primaryVideoDecoderResult.wrappedVideoDecoder.close();
+                        softwareVideoDecoderResult.wrappedVideoDecoder.close();
+                    }
+                };
+            }
+            return {
+                decodePort: primaryWebCodecsDecodePort,
+                releaseDecoders() {
+                    primaryVideoDecoderResult.wrappedVideoDecoder.close();
+                }
+            };
+        }
+        if (softwareWebCodecsDecodePort) {
+            return {
+                decodePort: softwareWebCodecsDecodePort,
+                releaseDecoders() {
+                    softwareVideoDecoderResult.wrappedVideoDecoder.close();
+                }
+            };
+        }
+        if (primaryVideoDecoderResult.setupError) {
+            throw primaryVideoDecoderResult.setupError;
+        }
+        if (softwareVideoDecoderResult.setupError) {
+            throw softwareVideoDecoderResult.setupError;
+        }
+        throw new Error("Unable to configure any video decode strategy.");
+    }
+
+    function finalizeEncodeOutput({
+        result,
+        tStart,
+        videoEncodedChunks,
+        audioEncodedChunks,
+        didNormalizePredecode,
+        didRuntimeSoftwareFallback,
+        encodeStartedAt
+    }) {
+        if (!(result.mp4Bytes instanceof Uint8Array)) {
+            throw new Error("Export did not produce MP4 bytes");
+        }
+
+        const mp4Blob = new Blob([result.mp4Bytes], { type: "video/mp4" });
+        lastExportBlob = mp4Blob;
+        window.__lastBlob = mp4Blob;
+        window.__lastMp4Bytes = result.mp4Bytes;
+        window.__lastMp4BuildInput = result.mp4BuildInput;
+
+        if (lastExportUrl) {
+            URL.revokeObjectURL(lastExportUrl);
+        }
+        lastExportUrl = URL.createObjectURL(mp4Blob);
+
+        video.src = lastExportUrl;
+        video.style.display = "block";
+        video.controls = true;
+        exportBtn.disabled = false;
+
+        console.log("Encode complete", {
+            bytes: result.mp4Bytes.length,
+            videoChunks: videoEncodedChunks.length,
+            audioChunks: audioEncodedChunks.length,
+            elapsedMs: Math.round(performance.now() - tStart)
+        });
+
+        const decodePathMode = resolveEncodeDecodePathMode({
+            didNormalizePredecode
+        });
+        emitEncodeSignal({
+            label: "[Encode][DECODE_PATH]",
+            payload: {
+                mode: decodePathMode,
+                normalizedPredecode: didNormalizePredecode,
+                runtimeSoftwareFallback: didRuntimeSoftwareFallback
+            }
+        });
+        emitEncodeSignal({
+            label: "[Encode][SUMMARY]",
+            payload: {
+                ok: true,
+                failedStage: null,
+                elapsedMs: Math.round(performance.now() - encodeStartedAt),
+                decodePathMode
+            }
+        });
+    }
+
     previewBtn.onclick = () => {
         if (!timeline) {
             console.warn("Timeline not ready. Load a video source first.");
@@ -1647,13 +1830,25 @@ async function normalizeUnsupportedSourceToWorkingSet({
         downloadBlob(lastExportBlob, "framesmith-export.mp4");
     };
 
+    let isEncodeInProgress = false;
     encodeBtn.onclick = async () => {
+        // Safety gate: do not run two encodes at the same time.
+        if (isEncodeInProgress) {
+            console.warn("[Encode] ignored duplicate click while encode is in progress");
+            return;
+        }
+        isEncodeInProgress = true;
         let failedStage = "init";
         const encodeStartedAt = performance.now();
         let normalizationSourceUrlToRevoke = null;
         let didNormalizePredecode = false;
         let didRuntimeSoftwareFallback = false;
+        let audioDecoder = null;
+        let videoEncoder = null;
+        let audioEncoder = null;
+        let releaseDecodeResources = () => {};
         try {
+            // 1) Basic checks so we fail early with a clear message.
             failedStage = "validate";
             if (!timeline) {
                 throw new Error("Timeline not ready. Load a video source first.");
@@ -1668,62 +1863,10 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 throw new Error("WebCodecs AudioDecoder is not available in this browser.");
             }
 
+            // 2) Build export range and plan from the current timeline.
             failedStage = "plan";
             const exportFps = PRE_RENDER_FPS;
-            let exportEndSeconds = 0;
-            let mediaClipEndSeconds = 0;
-            let hasMediaClipBound = false;
-            if (Array.isArray(timeline.tracks)) {
-                for (const track of timeline.tracks) {
-                    if (!track || !Array.isArray(track.clips)) {
-                        continue;
-                    }
-                    for (const clip of track.clips) {
-                        let clipEndSeconds = Number(clip?.endSeconds);
-                        if (!Number.isFinite(clipEndSeconds)) {
-                            const clipEndPts = Number(clip?.endPts);
-                            const clipTrackView = clip?.trackView;
-                            if (
-                                Number.isFinite(clipEndPts) &&
-                                clipTrackView &&
-                                typeof clipTrackView.ptsToSeconds === "function"
-                            ) {
-                                clipEndSeconds = Number(clipTrackView.ptsToSeconds(clipEndPts));
-                            }
-                        }
-                        if (!Number.isFinite(clipEndSeconds)) {
-                            continue;
-                        }
-                        const trackView = clip?.trackView;
-                        const mediaType = trackView?.mediaType;
-                        const isContainerMediaClip =
-                            (mediaType === "video" || mediaType === "audio") &&
-                            typeof clip?.iterateAccessUnits === "function";
-                        if (isContainerMediaClip) {
-                            hasMediaClipBound = true;
-                            if (clipEndSeconds > mediaClipEndSeconds) {
-                                mediaClipEndSeconds = clipEndSeconds;
-                            }
-                        }
-                        if (clipEndSeconds > exportEndSeconds) {
-                            exportEndSeconds = clipEndSeconds;
-                        }
-                    }
-                }
-            }
-            if (hasMediaClipBound) {
-                exportEndSeconds = mediaClipEndSeconds;
-            }
-            if (!(exportEndSeconds > 0)) {
-                const timelineDuration = Number(timeline.duration);
-                if (Number.isFinite(timelineDuration) && timelineDuration > 0) {
-                    exportEndSeconds = timelineDuration;
-                }
-            }
-            if (!(exportEndSeconds > 0)) {
-                throw new Error("Unable to derive export range from timeline.");
-            }
-            const exportRange = { startSeconds: 0, endSeconds: exportEndSeconds };
+            const exportRange = deriveExportRangeFromTimeline(timeline);
             console.log("[Encode] export range", {
                 startSeconds: exportRange.startSeconds,
                 endSeconds: exportRange.endSeconds
@@ -1735,34 +1878,25 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 fragmentCount: prerenderPlan.fragments.length
             });
 
+            // 3) Pick container-backed tracks we will decode/encode from.
             failedStage = "track_select";
-            let videoTrackView = executionTimeline.tracks
-                .flatMap(track => track.clips)
-                .map(clip => clip.trackView)
-                .find(view => view && view.mediaType === "video" && view.codecConfig);
-
-            let audioTrackView = executionTimeline.tracks
-                .flatMap(track => track.clips)
-                .map(clip => clip.trackView)
-                .find(view => view && view.mediaType === "audio" && view.codecConfig);
-
-            if (!videoTrackView) {
-                throw new Error("No container-backed video asset found on timeline.");
-            }
-            if (!audioTrackView) {
-                throw new Error("No container-backed audio asset found on timeline.");
-            }
+            let { videoTrackView, audioTrackView } = selectContainerTrackViewsFromTimeline(executionTimeline);
             const sourceRotationDegrees = getRotationDegreesFromTrackView(videoTrackView);
 
-            const sourceUrlForNormalization = resolveSourceUrlForFallback({
-                currentVideoSourceUrl: currentVideoSourceObjectUrl,
-                videoElement: video
+            // 4) If source codec is unsupported, normalize source first.
+            const sourceUrlForNormalization = resolveNormalizationSourceUrl({
+                currentVideoSourceUrl: currentVideoSourceObjectUrl
             });
             const decoderSupportProbe = await probeVideoDecoderSupportForTrack({
                 videoTrackView,
                 accelerationOrder: ["prefer-hardware", "no-preference", "prefer-software"]
             });
-            if (!decoderSupportProbe.supported && sourceUrlForNormalization) {
+            if (!decoderSupportProbe.supported) {
+                if (!sourceUrlForNormalization) {
+                    throw new Error(
+                        "Unsupported source codec requires normalization, but no canonical source URL is available."
+                    );
+                }
                 emitEncodeSignal({
                     level: "warn",
                     label: "[Encode] source normalization requested for unsupported decoder config",
@@ -1782,18 +1916,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 normalizationSourceUrlToRevoke = normalized.sourceUrl;
                 prerenderPlan = buildPrerenderPlanFromTimeline({ timeline: executionTimeline });
 
-                videoTrackView = executionTimeline.tracks
-                    .flatMap(track => track.clips)
-                    .map(clip => clip.trackView)
-                    .find(view => view && view.mediaType === "video" && view.codecConfig);
-                audioTrackView = executionTimeline.tracks
-                    .flatMap(track => track.clips)
-                    .map(clip => clip.trackView)
-                    .find(view => view && view.mediaType === "audio" && view.codecConfig);
-
-                if (!videoTrackView || !audioTrackView) {
-                    throw new Error("Source normalization failed to produce usable media track views.");
-                }
+                ({ videoTrackView, audioTrackView } =
+                    selectContainerTrackViewsFromTimeline(executionTimeline));
 
                 emitEncodeSignal({
                     label: "[Encode] source normalization complete",
@@ -1807,223 +1931,57 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 });
             }
 
+            // 5) Buffers to hold encoded chunks and decoder configs for muxing.
             const videoEncodedChunks = [];
             const audioEncodedChunks = [];
             let videoDecoderConfig = null;
             let audioDecoderConfig = null;
 
-            const decodedAudioData = [];
-            let audioDecoderError = null;
-
+            // 6) Build and configure audio decoder wrapper.
             failedStage = "decoder_config_audio";
-            const audioDecoder = new AudioDecoder({
-                output(audioData) {
-                    decodedAudioData.push(audioData);
-                },
-                error(error) {
-                    console.error("AudioDecoder error", error);
-                    audioDecoderError = error;
-                }
-            });
+            const audioDecoderSetup = buildWrappedAudioDecoderForTrack(audioTrackView);
+            audioDecoder = audioDecoderSetup.audioDecoder;
+            const wrappedAudioDecoder = audioDecoderSetup.wrappedAudioDecoder;
 
             await configureAudioDecoderForTrack({
                 audioDecoder,
                 audioTrackView
             });
 
-            const wrappedAudioDecoder = {
-                decode(chunk) {
-                    if (audioDecoderError) {
-                        throw Object.assign(
-                            new Error("audioDecoder.decode called after decoder failure"),
-                            { cause: audioDecoderError }
-                        );
-                    }
-                    audioDecoder.decode(chunk);
-                },
-                async flush() {
-                    if (audioDecoderError) {
-                        throw Object.assign(
-                            new Error("audioDecoder.flush called after decoder failure"),
-                            { cause: audioDecoderError }
-                        );
-                    }
-                    await audioDecoder.flush();
-                },
-                getDecodedOutputs() {
-                    return decodedAudioData;
-                },
-                getLastError() {
-                    return audioDecoderError;
-                },
-                get decodeQueueSize() {
-                    return audioDecoder.decodeQueueSize;
-                }
-            };
-
+            // 7) Build decode port (primary decode path + software fallback path).
             failedStage = "decoder_config_video";
-            const createWrappedVideoDecoder = async ({ accelerationOrder }) => {
-                if (typeof VideoDecoder !== "function") {
-                    return {
-                        wrappedVideoDecoder: null,
-                        setupError: new Error("VideoDecoder is not available in this browser.")
-                    };
-                }
-
-                const localDecodedVideoFrames = [];
-                let localVideoDecoderError = null;
-                const videoDecoder = new VideoDecoder({
-                    output(frame) {
-                        localDecodedVideoFrames.push(frame);
-                    },
-                    error(error) {
-                        console.error("VideoDecoder error", error);
-                        localVideoDecoderError = error;
+            const decodeSetup = await createDecodePortForTrack({
+                videoTrackView,
+                wrappedAudioDecoder,
+                didNormalizePredecode,
+                onSoftwareFallback: ({ error, range }) => {
+                    didRuntimeSoftwareFallback = true;
+                    let rangeStartSeconds = null;
+                    let rangeEndSeconds = null;
+                    if (range && typeof range.startSeconds === "number") {
+                        rangeStartSeconds = range.startSeconds;
                     }
-                });
-
-                try {
-                    await configureVideoDecoderForTrack({
-                        videoDecoder,
-                        videoTrackView,
-                        accelerationOrderOverride: accelerationOrder
+                    if (range && typeof range.endSeconds === "number") {
+                        rangeEndSeconds = range.endSeconds;
+                    }
+                    emitEncodeSignal({
+                        level: "warn",
+                        label: "[Encode] decode strategy fallback engaged",
+                        payload: {
+                            reason: error?.message ?? String(error),
+                            rangeStartSeconds,
+                            rangeEndSeconds,
+                            nextStrategy: "webcodecs-video(software)"
+                        }
                     });
-                } catch (error) {
-                    return {
-                        wrappedVideoDecoder: null,
-                        setupError: error
-                    };
                 }
+            });
+            const decodePort = decodeSetup.decodePort;
+            releaseDecodeResources = decodeSetup.releaseDecoders;
 
-                return {
-                    wrappedVideoDecoder: {
-                        decode(chunk) {
-                            if (localVideoDecoderError) {
-                                throw Object.assign(
-                                    new Error("videoDecoder.decode called after decoder failure"),
-                                    { cause: localVideoDecoderError }
-                                );
-                            }
-                            videoDecoder.decode(chunk);
-                        },
-                        async flush() {
-                            if (localVideoDecoderError) {
-                                throw Object.assign(
-                                    new Error("videoDecoder.flush called after decoder failure"),
-                                    { cause: localVideoDecoderError }
-                                );
-                            }
-                            await videoDecoder.flush();
-                        },
-                        getDecodedOutputs() {
-                            return localDecodedVideoFrames;
-                        },
-                        getLastError() {
-                            return localVideoDecoderError;
-                        },
-                        get decodeQueueSize() {
-                            return videoDecoder.decodeQueueSize;
-                        }
-                    },
-                    setupError: null
-                };
-            };
-
-            let primaryVideoDecoderResult;
-            let softwareVideoDecoderResult = {
-                wrappedVideoDecoder: null,
-                setupError: null
-            };
-            if (didNormalizePredecode) {
-                primaryVideoDecoderResult = await createWrappedVideoDecoder({
-                    accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
-                });
-            } else {
-                primaryVideoDecoderResult = await createWrappedVideoDecoder({
-                    accelerationOrder: ["prefer-hardware", "no-preference", "prefer-software"]
-                });
-                softwareVideoDecoderResult = await createWrappedVideoDecoder({
-                    accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
-                });
-            }
-
-            let decodePort;
-            let primaryWebCodecsDecodePort = null;
-            let softwareWebCodecsDecodePort = null;
-            if (primaryVideoDecoderResult.wrappedVideoDecoder) {
-                primaryWebCodecsDecodePort = createContainerWebCodecsDecodePort({
-                    videoDecoder: primaryVideoDecoderResult.wrappedVideoDecoder,
-                    audioDecoder: wrappedAudioDecoder
-                });
-            }
-            if (softwareVideoDecoderResult.wrappedVideoDecoder) {
-                softwareWebCodecsDecodePort = createContainerWebCodecsDecodePort({
-                    videoDecoder: softwareVideoDecoderResult.wrappedVideoDecoder,
-                    audioDecoder: wrappedAudioDecoder
-                });
-            }
-
-            if (primaryWebCodecsDecodePort) {
-                if (softwareWebCodecsDecodePort) {
-                    let softwareFallbackActive = false;
-                    decodePort = {
-                        async decodeRange({ plan, exportRange: range }) {
-                            if (softwareFallbackActive) {
-                                return softwareWebCodecsDecodePort.decodeRange({
-                                    plan,
-                                    exportRange: range
-                                });
-                            }
-                            try {
-                                return await primaryWebCodecsDecodePort.decodeRange({
-                                    plan,
-                                    exportRange: range
-                                });
-                            } catch (error) {
-                                softwareFallbackActive = true;
-                                didRuntimeSoftwareFallback = true;
-                                let rangeStartSeconds = null;
-                                let rangeEndSeconds = null;
-                                if (range && typeof range.startSeconds === "number") {
-                                    rangeStartSeconds = range.startSeconds;
-                                }
-                                if (range && typeof range.endSeconds === "number") {
-                                    rangeEndSeconds = range.endSeconds;
-                                }
-                                emitEncodeSignal({
-                                    level: "warn",
-                                    label: "[Encode] decode strategy fallback engaged",
-                                    payload: {
-                                        reason: error?.message ?? String(error),
-                                        rangeStartSeconds,
-                                        rangeEndSeconds,
-                                        nextStrategy: "webcodecs-video(software)"
-                                    }
-                                });
-                                return softwareWebCodecsDecodePort.decodeRange({
-                                    plan,
-                                    exportRange: range
-                                });
-                            }
-                        }
-                    };
-                } else {
-                    decodePort = primaryWebCodecsDecodePort;
-                }
-            } else if (softwareWebCodecsDecodePort) {
-                decodePort = softwareWebCodecsDecodePort;
-            } else {
-                if (primaryVideoDecoderResult.setupError) {
-                    throw primaryVideoDecoderResult.setupError;
-                }
-                if (softwareVideoDecoderResult.setupError) {
-                    throw softwareVideoDecoderResult.setupError;
-                }
-                throw new Error("Unable to configure any video decode strategy.");
-            }
-
+            // 8) Configure video encoder for project output format.
             failedStage = "encoder_config_video";
-            const videoEncoder = new VideoEncoder({
+            videoEncoder = new VideoEncoder({
                 output(chunk, metadata) {
                     videoEncodedChunks.push(chunk);
                     if (!videoDecoderConfig && metadata?.decoderConfig) {
@@ -2043,8 +2001,9 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 outputHeight: runtimeConfig.output.height
             });
 
+            // 9) Configure audio encoder (Opus output for now).
             failedStage = "encoder_config_audio";
-            const audioEncoder = new AudioEncoder({
+            audioEncoder = new AudioEncoder({
                 output(chunk, metadata) {
                     audioEncodedChunks.push(chunk);
                     if (!audioDecoderConfig && metadata?.decoderConfig) {
@@ -2064,6 +2023,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 bitrate: 128_000
             });
 
+            // 10) Create execution context passed into strategy layer.
             const sharedRenderContext = createSharedRenderExecutionContext({
                 decodePort,
                 timecodeFragmentIntentResolvers,
@@ -2084,6 +2044,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
 
             const strategy = new ExportExecutionStrategy(exportExecutionContext);
 
+            // 11) Run decode -> compose -> encode -> mux pipeline.
             failedStage = "execute_strategy";
             const result = await strategy.execute({
                 plan: prerenderPlan,
@@ -2103,54 +2064,19 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 });
             }
 
+            // 12) Finalize MP4 blob, wire player/download state, emit summary.
             failedStage = "finalize_output";
-            if (!(result.mp4Bytes instanceof Uint8Array)) {
-                throw new Error("Export did not produce MP4 bytes");
-            }
-
-            const mp4Blob = new Blob([result.mp4Bytes], { type: "video/mp4" });
-            lastExportBlob = mp4Blob;
-            window.__lastBlob = mp4Blob;
-            window.__lastMp4Bytes = result.mp4Bytes;
-            window.__lastMp4BuildInput = result.mp4BuildInput;
-
-            if (lastExportUrl) {
-                URL.revokeObjectURL(lastExportUrl);
-            }
-            lastExportUrl = URL.createObjectURL(mp4Blob);
-
-            video.src = lastExportUrl;
-            video.style.display = "block";
-            video.controls = true;
-            exportBtn.disabled = false;
-
-            console.log("Encode complete", {
-                bytes: result.mp4Bytes.length,
-                videoChunks: videoEncodedChunks.length,
-                audioChunks: audioEncodedChunks.length,
-                elapsedMs: Math.round(performance.now() - tStart)
-            });
-            const decodePathMode = resolveEncodeDecodePathMode({
-                didNormalizePredecode
-            });
-            emitEncodeSignal({
-                label: "[Encode][DECODE_PATH]",
-                payload: {
-                    mode: decodePathMode,
-                    normalizedPredecode: didNormalizePredecode,
-                    runtimeSoftwareFallback: didRuntimeSoftwareFallback
-                }
-            });
-            emitEncodeSignal({
-                label: "[Encode][SUMMARY]",
-                payload: {
-                    ok: true,
-                    failedStage: null,
-                    elapsedMs: Math.round(performance.now() - encodeStartedAt),
-                    decodePathMode
-                }
+            finalizeEncodeOutput({
+                result,
+                tStart,
+                videoEncodedChunks,
+                audioEncodedChunks,
+                didNormalizePredecode,
+                didRuntimeSoftwareFallback,
+                encodeStartedAt
             });
         } catch (error) {
+            // Unified failure path: report decode mode + stage + error details.
             const decodePathMode = resolveEncodeDecodePathMode({
                 didNormalizePredecode
             });
@@ -2176,10 +2102,40 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 }
             });
         } finally {
+            // Always clean up resources, even if encode fails halfway.
+            if (typeof releaseDecodeResources === "function") {
+                try {
+                    releaseDecodeResources();
+                } catch (error) {
+                    console.warn("[Encode] decode resource cleanup failed", error);
+                }
+            }
+            if (audioDecoder && typeof audioDecoder.close === "function") {
+                try {
+                    audioDecoder.close();
+                } catch (error) {
+                    console.warn("[Encode] audio decoder cleanup failed", error);
+                }
+            }
+            if (videoEncoder && typeof videoEncoder.close === "function") {
+                try {
+                    videoEncoder.close();
+                } catch (error) {
+                    console.warn("[Encode] video encoder cleanup failed", error);
+                }
+            }
+            if (audioEncoder && typeof audioEncoder.close === "function") {
+                try {
+                    audioEncoder.close();
+                } catch (error) {
+                    console.warn("[Encode] audio encoder cleanup failed", error);
+                }
+            }
             if (normalizationSourceUrlToRevoke) {
                 URL.revokeObjectURL(normalizationSourceUrlToRevoke);
                 normalizationSourceUrlToRevoke = null;
             }
+            isEncodeInProgress = false;
             dumpEncodeDiagnosticsPanelToConsole();
         }
     };
