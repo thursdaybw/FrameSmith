@@ -279,7 +279,23 @@ ffmpeg -hide_banner -y \
   reference_webm_vp9_opus.webm
 ```
 
-Extract raw ffprobe oracle JSON:
+Extract raw mkvinfo oracle text (one-time generation step):
+
+```bash
+mkvinfo -a -v --ui-language en_US \
+  reference_webm_vp9_opus.webm \
+  > reference_webm_vp9_opus.mkvinfo.full.txt
+```
+
+Normalize mkvinfo output into stable comparison shape:
+
+```bash
+node normalize_webm_mkvinfo_oracle.mjs \
+  reference_webm_vp9_opus.mkvinfo.full.txt \
+  reference_webm_vp9_opus.oracle.json
+```
+
+Optional cross-check dump (not used by runtime tests):
 
 ```bash
 ffprobe -v quiet -print_format json \
@@ -288,19 +304,12 @@ ffprobe -v quiet -print_format json \
   > reference_webm_vp9_opus.ffprobe.json
 ```
 
-Normalize ffprobe output into stable comparison shape:
-
-```bash
-node normalize_webm_ffprobe_oracle.mjs \
-  reference_webm_vp9_opus.ffprobe.json \
-  reference_webm_vp9_opus.oracle.json
-```
-
 What this gives:
 
 - `reference_webm_vp9_opus.webm` (fixture bytes)
-- `reference_webm_vp9_opus.ffprobe.json` (full external oracle dump)
-- `reference_webm_vp9_opus.oracle.json` (stable, test-friendly summary)
+- `reference_webm_vp9_opus.mkvinfo.full.txt` (full mkvinfo oracle dump)
+- `reference_webm_vp9_opus.oracle.json` (stable, test-friendly summary used by tests)
+- `reference_webm_vp9_opus.ffprobe.json` (optional cross-check dump)
 
 Verification:
 
@@ -318,6 +327,7 @@ Expected:
 If WebM oracle files are missing, these tests fail and point back to this README:
 
 - `test_webm_oracle_referenceFixture_isPresentAndSane`
+- `test_webm_openContainer_readerAgreement_withStoredOracle`
 
 ---
 

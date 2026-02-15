@@ -77,11 +77,31 @@ export async function test_webm_walkEbmlElements_rejectsUnknownSizeElements() {
     assertEqual("walker unknown-size rejection", threw, true);
 }
 
+export async function test_webm_walkEbmlElements_allowsUnknownSizeContainerWhenEnabled() {
+    const bytes = new Uint8Array([
+        0xe0, 0xff,       // parent id=0xe0, unknown-size
+        0x81, 0x81, 0xff  // child id=0x81, size=1, payload=[0xff]
+    ]);
+
+    const entries = [...walkEbmlElements({
+        bytes,
+        allowUnknownSizeElements: true,
+        isContainerElement(id) {
+            return id === 0xe0;
+        }
+    })];
+
+    assertEqual("unknown-size allowed entry count", entries.length, 2);
+    assertEqual("unknown-size parent depth", entries[0].depth, 0);
+    assertEqual("unknown-size child depth", entries[1].depth, 1);
+    assertEqual("unknown-size parent dataEndOffset uses range end", entries[0].dataEndOffset, bytes.length);
+}
+
 export const WEBM_EBML_PRIMITIVE_TESTS = [
     test_webm_readElementHeader_decodesEbmlHeaderElement,
     test_webm_readElementHeader_marksUnknownSize,
     test_webm_walkEbmlElements_walksFlatRange,
     test_webm_walkEbmlElements_walksNestedContainerRange,
-    test_webm_walkEbmlElements_rejectsUnknownSizeElements
+    test_webm_walkEbmlElements_rejectsUnknownSizeElements,
+    test_webm_walkEbmlElements_allowsUnknownSizeContainerWhenEnabled
 ];
-

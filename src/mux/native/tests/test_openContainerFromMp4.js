@@ -186,31 +186,54 @@ export async function test_openContainer_rejectsUnsupportedContainerType() {
 }
 
 export async function test_openContainer_rejectsWebmUntilImplemented() {
-    let threw = false;
-    try {
-        await openContainer({
-            containerType: "webm",
-            bytes: new Uint8Array([0x1A, 0x45, 0xDF, 0xA3])
-        });
-    } catch (error) {
-        threw = /WebM routing is not implemented yet/.test(String(error?.message ?? error));
-    }
-    assertEqual("openContainer webm should throw planned-not-implemented", threw, true);
+    const response = await fetch("reference/reference_webm_vp9_opus.webm");
+    const webmBytes = new Uint8Array(await response.arrayBuffer());
+
+    const container = await openContainer({
+        containerType: "webm",
+        bytes: webmBytes
+    });
+    const tracks = container.listTracks();
+    assertEqual("openContainer webm track count", tracks.length, 2);
+
+    const videoTrackView = container.createTrackViews({ mediaType: "video" })[0];
+    const audioTrackView = container.createTrackViews({ mediaType: "audio" })[0];
+    assertExists("webm video track view", videoTrackView);
+    assertExists("webm audio track view", audioTrackView);
+
+    assertEqual("webm video sample count", videoTrackView.sampleCount, 60);
+    assertEqual("webm audio sample count", audioTrackView.sampleCount, 101);
+    assertEqual("webm video codec", videoTrackView.codecConfig.codec, "vp09.00.10.08");
+    assertEqual("webm audio codec", audioTrackView.codecConfig.codec, "opus");
+    assertEqual("webm video track timescale", videoTrackView.containerMeta.trackTimescale, 1000000);
+    assertEqual("webm video coded width", videoTrackView.containerMeta.codedWidth, 128);
+    assertEqual("webm video coded height", videoTrackView.containerMeta.codedHeight, 128);
+
+    const firstVideoSample = videoTrackView.getSampleByIndex(0);
+    const secondVideoSample = videoTrackView.getSampleByIndex(1);
+    assertExists("webm first video sample", firstVideoSample);
+    assertExists("webm second video sample", secondVideoSample);
+    assertEqual("webm first video pts", firstVideoSample.pts, 0);
+    assertEqual("webm second video pts", secondVideoSample.pts, 33_000);
+    assertEqual("webm first video has data", firstVideoSample.data.length > 0, true);
 }
 
 export async function test_openContainer_rejectsWebmByByteSourceUntilImplemented() {
-    const webmBytes = new Uint8Array([0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x00, 0x00, 0x00]);
+    const response = await fetch("reference/reference_webm_vp9_opus.webm");
+    const webmBytes = new Uint8Array(await response.arrayBuffer());
     const webmByteSource = createWebmByteSourceFromUint8Array({ webmBytes });
-    let threw = false;
-    try {
-        await openContainer({
-            containerType: "webm",
-            byteSource: webmByteSource
-        });
-    } catch (error) {
-        threw = /WebM routing is not implemented yet/.test(String(error?.message ?? error));
-    }
-    assertEqual("openContainer webm byteSource should throw planned-not-implemented", threw, true);
+
+    const container = await openContainer({
+        containerType: "webm",
+        byteSource: webmByteSource
+    });
+    const tracks = container.listTracks();
+    assertEqual("openContainer webm byteSource track count", tracks.length, 2);
+
+    const audioTrackView = container.createTrackViews({ mediaType: "audio" })[0];
+    assertExists("webm byteSource audio track view", audioTrackView);
+    assertEqual("webm byteSource audio sample rate", audioTrackView.codecConfig.sampleRate, 48000);
+    assertEqual("webm byteSource audio channels", audioTrackView.codecConfig.channelCount, 2);
 }
 
 export async function test_openContainerFromWebmSource_rejectsInvalidSource() {

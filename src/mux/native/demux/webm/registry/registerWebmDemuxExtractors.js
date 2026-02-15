@@ -1,17 +1,8 @@
 import { WebmDemuxRegistry } from "./WebmDemuxRegistry.js";
 import { buildWebmSelector } from "../selectors/buildWebmSelector.js";
-
-function extractSegmentInfo() {
-    throw new Error("WebM extractor not implemented yet: segment/info");
-}
-
-function extractTrackEntry() {
-    throw new Error("WebM extractor not implemented yet: segment/tracks/trackEntry");
-}
-
-function extractSimpleBlock() {
-    throw new Error("WebM extractor not implemented yet: segment/cluster/simpleBlock");
-}
+import { extractSegmentInfo } from "../extractors/segment/extractSegmentInfo.js";
+import { extractTrackEntry } from "../extractors/tracks/extractTrackEntry.js";
+import { extractSimpleBlock } from "../extractors/cluster/extractSimpleBlock.js";
 
 let registered = false;
 
@@ -40,4 +31,3 @@ export function resetWebmDemuxRegistryForTests() {
     registered = false;
     WebmDemuxRegistry.clearForTests();
 }
-

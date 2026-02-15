@@ -176,10 +176,12 @@ Approach:
 
 1. Generate deterministic WebM fixtures with `ffmpeg`.
 2. Use external reader oracles:
-- `ffprobe` for stream + packet facts
-- `mkvinfo` for container structure sanity
-3. Normalize oracle outputs into a stable comparison shape.
-4. Compare NativeMuxer WebM reader output against that shape.
+- `mkvinfo` as the primary container/packet oracle
+- `ffprobe` as optional cross-check
+3. Normalize oracle outputs into a stable comparison shape and save them under
+   `src/mux/native/tests/reference/`.
+4. Compare NativeMuxer WebM reader output against the saved normalized oracle JSON.
+5. Runtime tests must not shell out to external tools (no `mkvinfo`/`ffprobe` dependency at test run time).
 
 Comparison targets (stable fields):
 
@@ -214,8 +216,12 @@ Outcome:
 1. Add facade `openContainer(...)` with routing skeleton.
 2. Add WebM source adapter entry point (`openContainerFromWebmSource({ webmByteSource })`).
 3. Add EBML parser/walker primitives.
-4. Add WebM selector builder + registry skeleton.
-5. Implement MVP extractors (`Info`, `Tracks`, `Cluster/SimpleBlock`).
+4. Establish WebM registration architecture (must stay consistent with MP4 model):
+- move WebM extractors to individual files (one concern each)
+- keep one central registration file that imports and registers them
+- keep selector-builder separate from extractors
+- keep registry generic/minimal
+5. Implement MVP extractors (`Info`, `Tracks`, `Cluster/SimpleBlock`) using that architecture.
 6. Normalize to `trackViews` contract.
 7. Add parity and end-to-end tests.
 8. Wire to source-normalization flow for unsupported sources.

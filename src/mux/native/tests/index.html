@@ -348,6 +348,12 @@ import {
 import {
     WEBM_ORACLE_REFERENCE_FIXTURE_TESTS
 } from "./test_webm_oracle_referenceFixture.js";
+import {
+    WEBM_EXTRACTOR_TESTS
+} from "./test_webm_extractors.js";
+import {
+    WEBM_READER_ORACLE_AGREEMENT_TESTS
+} from "./test_webm_reader_oracleAgreement.js";
 
 import { 
    test_DeriveSamplesOnePerPacketFromStbl_Definition
@@ -1133,6 +1139,8 @@ const testsAll = [
     ...WEBM_SELECTOR_REGISTRY_TESTS,
     ...WEBM_EBML_PRIMITIVE_TESTS,
     ...WEBM_ORACLE_REFERENCE_FIXTURE_TESTS,
+    ...WEBM_EXTRACTOR_TESTS,
+    ...WEBM_READER_ORACLE_AGREEMENT_TESTS,
     testNativeMuxer_DeriveSemanticTrackFamily,
     testNativeMuxer_TrackDuration_Relationships_AllFixtures,
     testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,
