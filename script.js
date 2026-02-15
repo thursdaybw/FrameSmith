@@ -35,6 +35,7 @@ import { openContainer } from "./src/mux/native/demux/container/openContainer.js
 import { buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.js";
 
 import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
+import { drawRenderIntentsOnCanvas } from "./src/composition/composeAtTime.js";
 import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js?v=2026-02-15-1";
 import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/createContainerWebCodecsDecodePort.js";
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
@@ -326,7 +327,9 @@ function readRuntimeConfig() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-    await ensureCaptionFontLoaded();
+    ensureCaptionFontLoaded().catch((error) => {
+        console.warn("[TextOverlay] caption font load failed", error);
+    });
     const runtimeConfig = readRuntimeConfig();
 
     // -------------------------------------------------
@@ -334,12 +337,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     // -------------------------------------------------
     const PRE_RENDER_FPS = 30;
     const PRE_RENDER_FRAME_DURATION_US = Math.floor(1_000_000 / PRE_RENDER_FPS);
+    const ENCODE_STAGE_PROGRESS = Object.freeze({
+        validate: { label: "Validating…", percent: 2 },
+        plan: { label: "Planning…", percent: 6 },
+        track_select: { label: "Preparing source…", percent: 12 },
+        decoder_config_audio: { label: "Configuring audio…", percent: 56 },
+        decoder_config_video: { label: "Configuring video…", percent: 62 },
+        encoder_config_video: { label: "Preparing encoders…", percent: 68 },
+        execute_strategy: { label: "Encoding…", percent: 72 },
+        finalize_output: { label: "Finalizing…", percent: 97 }
+    });
 
     const previewBtn = document.getElementById("previewBtn");
     const encodeBtn = document.getElementById("encodeBtn");
     const exportBtn = document.getElementById("exportBtn");
     const videoFileInput = document.getElementById("videoFileInput");
     const videoSourceStatus = document.getElementById("videoSourceStatus");
+    const encodeRunStatus = document.getElementById("encodeRunStatus");
     const encodeDiagnosticsPanel = document.getElementById("encodeDiagnosticsPanel");
 
     // Demo Orchestration Only:
@@ -356,6 +370,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     let lastExportBlob = null;
     let lastExportUrl = null;
     let cachedSelectedVideo = null;
+    let isEncodeInProgress = false;
+    let currentEncodeStageName = "init";
+    let previewAnimationFrameId = null;
+    let previewPlan = null;
+
+    const setHasLoadedSourceUiState = (hasSource) => {
+        document.body.classList.toggle("has-source", !!hasSource);
+    };
 
     const setVideoSourceStatus = (message, isError = false) => {
         if (!videoSourceStatus) return;
@@ -411,14 +433,175 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
 
     const setWorkflowEnabled = (enabled) => {
-        previewBtn.disabled = !enabled;
-        encodeBtn.disabled = !enabled;
-        if (!enabled) {
+        const disabled = !enabled || isEncodeInProgress;
+        previewBtn.disabled = disabled;
+        encodeBtn.disabled = disabled;
+        if (!enabled || isEncodeInProgress) {
             exportBtn.disabled = true;
         }
     };
 
+    const setEncodeRunUiState = (isRunning) => {
+        if (!encodeRunStatus) {
+            return;
+        }
+        encodeRunStatus.textContent = "Preparing…";
+        encodeRunStatus.style.display = isRunning ? "inline-flex" : "none";
+    };
+
+    const setEncodeRunProgressPercent = (percent) => {
+        if (!encodeRunStatus) {
+            return;
+        }
+        if (!Number.isFinite(percent)) {
+            encodeRunStatus.textContent = "Encoding…";
+            return;
+        }
+        const bounded = Math.max(0, Math.min(100, Math.round(percent)));
+        encodeRunStatus.textContent = `Encoding… ${bounded}%`;
+    };
+
+    const setEncodeRunStageStatus = (stageName) => {
+        currentEncodeStageName = stageName;
+        if (!encodeRunStatus) {
+            return;
+        }
+        const stageView = ENCODE_STAGE_PROGRESS[stageName];
+        if (!stageView) {
+            encodeRunStatus.textContent = "Preparing…";
+            return;
+        }
+        if (stageName === "execute_strategy") {
+            encodeRunStatus.textContent = `${stageView.label} ${stageView.percent}%`;
+            return;
+        }
+        encodeRunStatus.textContent = stageView.label;
+    };
+
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    /**
+     * Stop preview overlay rendering loop.
+     */
+    function stopPreviewLoop() {
+        if (previewAnimationFrameId !== null) {
+            cancelAnimationFrame(previewAnimationFrameId);
+            previewAnimationFrameId = null;
+        }
+    }
+
+    function setPreviewModeUiState(isActive) {
+        document.body.classList.toggle("preview-active", !!isActive);
+    }
+
+    /**
+     * Keep preview overlay canvas in sync with video display size.
+     */
+    function syncPreviewCanvasToVideo() {
+        const targetWidth = Number(runtimeConfig?.output?.width);
+        const targetHeight = Number(runtimeConfig?.output?.height);
+        const width = Math.max(
+            1,
+            Number.isFinite(targetWidth) ? Math.round(targetWidth) : (video.videoWidth || Math.round(video.clientWidth) || 1)
+        );
+        const height = Math.max(
+            1,
+            Number.isFinite(targetHeight) ? Math.round(targetHeight) : (video.videoHeight || Math.round(video.clientHeight) || 1)
+        );
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+        }
+    }
+
+    /**
+     * Draw overlay at current playback time using the same render-intent renderer as composition.
+     */
+    function renderPreviewOverlayAtCurrentTime() {
+        if (!previewPlan) {
+            return;
+        }
+        syncPreviewCanvasToVideo();
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        const timeSeconds = Number(video.currentTime) || 0;
+        const resolution = resolveProceduralFragmentsAtTimeFromPlan({
+            plan: previewPlan,
+            timeSeconds,
+            timecodeFragmentIntentResolvers
+        });
+        drawRenderIntentsOnCanvas({
+            canvas,
+            renderIntents: resolution.renderIntents,
+            timeSeconds
+        });
+    }
+
+    /**
+     * Preview animation frame loop while video is playing.
+     */
+    function renderPreviewFrame() {
+        renderPreviewOverlayAtCurrentTime();
+        if (video.paused || video.ended) {
+            previewAnimationFrameId = null;
+            return;
+        }
+        previewAnimationFrameId = requestAnimationFrame(renderPreviewFrame);
+    }
+
+    function startPreviewLoop() {
+        if (previewAnimationFrameId !== null) {
+            return;
+        }
+        setPreviewModeUiState(true);
+        renderPreviewFrame();
+    }
+
+    /**
+     * Start preview playback with shared overlay rendering.
+     */
+    async function startPreviewPlayback() {
+        if (!timeline) {
+            console.warn("Timeline not ready. Load a video source first.");
+            return;
+        }
+
+        if (!previewPlan) {
+            previewPlan = buildPrerenderPlanFromTimeline({ timeline });
+        }
+
+        stopPreviewLoop();
+        try {
+            if (video.paused) {
+                await video.play();
+            }
+        } catch (error) {
+            console.warn("Preview playback could not start", error);
+        }
+        startPreviewLoop();
+    }
+
+    video.addEventListener("play", () => {
+        if (!timeline) return;
+        if (!previewPlan) {
+            previewPlan = buildPrerenderPlanFromTimeline({ timeline });
+        }
+        startPreviewLoop();
+    });
+
+    video.addEventListener("pause", () => {
+        if (!timeline) return;
+        stopPreviewLoop();
+        if (document.body.classList.contains("preview-active")) {
+            renderPreviewOverlayAtCurrentTime();
+        }
+    });
+
+    video.addEventListener("seeked", () => {
+        if (!timeline) return;
+        if (document.body.classList.contains("preview-active")) {
+            renderPreviewOverlayAtCurrentTime();
+        }
+    });
 
     async function readSelectedVideoBytesWithRetry(fileInput, setStatus) {
         const maxAttempts = 3;
@@ -505,6 +688,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             fileKey,
             bytes
         };
+        previewPlan = null;
+        stopPreviewLoop();
 
         if (currentVideoSourceObjectUrl) {
             URL.revokeObjectURL(currentVideoSourceObjectUrl);
@@ -515,8 +700,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
         currentVideoSourceObjectUrl = URL.createObjectURL(sourceBlob);
         video.src = currentVideoSourceObjectUrl;
-        video.style.display = "none";
-        video.controls = false;
+        video.style.display = "block";
+        video.controls = true;
+        setHasLoadedSourceUiState(true);
 
         await initializeTimelineFromBytes(cachedSelectedVideo.bytes);
     }
@@ -1352,7 +1538,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
         exportFps,
         configuredVideoEncoderConfig,
         videoTrackView,
-        decodeChunkSeconds
+        decodeChunkSeconds,
+        onVideoProgress
     }) {
         let videoRotationDegrees = 0;
         if (
@@ -1385,6 +1572,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
                     channels: 2
                 },
                 decodeChunkSeconds,
+                onVideoProgress,
                 background: { r: 0, g: 0, b: 0, a: 1 }
             }
         };
@@ -1812,10 +2000,6 @@ async function normalizeUnsupportedSourceToWorkingSet({
             URL.revokeObjectURL(lastExportUrl);
         }
         lastExportUrl = URL.createObjectURL(mp4Blob);
-
-        video.src = lastExportUrl;
-        video.style.display = "block";
-        video.controls = true;
         exportBtn.disabled = false;
 
         const decodePathMode = resolveEncodeDecodePathMode({
@@ -2200,7 +2384,23 @@ async function normalizeUnsupportedSourceToWorkingSet({
             exportFps,
             configuredVideoEncoderConfig,
             videoTrackView,
-            decodeChunkSeconds: resolveDecodeChunkSecondsForExportRange(exportRange)
+            decodeChunkSeconds: resolveDecodeChunkSecondsForExportRange(exportRange),
+            onVideoProgress: ({ frameIndex, totalFrames }) => {
+                if (!isEncodeInProgress) {
+                    return;
+                }
+                if (!Number.isFinite(totalFrames) || totalFrames <= 0) {
+                    return;
+                }
+                if (currentEncodeStageName !== "execute_strategy") {
+                    return;
+                }
+                const stageStart = ENCODE_STAGE_PROGRESS.execute_strategy.percent;
+                const stageEnd = 96;
+                const stageSpan = stageEnd - stageStart;
+                const stagePercent = stageStart + ((frameIndex / totalFrames) * stageSpan);
+                setEncodeRunProgressPercent(stagePercent);
+            }
         });
         const exportExecutionContext = createExportExecutionContext({
             sharedContext: sharedRenderContext,
@@ -2343,7 +2543,10 @@ async function normalizeUnsupportedSourceToWorkingSet({
             },
             reporting: {
                 clearEncodeDiagnosticsPanel,
-                emitDecodeFallbackSignal
+                emitDecodeFallbackSignal,
+                onEncodeStageChange: ({ stageName }) => {
+                    setEncodeRunStageStatus(stageName);
+                }
             },
             planning: {
                 validateEncodePrerequisites,
@@ -2367,104 +2570,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
         };
     }
 
-    previewBtn.onclick = () => {
-        if (!timeline) {
-            console.warn("Timeline not ready. Load a video source first.");
-            return;
-        }
-        console.log("Preview button clicked");
-
-        const ctx = context;
-        const width = canvas.width = 640;
-        const height = canvas.height = 360;
-
-        ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, width, height);
-
-        console.log(
-            "DEBUG timeline.tracks",
-            timeline.tracks,
-            typeof timeline.tracks,
-            Array.isArray(timeline.tracks),
-            timeline.tracks && timeline.tracks[Symbol.iterator]
-        );
-
-        // -------------------------------------------------
-        // Resolve procedural intent at a demo time
-        // -------------------------------------------------
-        const prerenderPlan = buildPrerenderPlanFromTimeline({ timeline });
-
-        const proceduralFragments = prerenderPlan.fragments.filter(
-            f => f.prerenderContributorKind === "procedural"
-        );
-
-        let startTimeMs = null;
-
-        // -------------------------------------------------
-        // PREVIEW-ONLY TIME DRIVER
-        //
-        // This loop exists purely for UI visualisation.
-        //
-        // It MUST NOT:
-        // - mutate timeline
-        // - mutate prerender plan
-        // - allocate VideoFrames
-        // - perform container decode
-        // - leak into execution contracts
-        //
-        // It evaluates procedural fragments at a timecode
-        // and draws declarative render intent to canvas.
-        //
-        // This is preview glue only.
-        // -------------------------------------------------
-        function frameLoop(nowMs) {
-
-            if (startTimeMs === null) {
-                startTimeMs = nowMs;
-            }
-
-            const elapsedMs = nowMs - startTimeMs;
-            const timeSeconds = elapsedMs / 1000;
-
-            ctx.clearRect(0, 0, width, height);
-            ctx.fillStyle = "#000";
-            ctx.fillRect(0, 0, width, height);
-
-            // PREVIEW → Application Orchestration Boundary
-            // We evaluate the PreRenderPlan at a time-slice.
-            // Preview does not inspect fragments directly.
-            const resolution = resolveProceduralFragmentsAtTimeFromPlan({
-                plan: prerenderPlan,
-                timeSeconds,
-                timecodeFragmentIntentResolvers
-            });
-
-            const allRenderIntents = resolution.renderIntents;
-
-            ctx.fillStyle = "#fff";
-            ctx.font = "32px sans-serif";
-            ctx.textBaseline = "top";
-
-            for (const intent of allRenderIntents) {
-                if (intent.kind === "text-overlay") {
-
-                    let y = 40;
-
-                    for (const item of intent.items) {
-                        for (const word of item.words) {
-                            ctx.fillText(word.text, 40, y);
-                            y += 40;
-                        }
-                    }
-                }
-            }
-
-            requestAnimationFrame(frameLoop);
-        }
-
-        requestAnimationFrame(frameLoop);
-
+    previewBtn.onclick = async () => {
+        await startPreviewPlayback();
     };
 
     /**
@@ -2495,10 +2602,16 @@ async function normalizeUnsupportedSourceToWorkingSet({
         downloadBlob(lastExportBlob, "framesmith-export.mp4");
     };
 
-    let isEncodeInProgress = false;
     encodeBtn.onclick = async () => {
 
         if (!tryStartEncodeRun())  return;
+        setEncodeRunUiState(true);
+        setEncodeRunStageStatus("validate");
+        setWorkflowEnabled(!!timeline);
+        if (document.body.classList.contains("preview-active")) {
+            stopPreviewLoop();
+            renderPreviewOverlayAtCurrentTime();
+        }
 
         const {
             runtime,
@@ -2532,17 +2645,27 @@ async function normalizeUnsupportedSourceToWorkingSet({
 
             cleanupEncodeRunResources({ encodePipelineRunState });
             isEncodeInProgress = false;
+            setEncodeRunUiState(false);
+            setWorkflowEnabled(!!timeline);
             dumpEncodeDiagnosticsPanelToConsole();
 
         }
     };
 
     if (videoFileInput) {
+        videoFileInput.addEventListener("click", () => {
+            // Allow re-selecting the same file to fire `change` again on mobile.
+            videoFileInput.value = "";
+        });
         videoFileInput.onchange = async () => {
             const selectedFile = videoFileInput.files?.[0];
             cachedSelectedVideo = null;
+            previewPlan = null;
+            stopPreviewLoop();
+            setPreviewModeUiState(false);
             if (!(selectedFile instanceof File)) {
                 setVideoSourceStatus("No video loaded");
+                setHasLoadedSourceUiState(false);
                 return;
             }
 
@@ -2581,6 +2704,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
 
     setWorkflowEnabled(false);
     setVideoSourceStatus("No video loaded");
+    setHasLoadedSourceUiState(false);
+    setPreviewModeUiState(false);
 
     if (runtimeConfig.testing.fixtureUrl) {
         try {

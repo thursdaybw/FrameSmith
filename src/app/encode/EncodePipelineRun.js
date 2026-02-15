@@ -128,6 +128,9 @@ export class EncodePipelineRun {
      */
     beginStage(stageName) {
         this.state.currentPipelineStage = stageName;
+        if (typeof this.reporting?.onEncodeStageChange === "function") {
+            this.reporting.onEncodeStageChange({ stageName });
+        }
         this.state.stageOrder.push(stageName);
         this.state.stageTimingMs[stageName] = {
             startedAtMs: this.runtime.now(),

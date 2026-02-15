@@ -292,7 +292,7 @@ function getReusableCompositionCanvas({ options, width, height, background }) {
     return canvas;
 }
 
-function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) {
+export function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) {
     const timing = {
         elapsedMs: 0,
         textOverlayItems: 0,

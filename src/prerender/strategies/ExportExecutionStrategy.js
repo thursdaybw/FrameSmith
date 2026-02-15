@@ -323,6 +323,15 @@ export class ExportExecutionStrategy {
                     const composeEncodeStartedAtMs = getNowMs();
                     const timeSeconds = chunkTimes[compositionIndex];
                     frameIndex++;
+                    if (typeof this.options?.onVideoProgress === "function") {
+                        try {
+                            this.options.onVideoProgress({
+                                frameIndex,
+                                totalFrames,
+                                timeSeconds
+                            });
+                        } catch {}
+                    }
 
                     if (frameIndex === 1 || frameIndex % 30 === 0 || frameIndex === totalFrames) {
                         console.log("[ExportExecutionStrategy] compose/encode progress", {

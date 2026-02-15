@@ -1,18 +1,269 @@
 <!DOCTYPE html>
 <html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FrameSmith</title>
+    <style>
+      :root {
+        --bg: #eef2f6;
+        --ink: #131720;
+        --muted: #4b5563;
+        --card: #ffffff;
+        --line: #d3dae5;
+        --accent: #0f62fe;
+        --accent-ink: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1000px 600px at 20% -30%, #ffffff 0%, transparent 70%),
+          radial-gradient(900px 500px at 100% 0%, #dbe7ff 0%, transparent 65%),
+          var(--bg);
+      }
+
+      .app-shell {
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+
+      .editor-layout {
+        width: min(100%, 520px);
+      }
+
+      .stage-wrap {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--card);
+        box-shadow: 0 14px 44px rgba(17, 24, 39, 0.16);
+        overflow: hidden;
+      }
+
+      .stage {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 9 / 16;
+        background: #0b0d13;
+      }
+
+      #v,
+      #c {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      #v {
+        display: none;
+        z-index: 1;
+        background: #000;
+      }
+
+      #c {
+        z-index: 2;
+        pointer-events: none;
+        display: none;
+        background: transparent;
+      }
+
+      .empty-state {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        text-align: center;
+        z-index: 4;
+      }
+
+      .empty-card {
+        width: min(88%, 320px);
+        border-radius: 16px;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid var(--line);
+      }
+
+      .empty-title {
+        margin: 0 0 8px 0;
+        font-size: 17px;
+        font-weight: 700;
+      }
+
+      .empty-subtitle {
+        margin: 0 0 14px 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      #videoFileInput {
+        width: 100%;
+        font-size: 13px;
+      }
+
+      .action-rail {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 5;
+      }
+
+      .action-btn {
+        width: 92px;
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+        background: rgba(15, 98, 254, 0.92);
+        color: var(--accent-ink);
+        box-shadow: 0 8px 16px rgba(15, 98, 254, 0.25);
+      }
+
+      .action-btn[disabled] {
+        opacity: 0.35;
+        box-shadow: none;
+      }
+
+      .meta-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px 12px 12px;
+        font-size: 12px;
+      }
+
+      #videoSourceStatus {
+        color: var(--muted);
+      }
+
+      .run-status {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #9a3412;
+      }
+
+      .run-status::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #f97316;
+        animation: pulse 1s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0% { opacity: 0.4; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1); }
+        100% { opacity: 0.4; transform: scale(0.8); }
+      }
+
+      .diagnostics {
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #0e1420;
+        overflow: hidden;
+      }
+
+      .diagnostics > summary {
+        cursor: pointer;
+        user-select: none;
+        font-size: 12px;
+        font-weight: 700;
+        color: #d4dbeb;
+        padding: 10px 12px;
+      }
+
+      #encodeDiagnosticsPanel {
+        margin: 0;
+        max-height: 220px;
+        overflow: auto;
+        background: #0a1020;
+        color: #9ef;
+        padding: 8px 12px 12px 12px;
+        white-space: pre-wrap;
+        font-size: 12px;
+        border-top: 1px solid #1a243a;
+      }
+
+      body.has-source .empty-state {
+        display: none;
+      }
+
+      body.preview-active #c {
+        display: block;
+      }
+
+      body:not(.has-source) .action-rail {
+        left: 12px;
+        right: 12px;
+        top: auto;
+        bottom: 12px;
+        transform: none;
+        flex-direction: row;
+        justify-content: center;
+      }
+
+      body:not(.has-source) .action-btn {
+        width: 96px;
+      }
+    </style>
+  </head>
   <body>
-    <h1>Video Player</h1>
-    <video id="v" src="webcodecs-native-muxer.mp4" style="display:none"></video>
-    <div>
-      <input id="videoFileInput" type="file" accept="video/mp4,video/*" />
-      <span id="videoSourceStatus"></span>
-    </div>
-    <canvas id="c"></canvas>
-    <button id="previewBtn">Play preview</button>
-    <button id="encodeBtn">Encode</button>
-    <button id="exportBtn" disabled="disabled">Export</button>
-    <h3>Encode Diagnostics</h3>
-    <pre id="encodeDiagnosticsPanel" style="max-height: 220px; overflow:auto; background:#111; color:#9ef; padding:8px; white-space:pre-wrap; font-size:12px;"></pre>
+    <main class="app-shell">
+      <section class="editor-layout">
+        <article class="stage-wrap">
+          <div class="stage">
+            <video id="v" src="webcodecs-native-muxer.mp4"></video>
+            <canvas id="c"></canvas>
+            <div class="empty-state">
+              <div class="empty-card">
+                <p class="empty-title">Load a Video</p>
+                <p class="empty-subtitle">Pick a clip to preview, brand, and export.</p>
+                <input id="videoFileInput" type="file" accept="video/mp4,video/*" />
+              </div>
+            </div>
+            <div class="action-rail">
+              <button id="previewBtn" class="action-btn">Play</button>
+              <button id="encodeBtn" class="action-btn">Encode</button>
+              <button id="exportBtn" class="action-btn" disabled="disabled">Export</button>
+            </div>
+          </div>
+          <div class="meta-row">
+            <span id="videoSourceStatus"></span>
+            <span id="encodeRunStatus" class="run-status">Encoding…</span>
+          </div>
+        </article>
+        <details class="diagnostics">
+          <summary>Encode Diagnostics</summary>
+          <pre id="encodeDiagnosticsPanel"></pre>
+        </details>
+      </section>
+    </main>
 
     <script src="vendor/mp4box.js/dist/mp4box.all.global.js"></script>
 
