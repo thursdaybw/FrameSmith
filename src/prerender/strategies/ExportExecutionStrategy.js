@@ -1,5 +1,5 @@
 import { resolveProceduralFragmentsAtTimeFromPlan } from "../resolveProceduralFragmentsAtTimeFromPlan.js";
-import { composeAtTime } from "../../composition/composeAtTime.js";
+import { composeAtTime } from "../../composition/composeAtTime.js?v=2026-02-15-1";
 import { encodeAtTime } from "../../encode/encodeAtTime.js";
 import { adaptEncodedOutputsToMp4BuildInput } from "../../export/adaptEncodedOutputsToMp4BuildInput.js";
 import { createMp4FromInputs } from "../../mux/native/compiler/createMp4FromInputs.js";
@@ -17,6 +17,13 @@ function isDrawableVideoFrameCandidate(value) {
 
 function isVideoFrameInstance(value) {
     return typeof VideoFrame === "function" && value instanceof VideoFrame;
+}
+
+function getNowMs() {
+    if (globalThis.performance && typeof globalThis.performance.now === "function") {
+        return globalThis.performance.now();
+    }
+    return Date.now();
 }
 
 function pickFrameForTargetTimestampUs({
@@ -51,6 +58,64 @@ function pickFrameForTargetTimestampUs({
     const nextDelta = Math.abs(next.timestamp - targetTimestampUs);
 
     return nextDelta < currentDelta ? next : current;
+}
+
+function canReuseComposedVideoFrame({
+    repeatedSourceFrame,
+    renderIntents,
+    previousCompositionOutput
+}) {
+    if (!repeatedSourceFrame) return false;
+    if (!Array.isArray(renderIntents) || renderIntents.length > 0) return false;
+    if (!previousCompositionOutput || typeof previousCompositionOutput !== "object") return false;
+    const previousVideoFrame = previousCompositionOutput?.composedVideoFrame?.videoFrame;
+    if (!previousVideoFrame) return false;
+    return typeof VideoFrame === "function";
+}
+
+function cloneComposedVideoFrameForTimestamp({
+    previousCompositionOutput,
+    targetTimestampUs,
+    timeSeconds
+}) {
+    const previousComposedVideo = previousCompositionOutput.composedVideoFrame ?? {};
+    const previousVideoFrame = previousComposedVideo.videoFrame ?? null;
+    if (!previousVideoFrame) return null;
+
+    try {
+        const reusedVideoFrame = new VideoFrame(previousVideoFrame, {
+            timestamp: targetTimestampUs
+        });
+        return {
+            composedVideoFrame: {
+                timestamp: timeSeconds,
+                layerOrder: Array.isArray(previousComposedVideo.layerOrder)
+                    ? previousComposedVideo.layerOrder
+                    : [],
+                videoFrame: reusedVideoFrame
+            },
+            composedAudioData: {
+                timestamp: timeSeconds,
+                audioStrategy: "mixToSingleTrack",
+                audioData: null
+            },
+            diagnostics: {
+                issues: [],
+                timingMs: {
+                    total: 0,
+                    videoArtifact: 0,
+                    videoSelectSource: 0,
+                    videoDrawBaseFrame: 0,
+                    videoDrawRenderIntents: 0,
+                    videoAllocateFrame: 0,
+                    audioArtifact: 0,
+                    audioAllocateData: 0
+                }
+            }
+        };
+    } catch {
+        return null;
+    }
 }
 
 export class ExportExecutionStrategy {
@@ -102,6 +167,25 @@ export class ExportExecutionStrategy {
         }
 
         let decodedContainerBackedFragmentBatch = null;
+        const executeStartedAtMs = getNowMs();
+        const executeTimingMs = {
+            decodeRange: 0,
+            composeAtTime: 0,
+            encodeAtTime: 0,
+            composeVideoArtifact: 0,
+            composeVideoSelectSource: 0,
+            composeVideoDrawBaseFrame: 0,
+            composeVideoDrawRenderIntents: 0,
+            composeVideoAllocateFrame: 0,
+            composeAudioArtifact: 0,
+            composeAudioAllocateData: 0,
+            composeAndEncodeVideo: 0,
+            encodeAudio: 0,
+            flushEncoders: 0,
+            adaptOutputs: 0,
+            compileMp4: 0,
+            totalExecute: 0
+        };
         const frameStepSeconds = 1 / fps;
             const startSeconds = exportRange.startSeconds ?? 0;
             const endSeconds = exportRange.endSeconds ?? startSeconds;
@@ -162,6 +246,7 @@ export class ExportExecutionStrategy {
 
             const frameSelectionTrace = [];
             let previousMappedDecodedVideoFrame = null;
+            let previousCompositionOutput = null;
             const encodedAudioTimestamps = new Set();
             const closeDecodedBatchArtifacts = (batch) => {
                 if (!batch || typeof batch !== "object") return;
@@ -198,10 +283,12 @@ export class ExportExecutionStrategy {
 
                 let decodedChunkBatch;
                 try {
+                    const decodeStartedAtMs = getNowMs();
                     decodedChunkBatch = await this.decodePort.decodeRange({
                         plan,
                         exportRange: chunkRange
                     });
+                    executeTimingMs.decodeRange += Math.max(0, getNowMs() - decodeStartedAtMs);
                 } catch (error) {
                     throw new Error(
                         "ExportExecutionStrategy.execute: decodePort.decodeRange failed " +
@@ -233,6 +320,7 @@ export class ExportExecutionStrategy {
 
                 const videoFrameSearchState = { index: 0 };
                 for (let compositionIndex = 0; compositionIndex < chunkTimes.length; compositionIndex++) {
+                    const composeEncodeStartedAtMs = getNowMs();
                     const timeSeconds = chunkTimes[compositionIndex];
                     frameIndex++;
 
@@ -262,6 +350,9 @@ export class ExportExecutionStrategy {
                         typeof mappedDecodedVideoFrame?.timestamp === "number"
                             ? mappedDecodedVideoFrame.timestamp
                             : null;
+                    const repeatedSourceFrame =
+                        !!mappedDecodedVideoFrame &&
+                        mappedDecodedVideoFrame === previousMappedDecodedVideoFrame;
                     frameSelectionTrace.push({
                         frameIndex,
                         targetTimestampUs,
@@ -270,9 +361,7 @@ export class ExportExecutionStrategy {
                             typeof mappedTimestampUs === "number"
                                 ? mappedTimestampUs - targetTimestampUs
                                 : null,
-                        repeatedSourceFrame:
-                            !!mappedDecodedVideoFrame &&
-                            mappedDecodedVideoFrame === previousMappedDecodedVideoFrame
+                        repeatedSourceFrame
                     });
                     previousMappedDecodedVideoFrame = mappedDecodedVideoFrame;
                     const perTimeDecodedBatch =
@@ -283,17 +372,44 @@ export class ExportExecutionStrategy {
                             }
                             : decodedChunkBatch;
 
-                    const compositionOutput = composeAtTime({
-                        timeSeconds,
-                        decodedContainerBackedFragmentBatch: perTimeDecodedBatch,
-                        activeLayers: this.activeLayers,
+                    const composeStartedAtMs = getNowMs();
+                    let compositionOutput = null;
+                    if (canReuseComposedVideoFrame({
+                        repeatedSourceFrame,
                         renderIntents,
-                        options: this.options
-                    });
+                        previousCompositionOutput
+                    })) {
+                        compositionOutput = cloneComposedVideoFrameForTimestamp({
+                            previousCompositionOutput,
+                            targetTimestampUs,
+                            timeSeconds
+                        });
+                    }
+                    if (!compositionOutput) {
+                        compositionOutput = composeAtTime({
+                            timeSeconds,
+                            decodedContainerBackedFragmentBatch: perTimeDecodedBatch,
+                            activeLayers: this.activeLayers,
+                            renderIntents,
+                            options: this.options
+                        });
+                    }
+                    executeTimingMs.composeAtTime += Math.max(0, getNowMs() - composeStartedAtMs);
+                    const composeTimingMs = compositionOutput?.diagnostics?.timingMs;
+                    if (composeTimingMs && typeof composeTimingMs === "object") {
+                        executeTimingMs.composeVideoArtifact += composeTimingMs.videoArtifact ?? 0;
+                        executeTimingMs.composeVideoSelectSource += composeTimingMs.videoSelectSource ?? 0;
+                        executeTimingMs.composeVideoDrawBaseFrame += composeTimingMs.videoDrawBaseFrame ?? 0;
+                        executeTimingMs.composeVideoDrawRenderIntents += composeTimingMs.videoDrawRenderIntents ?? 0;
+                        executeTimingMs.composeVideoAllocateFrame += composeTimingMs.videoAllocateFrame ?? 0;
+                        executeTimingMs.composeAudioArtifact += composeTimingMs.audioArtifact ?? 0;
+                        executeTimingMs.composeAudioAllocateData += composeTimingMs.audioAllocateData ?? 0;
+                    }
                     if (shouldRetainComposedFrames) {
                         composedFrames.push(compositionOutput);
                     }
 
+                    const encodeAtTimeStartedAtMs = getNowMs();
                     const encodedAtTimeResult = encodeAtTime({
                         timeSeconds,
                         compositionOutput,
@@ -304,8 +420,11 @@ export class ExportExecutionStrategy {
                         encodeVideoFrame,
                         encodeAudioData: hasDecodedAudioSamples ? undefined : encodeAudioData
                     });
+                    executeTimingMs.encodeAtTime += Math.max(0, getNowMs() - encodeAtTimeStartedAtMs);
 
                     encodedAccessUnits.push(...encodedAtTimeResult.encodedAccessUnits);
+                    executeTimingMs.composeAndEncodeVideo += Math.max(0, getNowMs() - composeEncodeStartedAtMs);
+                    previousCompositionOutput = compositionOutput;
                 }
 
                 if (hasDecodedAudioSamples && encodeAudioData) {
@@ -322,6 +441,7 @@ export class ExportExecutionStrategy {
                     });
 
                     for (const audioData of exportRangeAudioFrames) {
+                        const audioEncodeStartedAtMs = getNowMs();
                         const audioKey = `${audioData.timestamp}:${audioData.numberOfFrames ?? 0}`;
                         if (encodedAudioTimestamps.has(audioKey)) {
                             continue;
@@ -340,6 +460,7 @@ export class ExportExecutionStrategy {
                             throw new Error("ExportExecutionStrategy: encodeAudioData must return an access-unit object");
                         }
                         encodedAccessUnits.push(audioAccessUnit);
+                        executeTimingMs.encodeAudio += Math.max(0, getNowMs() - audioEncodeStartedAtMs);
                     }
                 }
 
@@ -369,12 +490,16 @@ export class ExportExecutionStrategy {
 
             if (typeof this.flushVideoEncoder === "function") {
                 console.log("[ExportExecutionStrategy] flushing video encoder");
+                const flushVideoStartedAtMs = getNowMs();
                 await this.flushVideoEncoder();
+                executeTimingMs.flushEncoders += Math.max(0, getNowMs() - flushVideoStartedAtMs);
             }
 
             if (typeof this.flushAudioEncoder === "function") {
                 console.log("[ExportExecutionStrategy] flushing audio encoder");
+                const flushAudioStartedAtMs = getNowMs();
                 await this.flushAudioEncoder();
+                executeTimingMs.flushEncoders += Math.max(0, getNowMs() - flushAudioStartedAtMs);
             }
 
             if (encodedVideoChunks.length === 0 && typeof this.getVideoWebCodecsOutput === "function") {
@@ -407,6 +532,7 @@ export class ExportExecutionStrategy {
                 const trackTimescale = this.options.trackTimescale ?? 1_000_000;
                 const outputSpec = this.options.outputSpec ?? {};
 
+                const adaptStartedAtMs = getNowMs();
                 mp4BuildInput = this.adaptEncodedOutputsToMp4BuildInputFn({
                     video: hasEncodedVideo ? {
                         webcodecsOutput: {
@@ -431,6 +557,7 @@ export class ExportExecutionStrategy {
                         }
                     } : undefined
                 });
+                executeTimingMs.adaptOutputs += Math.max(0, getNowMs() - adaptStartedAtMs);
                 console.log("[ExportExecutionStrategy] adapted encoded outputs", {
                     hasEncodedVideo,
                     hasEncodedAudio,
@@ -438,18 +565,22 @@ export class ExportExecutionStrategy {
                     audioChunkCount: encodedAudioChunks.length
                 });
 
+                const compileStartedAtMs = getNowMs();
                 mp4Bytes = this.createMp4FromInputsFn(mp4BuildInput);
+                executeTimingMs.compileMp4 += Math.max(0, getNowMs() - compileStartedAtMs);
                 console.log("[ExportExecutionStrategy] MP4 compiled", {
                     byteLength: mp4Bytes?.length ?? null
                 });
             }
+            executeTimingMs.totalExecute = Math.max(0, getNowMs() - executeStartedAtMs);
 
         return {
             decodedContainerBackedFragmentBatch,
             composedFrames: shouldRetainComposedFrames ? composedFrames : [],
             encodedAccessUnits,
             mp4BuildInput,
-            mp4Bytes
+            mp4Bytes,
+            executeTimingMs
         };
     }
 }

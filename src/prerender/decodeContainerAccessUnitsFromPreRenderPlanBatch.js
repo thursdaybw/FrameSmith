@@ -419,13 +419,16 @@ function createAdaptiveBackpressureProfile({
     };
 }
 
-function createVideoBackpressureProfile() {
-    const VIDEO_SEGMENT_TIMEOUT_MS = 6000;
+function createVideoBackpressureProfile({ timeoutMs }) {
+    let effectiveTimeoutMs = 6000;
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+        effectiveTimeoutMs = Math.round(timeoutMs);
+    }
     return {
         getConfig() {
             return {
                 maxQueueSize: 16,
-                timeoutMs: VIDEO_SEGMENT_TIMEOUT_MS,
+                timeoutMs: effectiveTimeoutMs,
                 pollMs: 5
             };
         },
@@ -497,7 +500,13 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
     audioDecoder,
     exportRange = null
 }) {
-    const VIDEO_SEGMENT_TIMEOUT_MS = 6000;
+    let videoSegmentTimeoutMs = 6000;
+    if (videoDecoder && typeof videoDecoder.getSegmentFlushTimeoutMs === "function") {
+        const decoderTimeoutMs = videoDecoder.getSegmentFlushTimeoutMs();
+        if (Number.isFinite(decoderTimeoutMs) && decoderTimeoutMs > 0) {
+            videoSegmentTimeoutMs = Math.round(decoderTimeoutMs);
+        }
+    }
     // If callers run decode in multiple passes, ensure each pass starts with
     // empty output buffers so decoded frames do not accumulate across passes.
     if (videoDecoder && typeof videoDecoder.getDecodedOutputs === "function") {
@@ -525,7 +534,9 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
     const decodedVideoFrames = [];
     const decodedAudioData = [];
     const videoBackpressureProfile = resolveBackpressureProfile(
-        createVideoBackpressureProfile(),
+        createVideoBackpressureProfile({
+            timeoutMs: videoSegmentTimeoutMs
+        }),
         createDefaultBackpressureProfile
     );
     const audioBackpressureProfile = resolveBackpressureProfile(
@@ -627,7 +638,7 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
                     await withTimeout({
                         label: "decodeContainerBatch videoDecoder.flush(segment)",
                         promise: videoDecoder.flush(),
-                        timeoutMs: VIDEO_SEGMENT_TIMEOUT_MS
+                        timeoutMs: videoSegmentTimeoutMs
                     });
 
                     if (typeof videoDecoder.getLastError === "function") {

@@ -35,7 +35,7 @@ import { openContainer } from "./src/mux/native/demux/container/openContainer.js
 import { buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.js";
 
 import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
-import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js";
+import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js?v=2026-02-15-1";
 import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/createContainerWebCodecsDecodePort.js";
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
@@ -120,6 +120,22 @@ function getRotationDegreesFromTrackView(trackView) {
         return null;
     }
     return trackView.containerMeta.displayTransform.rotationDegrees;
+}
+
+function resolveDecodeChunkSecondsForExportRange(exportRange) {
+    const startSeconds = Number(exportRange?.startSeconds);
+    const endSeconds = Number(exportRange?.endSeconds);
+    if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) {
+        return null;
+    }
+    const durationSeconds = endSeconds - startSeconds;
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+        return null;
+    }
+    if (durationSeconds <= 180) {
+        return 4.0;
+    }
+    return null;
 }
 
 function buildNormalizationCompletePayload({
@@ -285,6 +301,10 @@ function readRuntimeConfig() {
     const searchParams = new URLSearchParams(window.location.search);
     const requestedVideoDemuxer = searchParams.get("videoDemuxer");
     const videoDemuxer = requestedVideoDemuxer === "mp4box" ? "mp4box" : "native";
+    const fixtureUrl = searchParams.get("fixture") || searchParams.get("fixtureUrl");
+    const fixtureAutoEncodeOnLoad =
+        searchParams.get("fixtureAutoEncode") === "1" ||
+        searchParams.get("autoEncode") === "1";
     const outputWidth = 720;
     const outputHeight = 1280;
     return {
@@ -294,6 +314,10 @@ function readRuntimeConfig() {
         output: {
             width: outputWidth,
             height: outputHeight
+        },
+        testing: {
+            fixtureUrl,
+            fixtureAutoEncodeOnLoad
         },
         debug: {
             enableEncodeDiagnostics: searchParams.get("encodeDiagnostics") !== "0"
@@ -456,6 +480,84 @@ document.addEventListener("DOMContentLoaded", async () => {
             );
             throw error;
         }
+    }
+
+    /**
+     * Attach loaded source bytes to player state and initialize timeline.
+     */
+    async function applyLoadedVideoSourceBytes({
+        bytes,
+        fileKey,
+        mimeType
+    }) {
+        if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
+            throw new Error("Loaded video bytes are empty.");
+        }
+
+        if (lastExportUrl) {
+            URL.revokeObjectURL(lastExportUrl);
+            lastExportUrl = null;
+        }
+        lastExportBlob = null;
+        exportBtn.disabled = true;
+
+        cachedSelectedVideo = {
+            fileKey,
+            bytes
+        };
+
+        if (currentVideoSourceObjectUrl) {
+            URL.revokeObjectURL(currentVideoSourceObjectUrl);
+            currentVideoSourceObjectUrl = null;
+        }
+        const sourceBlob = new Blob([bytes], {
+            type: mimeType || "video/mp4"
+        });
+        currentVideoSourceObjectUrl = URL.createObjectURL(sourceBlob);
+        video.src = currentVideoSourceObjectUrl;
+        video.style.display = "none";
+        video.controls = false;
+
+        await initializeTimelineFromBytes(cachedSelectedVideo.bytes);
+    }
+
+    /**
+     * Load fixture bytes by URL and initialize timeline without file picker.
+     */
+    async function loadFixtureVideoSourceFromRuntimeConfig() {
+        const fixtureUrl = runtimeConfig?.testing?.fixtureUrl;
+        if (!fixtureUrl) {
+            return false;
+        }
+
+        const resolvedFixtureUrl = new URL(fixtureUrl, window.location.href).toString();
+        setVideoSourceStatus(`Loading fixture: ${resolvedFixtureUrl}`);
+
+        const response = await fetch(resolvedFixtureUrl);
+        if (!response.ok) {
+            throw new Error(`Fixture fetch failed (${response.status} ${response.statusText})`);
+        }
+
+        const blob = await response.blob();
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (bytes.length === 0) {
+            throw new Error("Fixture fetch returned zero bytes.");
+        }
+
+        await applyLoadedVideoSourceBytes({
+            bytes,
+            fileKey: `fixture:${resolvedFixtureUrl}`,
+            mimeType: blob.type || "video/mp4"
+        });
+
+        emitEncodeSignal({
+            label: "[Fixture] source loaded",
+            payload: {
+                fixtureUrl: resolvedFixtureUrl,
+                bytes: bytes.length
+            }
+        });
+        return true;
     }
 
     const timecodeFragmentIntentResolvers = {
@@ -802,6 +904,34 @@ document.addEventListener("DOMContentLoaded", async () => {
             return currentVideoSourceUrl;
         }
         return "";
+    }
+
+    function getCurrentUserAgent() {
+        if (typeof navigator !== "object" || navigator === null) {
+            return "";
+        }
+        if (typeof navigator.userAgent !== "string") {
+            return "";
+        }
+        return navigator.userAgent;
+    }
+
+    function isKnownBadHardwareDecodeDevice() {
+        const userAgent = getCurrentUserAgent();
+        if (userAgent.length === 0) {
+            return false;
+        }
+
+        const knownBadMatchers = [
+            "Android 10; K"
+        ];
+
+        for (const matcher of knownBadMatchers) {
+            if (userAgent.includes(matcher)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function selectWebmNormalizationMimeType() {
@@ -1221,7 +1351,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
         timeline,
         exportFps,
         configuredVideoEncoderConfig,
-        videoTrackView
+        videoTrackView,
+        decodeChunkSeconds
     }) {
         let videoRotationDegrees = 0;
         if (
@@ -1253,7 +1384,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
                     sampleRate: 48_000,
                     channels: 2
                 },
-                decodeChunkSeconds: null,
+                decodeChunkSeconds,
                 background: { r: 0, g: 0, b: 0, a: 1 }
             }
         };
@@ -1464,6 +1595,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
         didNormalizePredecode,
         onSoftwareFallback
     }) {
+        const knownBadHardwareDecodeDevice = isKnownBadHardwareDecodeDevice();
         const createWrappedVideoDecoder = async ({ accelerationOrder }) => {
             if (typeof VideoDecoder !== "function") {
                 return {
@@ -1484,12 +1616,19 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 }
             });
 
+            let configuredHardwareAcceleration = null;
             try {
-                await configureVideoDecoderForTrack({
+                const configuredDecoderCandidate = await configureVideoDecoderForTrack({
                     videoDecoder,
                     videoTrackView,
                     accelerationOrderOverride: accelerationOrder
                 });
+                if (
+                    configuredDecoderCandidate &&
+                    typeof configuredDecoderCandidate.hardwareAcceleration === "string"
+                ) {
+                    configuredHardwareAcceleration = configuredDecoderCandidate.hardwareAcceleration;
+                }
             } catch (error) {
                 return {
                     wrappedVideoDecoder: null,
@@ -1526,6 +1665,15 @@ async function normalizeUnsupportedSourceToWorkingSet({
                     get decodeQueueSize() {
                         return videoDecoder.decodeQueueSize;
                     },
+                    getConfiguredHardwareAcceleration() {
+                        return configuredHardwareAcceleration;
+                    },
+                    getSegmentFlushTimeoutMs() {
+                        if (configuredHardwareAcceleration === "prefer-hardware") {
+                            return 2000;
+                        }
+                        return 6000;
+                    },
                     close() {
                         videoDecoder.close();
                     }
@@ -1540,6 +1688,17 @@ async function normalizeUnsupportedSourceToWorkingSet({
             setupError: null
         };
         if (didNormalizePredecode) {
+            primaryVideoDecoderResult = await createWrappedVideoDecoder({
+                accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
+            });
+        } else if (knownBadHardwareDecodeDevice) {
+            emitEncodeSignal({
+                level: "warn",
+                label: "[Encode] known-bad hardware decode profile matched; starting software decode",
+                payload: {
+                    userAgent: getCurrentUserAgent()
+                }
+            });
             primaryVideoDecoderResult = await createWrappedVideoDecoder({
                 accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
             });
@@ -1634,7 +1793,10 @@ async function normalizeUnsupportedSourceToWorkingSet({
         audioEncodedChunks,
         didNormalizePredecode,
         didRuntimeSoftwareFallback,
-        encodeStartedAt
+        encodeStartedAt,
+        stageTimingMs,
+        stageOrder,
+        executeBreakdownMs
     }) {
         if (!(result.mp4Bytes instanceof Uint8Array)) {
             throw new Error("Export did not produce MP4 bytes");
@@ -1659,6 +1821,22 @@ async function normalizeUnsupportedSourceToWorkingSet({
         const decodePathMode = resolveEncodeDecodePathMode({
             didNormalizePredecode
         });
+        const executeBreakdownSummary = buildExecuteBreakdownSummary({
+            executeBreakdownMs
+        });
+        const stageTimingSummary = buildEncodeStageTimingSummary({
+            stageTimingMs,
+            stageOrder,
+            nowMs: performance.now()
+        });
+        emitEncodeSignal({
+            label: "[Encode][EXECUTE_BREAKDOWN]",
+            payload: executeBreakdownSummary
+        });
+        emitEncodeSignal({
+            label: "[Encode][STAGE_TIMINGS]",
+            payload: stageTimingSummary
+        });
         emitEncodeSignal({
             label: "[Encode][DECODE_PATH]",
             payload: {
@@ -1673,9 +1851,87 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 ok: true,
                 failedStage: null,
                 elapsedMs: Math.round(performance.now() - encodeStartedAt),
-                decodePathMode
+                decodePathMode,
+                stageTimingSeconds: stageTimingSummary.stageTimingSeconds,
+                executeBreakdownSeconds: executeBreakdownSummary.executeBreakdownSeconds
             }
         });
+    }
+
+    /**
+     * Convert per-stage timing from milliseconds into stable seconds payload.
+     */
+    function buildEncodeStageTimingSummary({
+        stageTimingMs,
+        stageOrder,
+        nowMs
+    }) {
+        const stageTimingSeconds = {};
+        const orderedStages = [];
+        const seen = new Set();
+        if (Array.isArray(stageOrder)) {
+            for (const stageName of stageOrder) {
+                if (typeof stageName !== "string" || stageName.length === 0) {
+                    continue;
+                }
+                if (seen.has(stageName)) {
+                    continue;
+                }
+                seen.add(stageName);
+                orderedStages.push(stageName);
+            }
+        }
+        let totalStageSeconds = 0;
+        for (const stageName of orderedStages) {
+            const stage = stageTimingMs?.[stageName];
+            if (!stage || typeof stage !== "object") {
+                continue;
+            }
+            let elapsedMs = stage.elapsedMs;
+            if (!Number.isFinite(elapsedMs)) {
+                if (Number.isFinite(stage.startedAtMs)) {
+                    elapsedMs = Math.max(0, Math.round(nowMs - stage.startedAtMs));
+                } else {
+                    continue;
+                }
+            }
+            const seconds = Number((elapsedMs / 1000).toFixed(3));
+            stageTimingSeconds[stageName] = seconds;
+            totalStageSeconds += seconds;
+        }
+        totalStageSeconds = Number(totalStageSeconds.toFixed(3));
+        return {
+            stageTimingSeconds,
+            totalStageSeconds
+        };
+    }
+
+    /**
+     * Convert execute-strategy timing buckets from milliseconds into seconds.
+     */
+    function buildExecuteBreakdownSummary({
+        executeBreakdownMs
+    }) {
+        const executeBreakdownSeconds = {};
+        if (!executeBreakdownMs || typeof executeBreakdownMs !== "object") {
+            return {
+                executeBreakdownSeconds
+            };
+        }
+        const entries = Object.entries(executeBreakdownMs);
+        for (const [key, value] of entries) {
+            if (!Number.isFinite(value)) {
+                continue;
+            }
+            if (key.endsWith("Calls")) {
+                executeBreakdownSeconds[key] = value;
+                continue;
+            }
+            executeBreakdownSeconds[key] = Number((value / 1000).toFixed(3));
+        }
+        return {
+            executeBreakdownSeconds
+        };
     }
 
     /**
@@ -1926,6 +2182,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
     function createExportStrategy({
         decodePort,
         executionTimeline,
+        exportRange,
         exportFps,
         configuredVideoEncoderConfig,
         videoTrackView,
@@ -1942,7 +2199,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
             timeline: executionTimeline,
             exportFps,
             configuredVideoEncoderConfig,
-            videoTrackView
+            videoTrackView,
+            decodeChunkSeconds: resolveDecodeChunkSecondsForExportRange(exportRange)
         });
         const exportExecutionContext = createExportExecutionContext({
             sharedContext: sharedRenderContext,
@@ -1997,6 +2255,15 @@ async function normalizeUnsupportedSourceToWorkingSet({
         const decodePathMode = resolveEncodeDecodePathMode({
             didNormalizePredecode: encodePipelineRunState.didNormalizePredecode
         });
+        const stageTimingSummary = buildEncodeStageTimingSummary({
+            stageTimingMs: encodePipelineRunState.stageTimingMs,
+            stageOrder: encodePipelineRunState.stageOrder,
+            nowMs: performance.now()
+        });
+        emitEncodeSignal({
+            label: "[Encode][STAGE_TIMINGS]",
+            payload: stageTimingSummary
+        });
         emitEncodeSignal({
             label: "[Encode][DECODE_PATH]",
             payload: {
@@ -2015,7 +2282,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 elapsedMs: Math.round(performance.now() - encodePipelineRunState.encodeStartedAt),
                 errorName: error?.name ?? "Error",
                 errorMessage: error?.message ?? String(error),
-                decodePathMode
+                decodePathMode,
+                stageTimingSeconds: stageTimingSummary.stageTimingSeconds
             }
         });
     }
@@ -2288,23 +2556,11 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 lastExportBlob = null;
                 exportBtn.disabled = true;
                 const { bytes } = await readSelectedVideoBytesWithRetry(videoFileInput, setVideoSourceStatus);
-                cachedSelectedVideo = {
+                await applyLoadedVideoSourceBytes({
+                    bytes,
                     fileKey: `${selectedFile.name}:${selectedFile.size}:${selectedFile.lastModified}`,
-                    bytes
-                };
-                if (currentVideoSourceObjectUrl) {
-                    URL.revokeObjectURL(currentVideoSourceObjectUrl);
-                    currentVideoSourceObjectUrl = null;
-                }
-                const sourceBlob = new Blob([cachedSelectedVideo.bytes], {
-                    type: selectedFile.type || "video/mp4"
+                    mimeType: selectedFile.type || "video/mp4"
                 });
-                currentVideoSourceObjectUrl = URL.createObjectURL(sourceBlob);
-                video.src = currentVideoSourceObjectUrl;
-                video.style.display = "none";
-                video.controls = false;
-
-                await initializeTimelineFromBytes(cachedSelectedVideo.bytes);
             } catch (error) {
                 console.error("Video source load failed", error);
                 const errorText = String(error?.message || error || "");
@@ -2325,6 +2581,24 @@ async function normalizeUnsupportedSourceToWorkingSet({
 
     setWorkflowEnabled(false);
     setVideoSourceStatus("No video loaded");
+
+    if (runtimeConfig.testing.fixtureUrl) {
+        try {
+            await loadFixtureVideoSourceFromRuntimeConfig();
+            if (runtimeConfig.testing.fixtureAutoEncodeOnLoad) {
+                emitEncodeSignal({
+                    label: "[Fixture] auto encode start"
+                });
+                await encodeBtn.onclick();
+            }
+        } catch (error) {
+            console.error("Fixture source load failed", error);
+            setVideoSourceStatus(
+                `Fixture load failed: ${error?.message ?? String(error)}`,
+                true
+            );
+        }
+    }
 
 
 });

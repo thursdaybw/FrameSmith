@@ -21,6 +21,13 @@ function secondsToMicroseconds(timeSeconds) {
     return Math.round(timeSeconds * 1_000_000);
 }
 
+function getNowMs() {
+    if (globalThis.performance && typeof globalThis.performance.now === "function") {
+        return globalThis.performance.now();
+    }
+    return Date.now();
+}
+
 function toCssColor(background = {}) {
     const r = Math.round((background.r ?? 0) * 255);
     const g = Math.round((background.g ?? 0) * 255);
@@ -269,8 +276,14 @@ function getReusableCompositionCanvas({ options, width, height, background }) {
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    ctx.fillStyle = toCssColor(background);
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    const skipBackgroundClear = !!(options && options.__skipBackgroundClear === true);
+    if (!skipBackgroundClear) {
+        ctx.fillStyle = toCssColor(background);
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    }
+    if (options && typeof options === "object" && options.__skipBackgroundClear === true) {
+        options.__skipBackgroundClear = false;
+    }
 
     if (options && typeof options === "object") {
         options.__reusableCompositionCanvas = canvas;
@@ -280,12 +293,18 @@ function getReusableCompositionCanvas({ options, width, height, background }) {
 }
 
 function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) {
-    if (!Array.isArray(renderIntents) || renderIntents.length === 0) return;
-    if (!canvas || typeof canvas.getContext !== "function") return;
+    const timing = {
+        elapsedMs: 0,
+        textOverlayItems: 0,
+        imageOverlayItems: 0
+    };
+    if (!Array.isArray(renderIntents) || renderIntents.length === 0) return timing;
+    if (!canvas || typeof canvas.getContext !== "function") return timing;
 
     const ctx = canvas.getContext("2d");
-    if (!ctx || typeof ctx.fillText !== "function") return;
+    if (!ctx || typeof ctx.fillText !== "function") return timing;
 
+    const startedAtMs = getNowMs();
     let yOffsetPx = 0;
     for (const intent of renderIntents) {
         if (!intent) continue;
@@ -293,6 +312,7 @@ function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) 
         if (intent.kind === "text-overlay") {
             const items = Array.isArray(intent.items) ? intent.items : [];
             for (const item of items) {
+                timing.textOverlayItems += 1;
                 yOffsetPx = drawStyledTextOverlayItem({
                     ctx,
                     canvas,
@@ -307,6 +327,7 @@ function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) 
         if (intent.kind === "image-overlay") {
             const items = Array.isArray(intent.items) ? intent.items : [];
             for (const item of items) {
+                timing.imageOverlayItems += 1;
                 drawImageOverlayItem({
                     ctx,
                     canvas,
@@ -315,6 +336,8 @@ function drawRenderIntentsOnCanvas({ canvas, renderIntents = [], timeSeconds }) 
             }
         }
     }
+    timing.elapsedMs = Math.max(0, getNowMs() - startedAtMs);
+    return timing;
 }
 
 function pickClosestTimestampedItem(items, targetTimestampUs) {
@@ -370,13 +393,98 @@ function normalizeQuarterTurnRotationDegrees(value) {
     return 0;
 }
 
+function getDrawableDimensions(drawable) {
+    if (!drawable || typeof drawable !== "object") {
+        return {
+            width: null,
+            height: null
+        };
+    }
+
+    const widthCandidates = [
+        drawable.displayWidth,
+        drawable.codedWidth,
+        drawable.videoWidth,
+        drawable.width
+    ];
+    const heightCandidates = [
+        drawable.displayHeight,
+        drawable.codedHeight,
+        drawable.videoHeight,
+        drawable.height
+    ];
+
+    let width = null;
+    let height = null;
+
+    for (const candidate of widthCandidates) {
+        if (Number.isFinite(candidate) && candidate > 0) {
+            width = Math.round(candidate);
+            break;
+        }
+    }
+    for (const candidate of heightCandidates) {
+        if (Number.isFinite(candidate) && candidate > 0) {
+            height = Math.round(candidate);
+            break;
+        }
+    }
+
+    return {
+        width,
+        height
+    };
+}
+
+function getBaseFrameCache(options) {
+    if (!options || typeof options !== "object") {
+        return null;
+    }
+    if (!(options.__baseFrameCache instanceof Map)) {
+        options.__baseFrameCache = new Map();
+    }
+    return options.__baseFrameCache;
+}
+
+function pruneBaseFrameCache(cache, maxEntries) {
+    if (!(cache instanceof Map)) {
+        return;
+    }
+    while (cache.size > maxEntries) {
+        const firstKey = cache.keys().next().value;
+        if (firstKey === undefined) {
+            break;
+        }
+        cache.delete(firstKey);
+    }
+}
+
+function makeBaseFrameCacheKey({
+    sourceTimestampUs,
+    rotationDegrees,
+    outputWidth,
+    outputHeight
+}) {
+    return `${sourceTimestampUs}|${rotationDegrees}|${outputWidth}x${outputHeight}`;
+}
+
 function createVideoFrameArtifact({ timeSeconds, options, decodedContainerBackedFragmentBatch, renderIntents }) {
+    const timingMs = {
+        total: 0,
+        selectSource: 0,
+        drawBaseFrame: 0,
+        drawRenderIntents: 0,
+        allocateVideoFrame: 0
+    };
+    const startedAtMs = getNowMs();
     if (typeof VideoFrame !== "function") {
-        return { value: null, issue: null };
+        timingMs.total = Math.max(0, getNowMs() - startedAtMs);
+        return { value: null, issue: null, timingMs };
     }
 
     const existingFrames = decodedContainerBackedFragmentBatch?.decodedVideoFrames;
     if (Array.isArray(existingFrames)) {
+        const selectStartedAtMs = getNowMs();
         const targetTimestampUs = secondsToMicroseconds(timeSeconds);
         const drawableFrames = existingFrames
             .filter(isDrawableFrameCandidate)
@@ -385,7 +493,13 @@ function createVideoFrameArtifact({ timeSeconds, options, decodedContainerBacked
             drawableFrames,
             targetTimestampUs
         );
+        timingMs.selectSource = Math.max(0, getNowMs() - selectStartedAtMs);
         if (sourceFrameRecord) {
+            if (options && typeof options === "object") {
+                // Decoded base frame path paints the whole output canvas.
+                // Skip pre-fill clear for this frame.
+                options.__skipBackgroundClear = true;
+            }
             const sourceDrawable = sourceFrameRecord.drawable ?? sourceFrameRecord;
             const width = options?.outputSpec?.width ?? sourceDrawable.displayWidth ?? sourceDrawable.codedWidth ?? sourceDrawable.width ?? 2;
             const height = options?.outputSpec?.height ?? sourceDrawable.displayHeight ?? sourceDrawable.codedHeight ?? sourceDrawable.height ?? 2;
@@ -396,46 +510,111 @@ function createVideoFrameArtifact({ timeSeconds, options, decodedContainerBacked
                 const ctx = sourceCanvas.getContext("2d");
                 if (ctx && typeof ctx.drawImage === "function") {
                     try {
+                        const baseDrawStartedAtMs = getNowMs();
+                        const sourceDimensions = getDrawableDimensions(sourceDrawable);
+                        const sourceWidth = sourceDimensions.width;
+                        const sourceHeight = sourceDimensions.height;
+                        const canvasWidth = sourceCanvas.width;
+                        const canvasHeight = sourceCanvas.height;
                         const rotationDegrees = normalizeQuarterTurnRotationDegrees(
                             options?.outputSpec?.videoRotationDegrees
                         );
-                        if (rotationDegrees === 0) {
-                            ctx.drawImage(sourceDrawable, 0, 0, sourceCanvas.width, sourceCanvas.height);
-                        } else {
-                            const radians = (rotationDegrees * Math.PI) / 180;
-                            ctx.save();
-                            ctx.translate(sourceCanvas.width / 2, sourceCanvas.height / 2);
-                            ctx.rotate(radians);
+                        const isIdentityGeometry =
+                            rotationDegrees === 0 &&
+                            sourceWidth === canvasWidth &&
+                            sourceHeight === canvasHeight;
 
-                            if (rotationDegrees === 90 || rotationDegrees === 270) {
-                                ctx.drawImage(
-                                    sourceDrawable,
-                                    -sourceCanvas.height / 2,
-                                    -sourceCanvas.width / 2,
-                                    sourceCanvas.height,
-                                    sourceCanvas.width
-                                );
-                            } else {
-                                ctx.drawImage(
-                                    sourceDrawable,
-                                    -sourceCanvas.width / 2,
-                                    -sourceCanvas.height / 2,
-                                    sourceCanvas.width,
-                                    sourceCanvas.height
-                                );
+                        const canUseBaseCache =
+                            options?.enableBaseFrameCache === true &&
+                            typeof sourceFrameRecord.timestamp === "number";
+                        let drewFromCache = false;
+                        let cacheKey = "";
+                        let cachedBaseCanvas = null;
+                        if (canUseBaseCache) {
+                            cacheKey = makeBaseFrameCacheKey({
+                                sourceTimestampUs: sourceFrameRecord.timestamp,
+                                rotationDegrees,
+                                outputWidth: sourceCanvas.width,
+                                outputHeight: sourceCanvas.height
+                            });
+                            const cache = getBaseFrameCache(options);
+                            if (cache && cache.has(cacheKey)) {
+                                cachedBaseCanvas = cache.get(cacheKey);
+                                cache.delete(cacheKey);
+                                cache.set(cacheKey, cachedBaseCanvas);
                             }
-                            ctx.restore();
                         }
-                        drawRenderIntentsOnCanvas({
+
+                        if (cachedBaseCanvas) {
+                            ctx.drawImage(cachedBaseCanvas, 0, 0);
+                            drewFromCache = true;
+                        } else {
+                            if (isIdentityGeometry) {
+                                ctx.drawImage(sourceDrawable, 0, 0);
+                            } else if (rotationDegrees === 0) {
+                                ctx.drawImage(sourceDrawable, 0, 0, sourceCanvas.width, sourceCanvas.height);
+                            } else {
+                                const radians = (rotationDegrees * Math.PI) / 180;
+                                ctx.save();
+                                ctx.translate(sourceCanvas.width / 2, sourceCanvas.height / 2);
+                                ctx.rotate(radians);
+
+                                if (rotationDegrees === 90 || rotationDegrees === 270) {
+                                    ctx.drawImage(
+                                        sourceDrawable,
+                                        -sourceCanvas.height / 2,
+                                        -sourceCanvas.width / 2,
+                                        sourceCanvas.height,
+                                        sourceCanvas.width
+                                    );
+                                } else {
+                                    ctx.drawImage(
+                                        sourceDrawable,
+                                        -sourceCanvas.width / 2,
+                                        -sourceCanvas.height / 2,
+                                        sourceCanvas.width,
+                                        sourceCanvas.height
+                                    );
+                                }
+                                ctx.restore();
+                            }
+                        }
+
+                        if (!drewFromCache && canUseBaseCache) {
+                            const cache = getBaseFrameCache(options);
+                            if (cache) {
+                                const snapshotCanvas = createCompositionCanvas({
+                                    width: sourceCanvas.width,
+                                    height: sourceCanvas.height,
+                                    background
+                                });
+                                if (snapshotCanvas) {
+                                    const snapshotCtx = snapshotCanvas.getContext("2d");
+                                    if (snapshotCtx && typeof snapshotCtx.drawImage === "function") {
+                                        snapshotCtx.drawImage(sourceCanvas, 0, 0);
+                                        cache.set(cacheKey, snapshotCanvas);
+                                        pruneBaseFrameCache(cache, 24);
+                                    }
+                                }
+                            }
+                        }
+                        timingMs.drawBaseFrame = Math.max(0, getNowMs() - baseDrawStartedAtMs);
+                        const overlayTiming = drawRenderIntentsOnCanvas({
                             canvas: sourceCanvas,
                             renderIntents,
                             timeSeconds
                         });
+                        timingMs.drawRenderIntents = overlayTiming.elapsedMs;
+                        const allocateStartedAtMs = getNowMs();
+                        const frame = new VideoFrame(sourceCanvas, {
+                            timestamp: targetTimestampUs
+                        });
+                        timingMs.allocateVideoFrame = Math.max(0, getNowMs() - allocateStartedAtMs);
+                        timingMs.total = Math.max(0, getNowMs() - startedAtMs);
                         return {
-                            value: new VideoFrame(sourceCanvas, {
-                                timestamp: targetTimestampUs
-                            }),
-                            issue: null
+                            value: frame,
+                            issue: null,
+                            timingMs
                         };
                     } catch {
                         // Fall through to clone path.
@@ -444,20 +623,27 @@ function createVideoFrameArtifact({ timeSeconds, options, decodedContainerBacked
             }
 
             try {
-                return {
-                    value: new VideoFrame(sourceDrawable, {
+                const allocateStartedAtMs = getNowMs();
+                const frame = new VideoFrame(sourceDrawable, {
                     timestamp: targetTimestampUs
-                    }),
-                    issue: null
+                });
+                timingMs.allocateVideoFrame = Math.max(0, getNowMs() - allocateStartedAtMs);
+                timingMs.total = Math.max(0, getNowMs() - startedAtMs);
+                return {
+                    value: frame,
+                    issue: null,
+                    timingMs
                 };
             } catch (cause) {
+                timingMs.total = Math.max(0, getNowMs() - startedAtMs);
                 return {
                     value: null,
                     issue: createCompositionError({
                         code: "COMPOSITION_VIDEOFRAME_CLONE_FAILED",
                         message: "composeAtTime: failed to clone decoded VideoFrame artifact",
                         cause
-                    })
+                    }),
+                    timingMs
                 };
             }
         }
@@ -468,43 +654,59 @@ function createVideoFrameArtifact({ timeSeconds, options, decodedContainerBacked
     const background = options?.background ?? { r: 0, g: 0, b: 0, a: 1 };
     const source = getReusableCompositionCanvas({ options, width, height, background });
     if (!source) {
+        timingMs.total = Math.max(0, getNowMs() - startedAtMs);
         return {
             value: null,
             issue: createCompositionError({
                 code: "COMPOSITION_CANVAS_UNAVAILABLE",
                 message: "composeAtTime: no canvas backend available for VideoFrame composition"
-            })
+            }),
+            timingMs
         };
     }
 
-    drawRenderIntentsOnCanvas({
+    const overlayTiming = drawRenderIntentsOnCanvas({
         canvas: source,
         renderIntents,
         timeSeconds
     });
+    timingMs.drawRenderIntents = overlayTiming.elapsedMs;
 
     try {
+        const allocateStartedAtMs = getNowMs();
+        const frame = new VideoFrame(source, {
+            timestamp: secondsToMicroseconds(timeSeconds)
+        });
+        timingMs.allocateVideoFrame = Math.max(0, getNowMs() - allocateStartedAtMs);
+        timingMs.total = Math.max(0, getNowMs() - startedAtMs);
         return {
-            value: new VideoFrame(source, {
-                timestamp: secondsToMicroseconds(timeSeconds)
-            }),
-            issue: null
+            value: frame,
+            issue: null,
+            timingMs
         };
     } catch (cause) {
+        timingMs.total = Math.max(0, getNowMs() - startedAtMs);
         return {
             value: null,
             issue: createCompositionError({
                 code: "COMPOSITION_VIDEOFRAME_ALLOCATE_FAILED",
                 message: "composeAtTime: failed to allocate composed VideoFrame artifact",
                 cause
-            })
+            }),
+            timingMs
         };
     }
 }
 
 function createAudioDataArtifact({ timeSeconds, options, decodedContainerBackedFragmentBatch }) {
+    const timingMs = {
+        total: 0,
+        allocateAudioData: 0
+    };
+    const startedAtMs = getNowMs();
     if (typeof AudioData !== "function") {
-        return { value: null, issue: null };
+        timingMs.total = Math.max(0, getNowMs() - startedAtMs);
+        return { value: null, issue: null, timingMs };
     }
 
     const existingAudio = decodedContainerBackedFragmentBatch?.decodedAudioData;
@@ -519,11 +721,13 @@ function createAudioDataArtifact({ timeSeconds, options, decodedContainerBackedF
             secondsToMicroseconds(timeSeconds)
         );
         if (sourceAudioData) {
-            return { value: sourceAudioData, issue: null };
+            timingMs.total = Math.max(0, getNowMs() - startedAtMs);
+            return { value: sourceAudioData, issue: null, timingMs };
         }
         // Decoded audio is present for this export path. If no timestamp match is
         // found, avoid allocating synthetic audio per video frame.
-        return { value: null, issue: null };
+        timingMs.total = Math.max(0, getNowMs() - startedAtMs);
+        return { value: null, issue: null, timingMs };
     }
 
     const sampleRate = options?.outputSpec?.sampleRate ?? 48_000;
@@ -534,25 +738,32 @@ function createAudioDataArtifact({ timeSeconds, options, decodedContainerBackedF
     const planarSamples = new Float32Array(numberOfFrames * numberOfChannels);
 
     try {
+        const allocateStartedAtMs = getNowMs();
+        const audioData = new AudioData({
+            format: "f32-planar",
+            sampleRate,
+            numberOfFrames,
+            numberOfChannels,
+            timestamp: secondsToMicroseconds(timeSeconds),
+            data: planarSamples
+        });
+        timingMs.allocateAudioData = Math.max(0, getNowMs() - allocateStartedAtMs);
+        timingMs.total = Math.max(0, getNowMs() - startedAtMs);
         return {
-            value: new AudioData({
-                format: "f32-planar",
-                sampleRate,
-                numberOfFrames,
-                numberOfChannels,
-                timestamp: secondsToMicroseconds(timeSeconds),
-                data: planarSamples
-            }),
-            issue: null
+            value: audioData,
+            issue: null,
+            timingMs
         };
     } catch (cause) {
+        timingMs.total = Math.max(0, getNowMs() - startedAtMs);
         return {
             value: null,
             issue: createCompositionError({
                 code: "COMPOSITION_AUDIODATA_ALLOCATE_FAILED",
                 message: "composeAtTime: failed to allocate composed AudioData artifact",
                 cause
-            })
+            }),
+            timingMs
         };
     }
 }
@@ -579,6 +790,7 @@ export function composeAtTime({
     renderIntents = [],
     options = {}
 }) {
+    const composeStartedAtMs = getNowMs();
     const describeValue = (value) => {
         const typeTag = Object.prototype.toString.call(value);
         if (typeof value === "string") return `${typeTag}(${JSON.stringify(value)})`;
@@ -635,7 +847,17 @@ export function composeAtTime({
     });
 
     const diagnostics = {
-        issues: []
+        issues: [],
+        timingMs: {
+            total: 0,
+            videoArtifact: 0,
+            videoSelectSource: 0,
+            videoDrawBaseFrame: 0,
+            videoDrawRenderIntents: 0,
+            videoAllocateFrame: 0,
+            audioArtifact: 0,
+            audioAllocateData: 0
+        }
     };
 
     if (videoArtifactResult.issue) {
@@ -643,6 +865,17 @@ export function composeAtTime({
     }
     if (audioArtifactResult.issue) {
         diagnostics.issues.push(audioArtifactResult.issue);
+    }
+    if (videoArtifactResult.timingMs && typeof videoArtifactResult.timingMs === "object") {
+        diagnostics.timingMs.videoArtifact = videoArtifactResult.timingMs.total ?? 0;
+        diagnostics.timingMs.videoSelectSource = videoArtifactResult.timingMs.selectSource ?? 0;
+        diagnostics.timingMs.videoDrawBaseFrame = videoArtifactResult.timingMs.drawBaseFrame ?? 0;
+        diagnostics.timingMs.videoDrawRenderIntents = videoArtifactResult.timingMs.drawRenderIntents ?? 0;
+        diagnostics.timingMs.videoAllocateFrame = videoArtifactResult.timingMs.allocateVideoFrame ?? 0;
+    }
+    if (audioArtifactResult.timingMs && typeof audioArtifactResult.timingMs === "object") {
+        diagnostics.timingMs.audioArtifact = audioArtifactResult.timingMs.total ?? 0;
+        diagnostics.timingMs.audioAllocateData = audioArtifactResult.timingMs.allocateAudioData ?? 0;
     }
 
     if (strictComposition && diagnostics.issues.length > 0) {
@@ -667,6 +900,7 @@ export function composeAtTime({
         audioStrategy,
         audioData: audioArtifactResult.value
     };
+    diagnostics.timingMs.total = Math.max(0, getNowMs() - composeStartedAtMs);
 
     return {
         composedVideoFrame,

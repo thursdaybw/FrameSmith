@@ -23,6 +23,29 @@ export function createEncodeRunState({ now }) {
     return {
         currentPipelineStage: "init",
         encodeStartedAt: now(),
+        stageTimingMs: {},
+        stageOrder: [],
+        executeBreakdownMs: {
+            decodeRange: 0,
+            decodeCalls: 0,
+            executeStrategy: 0,
+            nonDecodeExecute: 0,
+            composeAtTime: 0,
+            encodeAtTime: 0,
+            composeVideoArtifact: 0,
+            composeVideoSelectSource: 0,
+            composeVideoDrawBaseFrame: 0,
+            composeVideoDrawRenderIntents: 0,
+            composeVideoAllocateFrame: 0,
+            composeAudioArtifact: 0,
+            composeAudioAllocateData: 0,
+            encodeVideoHook: 0,
+            encodeAudioHook: 0,
+            flushEncoders: 0,
+            adaptOutputs: 0,
+            compileMp4: 0,
+            nonDecodeUnattributed: 0
+        },
         normalizationSourceUrlToRevoke: { value: null },
         didNormalizePredecode: false,
         didRuntimeSoftwareFallback: false,
@@ -101,15 +124,46 @@ export class EncodePipelineRun {
     }
 
     /**
+     * Mark a stage as started and set it as current failure context.
+     */
+    beginStage(stageName) {
+        this.state.currentPipelineStage = stageName;
+        this.state.stageOrder.push(stageName);
+        this.state.stageTimingMs[stageName] = {
+            startedAtMs: this.runtime.now(),
+            elapsedMs: null
+        };
+    }
+
+    /**
+     * Mark a stage as finished, even if it failed.
+     */
+    endStage(stageName) {
+        const stage = this.state.stageTimingMs[stageName];
+        if (!stage) {
+            return;
+        }
+        if (typeof stage.elapsedMs === "number") {
+            return;
+        }
+        stage.elapsedMs = Math.max(0, Math.round(this.runtime.now() - stage.startedAtMs));
+    }
+
+    /**
      * Stage: validate prerequisites.
      *
      * Checks that timeline + required browser capabilities are present.
      * Also clears previous encode diagnostics before new run starts.
      */
     runValidateStage() {
-        this.state.currentPipelineStage = "validate";
-        this.planning.validateEncodePrerequisites(this.timeline);
-        this.reporting.clearEncodeDiagnosticsPanel();
+        const stageName = "validate";
+        this.beginStage(stageName);
+        try {
+            this.planning.validateEncodePrerequisites(this.timeline);
+            this.reporting.clearEncodeDiagnosticsPanel();
+        } finally {
+            this.endStage(stageName);
+        }
     }
 
     /**
@@ -118,9 +172,14 @@ export class EncodePipelineRun {
      * Computes export range/fps and builds initial prerender plan.
      */
     runPlanStage() {
-        this.tStart = this.runtime.now();
-        this.state.currentPipelineStage = "plan";
-        this.planContext = this.planning.buildEncodePlanContext(this.timeline);
+        const stageName = "plan";
+        this.beginStage(stageName);
+        try {
+            this.tStart = this.runtime.now();
+            this.planContext = this.planning.buildEncodePlanContext(this.timeline);
+        } finally {
+            this.endStage(stageName);
+        }
     }
 
     /**
@@ -130,22 +189,27 @@ export class EncodePipelineRun {
      * Plan/timeline are updated to point at that normalized source.
      */
     async runTrackSelectStage() {
-        this.state.currentPipelineStage = "track_select";
-        const selectedTracks = this.planning.selectExecutionTrackViewsWithRotation(
-            this.planContext.executionTimeline
-        );
-        this.trackContext = await this.normalization.maybeNormalizeExecutionTimelineForUnsupportedDecoder({
-            executionTimeline: this.planContext.executionTimeline,
-            prerenderPlan: this.planContext.prerenderPlan,
-            exportRange: this.planContext.exportRange,
-            videoTrackView: selectedTracks.videoTrackView,
-            audioTrackView: selectedTracks.audioTrackView,
-            sourceRotationDegrees: selectedTracks.sourceRotationDegrees
-        });
-        this.state.didNormalizePredecode = this.trackContext.didNormalizePredecode;
-        this.state.normalizationSourceUrlToRevoke.value = this.trackContext.normalizationSourceUrlToRevoke;
-        this.planContext.executionTimeline = this.trackContext.executionTimeline;
-        this.planContext.prerenderPlan = this.trackContext.prerenderPlan;
+        const stageName = "track_select";
+        this.beginStage(stageName);
+        try {
+            const selectedTracks = this.planning.selectExecutionTrackViewsWithRotation(
+                this.planContext.executionTimeline
+            );
+            this.trackContext = await this.normalization.maybeNormalizeExecutionTimelineForUnsupportedDecoder({
+                executionTimeline: this.planContext.executionTimeline,
+                prerenderPlan: this.planContext.prerenderPlan,
+                exportRange: this.planContext.exportRange,
+                videoTrackView: selectedTracks.videoTrackView,
+                audioTrackView: selectedTracks.audioTrackView,
+                sourceRotationDegrees: selectedTracks.sourceRotationDegrees
+            });
+            this.state.didNormalizePredecode = this.trackContext.didNormalizePredecode;
+            this.state.normalizationSourceUrlToRevoke.value = this.trackContext.normalizationSourceUrlToRevoke;
+            this.planContext.executionTimeline = this.trackContext.executionTimeline;
+            this.planContext.prerenderPlan = this.trackContext.prerenderPlan;
+        } finally {
+            this.endStage(stageName);
+        }
     }
 
     /**
@@ -155,11 +219,16 @@ export class EncodePipelineRun {
      */
     async runAudioDecoderConfigStage() {
         this.encodeOutputState = this.decoding.createEncodeOutputState();
-        this.state.currentPipelineStage = "decoder_config_audio";
-        this.audioDecoderSetup = await this.decoding.buildConfiguredAudioDecodeSetup(
-            this.trackContext.audioTrackView
-        );
-        this.state.audioDecoder = this.audioDecoderSetup.audioDecoder;
+        const stageName = "decoder_config_audio";
+        this.beginStage(stageName);
+        try {
+            this.audioDecoderSetup = await this.decoding.buildConfiguredAudioDecodeSetup(
+                this.trackContext.audioTrackView
+            );
+            this.state.audioDecoder = this.audioDecoderSetup.audioDecoder;
+        } finally {
+            this.endStage(stageName);
+        }
     }
 
     /**
@@ -169,17 +238,36 @@ export class EncodePipelineRun {
      * If runtime software fallback is triggered, we record that in run state.
      */
     async runVideoDecoderConfigStage() {
-        this.state.currentPipelineStage = "decoder_config_video";
-        this.decodeSetup = await this.decoding.createDecodePortForTrack({
-            videoTrackView: this.trackContext.videoTrackView,
-            wrappedAudioDecoder: this.audioDecoderSetup.wrappedAudioDecoder,
-            didNormalizePredecode: this.state.didNormalizePredecode,
-            onSoftwareFallback: ({ error, range }) => {
-                this.state.didRuntimeSoftwareFallback = true;
-                this.reporting.emitDecodeFallbackSignal({ error, range });
-            }
-        });
-        this.state.releaseDecodeResources = this.decodeSetup.releaseDecoders;
+        const stageName = "decoder_config_video";
+        this.beginStage(stageName);
+        try {
+            this.decodeSetup = await this.decoding.createDecodePortForTrack({
+                videoTrackView: this.trackContext.videoTrackView,
+                wrappedAudioDecoder: this.audioDecoderSetup.wrappedAudioDecoder,
+                didNormalizePredecode: this.state.didNormalizePredecode,
+                onSoftwareFallback: ({ error, range }) => {
+                    this.state.didRuntimeSoftwareFallback = true;
+                    this.reporting.emitDecodeFallbackSignal({ error, range });
+                }
+            });
+            this.state.releaseDecodeResources = this.decodeSetup.releaseDecoders;
+            const sourceDecodePort = this.decodeSetup.decodePort;
+            this.decodeSetup.decodePort = {
+                ...sourceDecodePort,
+                decodeRange: async (args) => {
+                    const startedAtMs = this.runtime.now();
+                    try {
+                        return await sourceDecodePort.decodeRange(args);
+                    } finally {
+                        const elapsedMs = Math.max(0, Math.round(this.runtime.now() - startedAtMs));
+                        this.state.executeBreakdownMs.decodeRange += elapsedMs;
+                        this.state.executeBreakdownMs.decodeCalls += 1;
+                    }
+                }
+            };
+        } finally {
+            this.endStage(stageName);
+        }
     }
 
     /**
@@ -188,27 +276,32 @@ export class EncodePipelineRun {
      * Sets target output dimensions/fps and stores encoder handles in run state.
      */
     async runEncoderConfigStage() {
-        this.state.currentPipelineStage = "encoder_config_video";
-        this.encoderSetup = await this.encoding.createConfiguredEncoders({
-            exportFps: this.planContext.exportFps,
-            outputWidth: this.runtime.outputConfig.width,
-            outputHeight: this.runtime.outputConfig.height,
-            videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
-            audioEncodedChunks: this.encodeOutputState.audioEncodedChunks,
-            setVideoDecoderConfig: (decoderConfig) => {
-                if (!this.encodeOutputState.videoDecoderConfig) {
-                    this.encodeOutputState.videoDecoderConfig = decoderConfig;
+        const stageName = "encoder_config_video";
+        this.beginStage(stageName);
+        try {
+            this.encoderSetup = await this.encoding.createConfiguredEncoders({
+                exportFps: this.planContext.exportFps,
+                outputWidth: this.runtime.outputConfig.width,
+                outputHeight: this.runtime.outputConfig.height,
+                videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
+                audioEncodedChunks: this.encodeOutputState.audioEncodedChunks,
+                setVideoDecoderConfig: (decoderConfig) => {
+                    if (!this.encodeOutputState.videoDecoderConfig) {
+                        this.encodeOutputState.videoDecoderConfig = decoderConfig;
+                    }
+                },
+                setAudioDecoderConfig: (decoderConfig) => {
+                    if (!this.encodeOutputState.audioDecoderConfig) {
+                        this.encodeOutputState.audioDecoderConfig = decoderConfig;
+                    }
                 }
-            },
-            setAudioDecoderConfig: (decoderConfig) => {
-                if (!this.encodeOutputState.audioDecoderConfig) {
-                    this.encodeOutputState.audioDecoderConfig = decoderConfig;
-                }
-            }
-        });
-        this.state.videoEncoder = this.encoderSetup.videoEncoder;
-        this.state.audioEncoder = this.encoderSetup.audioEncoder;
-        this.state.currentPipelineStage = "encoder_config_audio";
+            });
+            this.state.videoEncoder = this.encoderSetup.videoEncoder;
+            this.state.audioEncoder = this.encoderSetup.audioEncoder;
+            this.state.currentPipelineStage = "encoder_config_audio";
+        } finally {
+            this.endStage(stageName);
+        }
     }
 
     /**
@@ -220,6 +313,7 @@ export class EncodePipelineRun {
         this.strategy = this.encoding.createExportStrategy({
             decodePort: this.decodeSetup.decodePort,
             executionTimeline: this.planContext.executionTimeline,
+            exportRange: this.planContext.exportRange,
             exportFps: this.planContext.exportFps,
             configuredVideoEncoderConfig: this.encoderSetup.configuredVideoEncoderConfig,
             videoTrackView: this.trackContext.videoTrackView,
@@ -230,6 +324,56 @@ export class EncodePipelineRun {
             getVideoDecoderConfig: () => this.encodeOutputState.videoDecoderConfig,
             getAudioDecoderConfig: () => this.encodeOutputState.audioDecoderConfig
         });
+        this.instrumentStrategyBreakdownHooks();
+    }
+
+    /**
+     * Wrap strategy callbacks to measure major execute-strategy sub-buckets.
+     */
+    instrumentStrategyBreakdownHooks() {
+        if (!this.strategy || typeof this.strategy !== "object") {
+            return;
+        }
+        const wrapTimedMethod = (methodName, bucketName) => {
+            const original = this.strategy[methodName];
+            if (typeof original !== "function") {
+                return;
+            }
+            this.strategy[methodName] = async (...args) => {
+                const startedAtMs = this.runtime.now();
+                try {
+                    return await original.apply(this.strategy, args);
+                } finally {
+                    this.state.executeBreakdownMs[bucketName] += Math.max(
+                        0,
+                        Math.round(this.runtime.now() - startedAtMs)
+                    );
+                }
+            };
+        };
+        const wrapTimedSyncMethod = (methodName, bucketName) => {
+            const original = this.strategy[methodName];
+            if (typeof original !== "function") {
+                return;
+            }
+            this.strategy[methodName] = (...args) => {
+                const startedAtMs = this.runtime.now();
+                try {
+                    return original.apply(this.strategy, args);
+                } finally {
+                    this.state.executeBreakdownMs[bucketName] += Math.max(
+                        0,
+                        Math.round(this.runtime.now() - startedAtMs)
+                    );
+                }
+            };
+        };
+        wrapTimedSyncMethod("encodeVideoFrame", "encodeVideoHook");
+        wrapTimedSyncMethod("encodeAudioData", "encodeAudioHook");
+        wrapTimedMethod("flushVideoEncoder", "flushEncoders");
+        wrapTimedMethod("flushAudioEncoder", "flushEncoders");
+        wrapTimedSyncMethod("adaptEncodedOutputsToMp4BuildInputFn", "adaptOutputs");
+        wrapTimedSyncMethod("createMp4FromInputsFn", "compileMp4");
     }
 
     /**
@@ -239,15 +383,77 @@ export class EncodePipelineRun {
      * Result includes final MP4 bytes and diagnostics info.
      */
     async runExecuteStrategyStage() {
-        this.state.currentPipelineStage = "execute_strategy";
-        this.result = await this.encoding.executeStrategyAndMaybeLogDiagnostics({
-            strategy: this.strategy,
-            prerenderPlan: this.planContext.prerenderPlan,
-            exportRange: this.planContext.exportRange,
-            exportFps: this.planContext.exportFps,
-            videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
-            audioEncodedChunks: this.encodeOutputState.audioEncodedChunks
-        });
+        const stageName = "execute_strategy";
+        this.beginStage(stageName);
+        const executeStartedAtMs = this.runtime.now();
+        try {
+            this.result = await this.encoding.executeStrategyAndMaybeLogDiagnostics({
+                strategy: this.strategy,
+                prerenderPlan: this.planContext.prerenderPlan,
+                exportRange: this.planContext.exportRange,
+                exportFps: this.planContext.exportFps,
+                videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
+                audioEncodedChunks: this.encodeOutputState.audioEncodedChunks
+            });
+            const executeTimingMs = this.result?.executeTimingMs;
+            if (executeTimingMs && typeof executeTimingMs === "object") {
+                if (Number.isFinite(executeTimingMs.composeAtTime)) {
+                    this.state.executeBreakdownMs.composeAtTime = executeTimingMs.composeAtTime;
+                }
+                if (Number.isFinite(executeTimingMs.encodeAtTime)) {
+                    this.state.executeBreakdownMs.encodeAtTime = executeTimingMs.encodeAtTime;
+                }
+                if (Number.isFinite(executeTimingMs.composeVideoArtifact)) {
+                    this.state.executeBreakdownMs.composeVideoArtifact = executeTimingMs.composeVideoArtifact;
+                }
+                if (Number.isFinite(executeTimingMs.composeVideoSelectSource)) {
+                    this.state.executeBreakdownMs.composeVideoSelectSource = executeTimingMs.composeVideoSelectSource;
+                }
+                if (Number.isFinite(executeTimingMs.composeVideoDrawBaseFrame)) {
+                    this.state.executeBreakdownMs.composeVideoDrawBaseFrame = executeTimingMs.composeVideoDrawBaseFrame;
+                }
+                if (Number.isFinite(executeTimingMs.composeVideoDrawRenderIntents)) {
+                    this.state.executeBreakdownMs.composeVideoDrawRenderIntents = executeTimingMs.composeVideoDrawRenderIntents;
+                }
+                if (Number.isFinite(executeTimingMs.composeVideoAllocateFrame)) {
+                    this.state.executeBreakdownMs.composeVideoAllocateFrame = executeTimingMs.composeVideoAllocateFrame;
+                }
+                if (Number.isFinite(executeTimingMs.composeAudioArtifact)) {
+                    this.state.executeBreakdownMs.composeAudioArtifact = executeTimingMs.composeAudioArtifact;
+                }
+                if (Number.isFinite(executeTimingMs.composeAudioAllocateData)) {
+                    this.state.executeBreakdownMs.composeAudioAllocateData = executeTimingMs.composeAudioAllocateData;
+                }
+            }
+        } finally {
+            this.state.executeBreakdownMs.executeStrategy = Math.max(
+                0,
+                Math.round(this.runtime.now() - executeStartedAtMs)
+            );
+            this.state.executeBreakdownMs.nonDecodeExecute = Math.max(
+                0,
+                this.state.executeBreakdownMs.executeStrategy - this.state.executeBreakdownMs.decodeRange
+            );
+            const knownNonDecodeBuckets =
+                this.state.executeBreakdownMs.encodeAtTime +
+                this.state.executeBreakdownMs.composeVideoArtifact +
+                this.state.executeBreakdownMs.composeVideoSelectSource +
+                this.state.executeBreakdownMs.composeVideoDrawBaseFrame +
+                this.state.executeBreakdownMs.composeVideoDrawRenderIntents +
+                this.state.executeBreakdownMs.composeVideoAllocateFrame +
+                this.state.executeBreakdownMs.composeAudioArtifact +
+                this.state.executeBreakdownMs.composeAudioAllocateData +
+                this.state.executeBreakdownMs.encodeVideoHook +
+                this.state.executeBreakdownMs.encodeAudioHook +
+                this.state.executeBreakdownMs.flushEncoders +
+                this.state.executeBreakdownMs.adaptOutputs +
+                this.state.executeBreakdownMs.compileMp4;
+            this.state.executeBreakdownMs.nonDecodeUnattributed = Math.max(
+                0,
+                this.state.executeBreakdownMs.nonDecodeExecute - knownNonDecodeBuckets
+            );
+            this.endStage(stageName);
+        }
     }
 
     /**
@@ -256,15 +462,23 @@ export class EncodePipelineRun {
      * Emits decode-path summary and stores final export artefacts for UI/export.
      */
     runFinalizeOutputStage() {
-        this.state.currentPipelineStage = "finalize_output";
-        this.encoding.finalizeEncodeOutput({
-            result: this.result,
-            tStart: this.tStart,
-            videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
-            audioEncodedChunks: this.encodeOutputState.audioEncodedChunks,
-            didNormalizePredecode: this.state.didNormalizePredecode,
-            didRuntimeSoftwareFallback: this.state.didRuntimeSoftwareFallback,
-            encodeStartedAt: this.state.encodeStartedAt
-        });
+        const stageName = "finalize_output";
+        this.beginStage(stageName);
+        try {
+            this.encoding.finalizeEncodeOutput({
+                result: this.result,
+                tStart: this.tStart,
+                videoEncodedChunks: this.encodeOutputState.videoEncodedChunks,
+                audioEncodedChunks: this.encodeOutputState.audioEncodedChunks,
+                didNormalizePredecode: this.state.didNormalizePredecode,
+                didRuntimeSoftwareFallback: this.state.didRuntimeSoftwareFallback,
+                encodeStartedAt: this.state.encodeStartedAt,
+                stageTimingMs: this.state.stageTimingMs,
+                stageOrder: this.state.stageOrder,
+                executeBreakdownMs: this.state.executeBreakdownMs
+            });
+        } finally {
+            this.endStage(stageName);
+        }
     }
 }

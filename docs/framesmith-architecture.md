@@ -270,6 +270,186 @@ Target direction:
 - Browser harness test: normalized video span remains within acceptable tail-gap bounds for export range.
 - Browser harness test: if initial normalization coverage is low, alternate capture-mode retry is attempted and reported.
 
+## Performance Strategy: Short-Form vs Long-Form
+
+Date updated: February 15, 2026
+
+This section records current measured bottlenecks and how optimization differs
+between short-form presets and long-form editing.
+
+### What we measured (phone harness, current)
+
+AVC source (`opencam-10secs.mp4`), latest stable runs:
+
+- total encode click->summary: ~14.6s to ~15.1s
+- execute strategy: ~14.6s to ~15.1s (dominant)
+- execute breakdown:
+  - decodeRange: ~4.6s to ~5.0s (3 decode calls)
+  - composeAtTime: ~9.3s
+  - composeVideoDrawBaseFrame: ~8.9s (largest single hotspot)
+  - flush/adapt/mp4-build hooks remain small
+
+HEVC source (`phone-5sec.mp4`) with normalization:
+
+- total encode click->summary: ~14.5s
+- track_select stage (normalization): ~12.2s (dominant)
+- execute strategy: ~2.3s
+
+Key takeaway:
+
+- HEVC path is still dominated by normalization cost.
+- AVC path is now much faster than earlier baselines, but still above realtime due to
+  base-frame composition cost.
+
+### Why this matters for product direction
+
+Short-form preset workflow (current MVP usage):
+
+- user clicks encode almost immediately after load
+- there is little/no edit idle time to hide heavy work
+- encode latency itself is the user experience
+
+Long-form editing workflow (future expansion):
+
+- user spends real time editing before export
+- there is opportunity to precompute/decode/cache while editing
+- export can consume prepared artifacts instead of doing all work at click time
+
+### Strategy split (intentional)
+
+Short-form performance strategy (optimize click-to-export latency):
+
+- prioritize low-latency export path
+- reduce decode-call overhead (fewer/larger decode chunks where safe)
+- reduce fallback stall cost on known-bad hardware decode paths
+- instrument compose and encode sub-steps to remove the largest execute bottleneck first
+
+### Latest bottleneck findings (deeper AVC breakdown)
+
+Date updated: February 15, 2026
+
+From current phone harness diagnostics on `opencam-10secs.mp4`:
+
+- `execute_strategy` is dominant.
+- Top contributors inside execute:
+  - `decodeRange` is large.
+  - `composeAtTime` is large.
+- Inside `composeAtTime`, the dominant cost is:
+  - `composeVideoDrawBaseFrame` (base frame draw/scale/rotation)
+- Not dominant:
+  - text/image overlay draw cost
+  - MP4 adapt/build cost
+  - encode hook wrappers
+
+Important interpretation:
+
+- For short-form preset export, the main engineering targets are:
+  - decode dispatch/flush behavior
+  - base video draw path in composition
+- Overlay rendering is a core product requirement and should not be treated as optional.
+  It is currently not the primary hotspot on measured runs.
+
+### What we changed to get here
+
+Date updated: February 15, 2026
+
+- Added stage and execute breakdown instrumentation (`[Encode][STAGE_TIMINGS]`, `[Encode][EXECUTE_BREAKDOWN]`).
+- Added compose sub-bucket instrumentation (`composeVideoDrawBaseFrame`, overlay draw, frame allocation).
+- Added known-bad hardware decode profile handling to start software decode immediately on affected devices.
+- Added decode chunk sizing for short-form exports.
+- Added guarded composition fast paths (identity geometry draw and background clear skip).
+- Disabled expensive base-frame snapshot cache by default (`enableBaseFrameCache` opt-in), which removed a regression and restored ~15s-class AVC runs.
+- Added repeated-source-frame reuse path in export strategy; measured impact is low on current fixtures because repeated source mapping is rare.
+
+### Optimization backlog (prioritized)
+
+Priority 1 (highest likely gain):
+
+- optimize base video draw path (`composeVideoDrawBaseFrame`)
+  - keep current identity transform fast path and background clear skip
+  - remove remaining per-frame context state churn in hot path
+  - evaluate GPU/offscreen base-draw backend as a guarded rendering path
+
+Priority 2:
+
+- reduce decode-call overhead
+  - tune chunk sizing to lower decode call count where safe
+  - keep fallback logic, but avoid long no-progress stalls in known-bad paths
+
+Priority 3:
+
+- split and optimize compose internals further only if Priority 1 is insufficient
+  - keep instrumentation in place until target latency is reached
+
+Priority 4 (future editor mode gains):
+
+- predecode/prefetch during user idle (trim/edit/arrange time) for long-form throughput
+- keep short-form preset path focused on direct click-to-export latency
+
+### Rotation-aware optimization constraints
+
+Rotation optimizations are valid only when timeline conditions allow them.
+
+- Safe/easy case:
+  - single source clip, or
+  - all contributing clips share the same effective orientation/transform
+- Mixed-source case:
+  - clips may have different rotations/aspect transforms
+  - per-clip transform handling remains required
+
+Rule:
+
+- Never trade correctness for speed in mixed-orientation timelines.
+- Use fast paths only when preconditions are explicitly true.
+
+### Conditional fast-path policy (composition)
+
+Fast paths are allowed only as guarded optimizations.
+
+Policy:
+
+- default path remains the general composition path
+- fast path is taken only when all preconditions are true
+- if any precondition is unknown/false, immediately use default path
+
+Current guarded candidates:
+
+- base-draw identity transform fast path
+  - preconditions:
+    - source drawable dimensions exactly match output canvas dimensions
+    - effective rotation is `0`
+  - action:
+    - draw base frame with direct `drawImage(source, 0, 0)` path
+    - avoid scale/rotate math in hot loop
+
+- background clear skip when base draw fully covers output
+  - preconditions:
+    - composition path uses decoded base video frame
+    - base draw path is known to paint entire output canvas
+  - action:
+    - skip pre-fill background clear for that frame
+
+Guardrail:
+
+- these optimizations are implementation details and must not change rendered output semantics.
+
+Long-form performance strategy (optimize throughput and perceived responsiveness):
+
+- add background predecode/precompute while user edits
+- cache timeline-window decode artifacts and reuse at export
+- keep memory ownership explicit (bounded cache + eviction policy)
+- treat export as final assembly pass over mostly-prepared data
+
+### Guardrail
+
+Do not conflate the two optimization goals:
+
+- short-form target: fastest possible click-to-export
+- long-form target: highest throughput and stable long-running behavior
+
+Both should share the same core contracts (timeline compile -> decode/compose -> encode -> mux),
+with different scheduling/prefetch policies layered on top.
+
 ## Legacy Preview Surface (Current Status)
 
 This repository still contains a legacy preview surface that is not part of the
