@@ -63,31 +63,33 @@ function findPacketSummaryByCodecType({ oracle, codecType }) {
     return packets;
 }
 
-export async function test_webm_openContainer_readerAgreement_withStoredOracle() {
-    const bytesResponse = await fetch("reference/reference_webm_vp9_opus.webm");
+async function loadReaderAgreementFixture({ fixturePath, oraclePath, testLabel }) {
+    const bytesResponse = await fetch(fixturePath);
     if (!bytesResponse.ok) {
         throw new Error(
-            "test_webm_openContainer_readerAgreement_withStoredOracle: missing oracle " +
-            "reference/reference_webm_vp9_opus.webm. Generate it using instructions in " +
+            `${testLabel}: missing oracle ${fixturePath}. Generate it using instructions in ` +
             "src/mux/native/tests/reference/README.md"
         );
     }
     const webmBytes = new Uint8Array(await bytesResponse.arrayBuffer());
 
-    const oracleResponse = await fetch("reference/reference_webm_vp9_opus.oracle.json");
+    const oracleResponse = await fetch(oraclePath);
     if (!oracleResponse.ok) {
         throw new Error(
-            "test_webm_openContainer_readerAgreement_withStoredOracle: missing oracle " +
-            "reference/reference_webm_vp9_opus.oracle.json. Generate it using instructions in " +
+            `${testLabel}: missing oracle ${oraclePath}. Generate it using instructions in ` +
             "src/mux/native/tests/reference/README.md"
         );
     }
     const oracle = await oracleResponse.json();
+    return { webmBytes, oracle };
+}
 
+async function assertOpenContainerReaderAgreement({ webmBytes, oracle }) {
     const container = await openContainer({
         containerType: "webm",
         bytes: webmBytes
     });
+
     const videoTrackView = container.createTrackViews({ mediaType: "video" })[0];
     const audioTrackView = container.createTrackViews({ mediaType: "audio" })[0];
     assertExists("video track view", videoTrackView);
@@ -126,6 +128,15 @@ export async function test_webm_openContainer_readerAgreement_withStoredOracle()
     assertEqual("video last pts agreement", videoPts.lastPtsUs, oracleVideoLastUs);
     assertEqual("audio first pts agreement", audioPts.firstPtsUs, oracleAudioFirstUs);
     assertEqual("audio last pts agreement", audioPts.lastPtsUs, oracleAudioLastUs);
+}
+
+export async function test_webm_openContainer_readerAgreement_withStoredOracle() {
+    const { webmBytes, oracle } = await loadReaderAgreementFixture({
+        fixturePath: "reference/reference_webm_vp9_opus.webm",
+        oraclePath: "reference/reference_webm_vp9_opus.oracle.json",
+        testLabel: "test_webm_openContainer_readerAgreement_withStoredOracle"
+    });
+    await assertOpenContainerReaderAgreement({ webmBytes, oracle });
 }
 
 export const WEBM_READER_ORACLE_AGREEMENT_TESTS = [

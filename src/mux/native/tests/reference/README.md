@@ -329,6 +329,52 @@ If WebM oracle files are missing, these tests fail and point back to this README
 - `test_webm_oracle_referenceFixture_isPresentAndSane`
 - `test_webm_openContainer_readerAgreement_withStoredOracle`
 
+## **Generate local reproducible “phone-like” HEVC->WebM proof fixture (optional)**
+
+This is a local regression proof workflow for source-normalization planning.
+It is reproducible from `lavfi` (no personal phone capture required).
+
+Step 1: generate a phone-like HEVC MP4 source:
+
+```bash
+ffmpeg -hide_banner -y \
+  -f lavfi -i testsrc2=size=1080x1920:rate=30:duration=6 \
+  -f lavfi -i sine=frequency=440:sample_rate=48000:duration=6 \
+  -c:v libx265 -tag:v hvc1 -pix_fmt yuv420p -profile:v main \
+  -x265-params keyint=30:min-keyint=30:scenecut=0 \
+  -metadata:s:v:0 rotate=90 \
+  -c:a aac -b:a 256k -ar 48000 -ac 2 \
+  -shortest \
+  reference_phone_like_hvc1.mp4
+```
+
+Step 2: normalize to WebM VP9+Opus:
+
+```bash
+ffmpeg -hide_banner -y \
+  -i reference_phone_like_hvc1.mp4 \
+  -c:v libvpx-vp9 -b:v 1400k \
+  -deadline good -cpu-used 4 -row-mt 1 -tile-columns 1 \
+  -c:a libopus -b:a 128k -ar 48000 -ac 2 \
+  reference_webm_phone_like_vp9_opus.webm
+```
+
+Step 3: generate mkvinfo-backed oracle JSON:
+
+```bash
+mkvinfo -a -v --ui-language en_US \
+  reference_webm_phone_like_vp9_opus.webm \
+  > reference_webm_phone_like_vp9_opus.mkvinfo.full.txt
+
+node normalize_webm_mkvinfo_oracle.mjs \
+  reference_webm_phone_like_vp9_opus.mkvinfo.full.txt \
+  reference_webm_phone_like_vp9_opus.oracle.json
+```
+
+Important:
+- This flow is optional/local and not part of default suite inputs.
+- Do not treat these generated phone-like files as required committed fixtures.
+
 ---
 
 ## **Step 2 — Extract each box into fixtures**
