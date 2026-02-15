@@ -1,6 +1,5 @@
 import { PRERENDER_DECODE_CONTAINER_VIDEO_TESTS } from "./src/prerender/test_decodeContainerAccessUnits_containerVideo.js";
 import { PRERENDER_DECODE_CONTAINER_AUDIO_TESTS } from "./src/prerender/test_decodeContainerAccessUnits_containerAudio.js";
-import { MEDIA_ELEMENT_DECODE_PORT_TESTS } from "./src/prerender/decodePorts/test_createMediaElementDecodePort.js";
 import {
     PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DISPATCH_TESTS
 } from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_ignoresProceduralFragments.js";
@@ -36,14 +35,31 @@ function log(color, label, name) {
 
 const SKIPPED_BROWSER_ONLY_MODULES = [
     "./src/mux/native/demux/trackview/test_createContainerTrackViewFromMp4.js",
-    "./src/mux/native/demux/trackview/test_proceduralClips_prerenderPlanning.js",
-    "./test_script.js script-local tests (imports ./script.js + DOM bootstrapping)"
+    "./src/mux/native/demux/trackview/test_proceduralClips_prerenderPlanning.js"
 ];
 
-const NODE_TESTS = [
+async function loadNodeSafeScriptLocalTests() {
+    if (typeof globalThis.window === "undefined") {
+        globalThis.window = {};
+    }
+    if (typeof globalThis.document === "undefined") {
+        globalThis.document = {
+            addEventListener() {
+                // Node harness: do not execute browser bootstrapping callbacks.
+            }
+        };
+    }
+
+    const module = await import("./test_script.js");
+    if (!Array.isArray(module.SCRIPT_TESTS)) {
+        throw new Error("test_script.js must export SCRIPT_TESTS for node harness usage.");
+    }
+    return module.SCRIPT_TESTS;
+}
+
+const CORE_NODE_TESTS = [
     ...PRERENDER_DECODE_CONTAINER_VIDEO_TESTS,
     ...PRERENDER_DECODE_CONTAINER_AUDIO_TESTS,
-    ...MEDIA_ELEMENT_DECODE_PORT_TESTS,
     ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DISPATCH_TESTS,
     ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_EMPTY_PLAN_TESTS,
     ...PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_ORDER_TESTS,
@@ -61,7 +77,13 @@ const NODE_TESTS = [
 ];
 
 async function runNodeTests() {
-    console.log(`Running Node harness tests (${NODE_TESTS.length})`);
+    const scriptLocalNodeTests = await loadNodeSafeScriptLocalTests();
+    const nodeTests = [
+        ...scriptLocalNodeTests,
+        ...CORE_NODE_TESTS
+    ];
+
+    console.log(`Running Node harness tests (${nodeTests.length})`);
     console.log("Skipped browser-only modules:");
     for (const skipped of SKIPPED_BROWSER_ONLY_MODULES) {
         console.log(`  - ${skipped}`);
@@ -69,7 +91,7 @@ async function runNodeTests() {
 
     let failures = 0;
 
-    for (const testFn of NODE_TESTS) {
+    for (const testFn of nodeTests) {
         const name = testFn.name || "<anonymous test>";
         log("blue", "RUN ", name);
         try {

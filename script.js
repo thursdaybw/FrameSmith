@@ -199,6 +199,7 @@ import { resolveTextOverlayFragmentIntentAtTime } from "./src/timeline/procedura
 import { resolveImageOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/imageOverlayFragmentIntentResolver.js";
 
 import { openContainerFromMp4 } from "./src/mux/native/demux/container/openContainerFromMp4.js";
+import { openContainer } from "./src/mux/native/demux/container/openContainer.js";
 
 // Only import this for current preview, which is a development pscyholgoy convenience, remove this when upgrading preview
 // to future API
@@ -207,12 +208,218 @@ import { buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.j
 import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
 import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js";
 import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/createContainerWebCodecsDecodePort.js";
-import { createMediaElementDecodePort } from "./src/prerender/decodePorts/createMediaElementDecodePort.js";
-import { DecodedContainerBackedFragmentBatch } from "./src/prerender/DecodedContainerBackedFragmentBatch.js";
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
 import { buildDisplayTransformFromTrackMatrix } from "./src/mux/native/demux/track/displayTransform.js";
+
+function summarizeTrackViewKeys(trackView) {
+    const summary = {
+        sampleCount: 0,
+        keyTrueCount: 0,
+        keyFalseCount: 0,
+        keyUnknownCount: 0
+    };
+    if (!trackView || typeof trackView.sampleCount !== "number") {
+        return summary;
+    }
+    summary.sampleCount = trackView.sampleCount;
+    if (typeof trackView.getSampleByIndex !== "function") {
+        summary.keyUnknownCount = summary.sampleCount;
+        return summary;
+    }
+    for (let index = 0; index < trackView.sampleCount; index += 1) {
+        const sample = trackView.getSampleByIndex(index);
+        if (sample && sample.isKeyframe === true) {
+            summary.keyTrueCount += 1;
+            continue;
+        }
+        if (sample && sample.isKeyframe === false) {
+            summary.keyFalseCount += 1;
+            continue;
+        }
+        summary.keyUnknownCount += 1;
+    }
+    return summary;
+}
+
+function summarizeTrackViewTiming(trackView) {
+    const summary = {
+        sampleCount: 0,
+        firstPtsUs: null,
+        lastPtsUs: null,
+        spanUs: 0
+    };
+    if (!trackView || typeof trackView.sampleCount !== "number") {
+        return summary;
+    }
+    summary.sampleCount = trackView.sampleCount;
+    if (trackView.sampleCount === 0 || typeof trackView.getSampleByIndex !== "function") {
+        return summary;
+    }
+    const first = trackView.getSampleByIndex(0);
+    const last = trackView.getSampleByIndex(trackView.sampleCount - 1);
+    const toUs = (pts) => {
+        if (typeof pts !== "number") {
+            return null;
+        }
+        if (typeof trackView.ptsToSeconds === "function") {
+            const seconds = Number(trackView.ptsToSeconds(pts));
+            if (Number.isFinite(seconds)) {
+                return Math.round(seconds * 1_000_000);
+            }
+        }
+        return pts;
+    };
+
+    summary.firstPtsUs = toUs(first?.pts);
+    summary.lastPtsUs = toUs(last?.pts);
+    if (summary.firstPtsUs !== null && summary.lastPtsUs !== null) {
+        summary.spanUs = Math.max(0, summary.lastPtsUs - summary.firstPtsUs);
+    }
+    return summary;
+}
+
+function getRotationDegreesFromTrackView(trackView) {
+    if (
+        !trackView ||
+        !trackView.containerMeta ||
+        !trackView.containerMeta.displayTransform ||
+        typeof trackView.containerMeta.displayTransform.rotationDegrees !== "number"
+    ) {
+        return null;
+    }
+    return trackView.containerMeta.displayTransform.rotationDegrees;
+}
+
+function buildNormalizationCompletePayload({
+    normalized,
+    prerenderPlan,
+    normalizedVideoTrackView,
+    normalizedAudioTrackView,
+    sourceRotationDegrees
+}) {
+    return {
+        normalizedContainer: "webm",
+        normalizationCaptureMode: normalized.captureMode,
+        normalizationRetried: normalized.normalizationRetried,
+        normalizationRetryReason: normalized.retryReason,
+        sourceRotationDegrees,
+        normalizedRotationDegrees: getRotationDegreesFromTrackView(normalizedVideoTrackView),
+        fragmentCount: prerenderPlan.fragments.length,
+        normalizedVideoKeySummary: summarizeTrackViewKeys(normalizedVideoTrackView),
+        normalizedVideoTiming: summarizeTrackViewTiming(normalizedVideoTrackView),
+        normalizedAudioTiming: summarizeTrackViewTiming(normalizedAudioTrackView)
+    };
+}
+
+function retimeVideoTrackViewToExportRange({
+    trackView,
+    exportRange
+}) {
+    if (!trackView || trackView.mediaType !== "video") {
+        return trackView;
+    }
+    if (typeof trackView.sampleCount !== "number" || trackView.sampleCount <= 0) {
+        return trackView;
+    }
+    if (typeof trackView.getSampleByIndex !== "function") {
+        return trackView;
+    }
+
+    const startSeconds = Number(exportRange?.startSeconds);
+    const endSeconds = Number(exportRange?.endSeconds);
+    if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds) || endSeconds <= startSeconds) {
+        return trackView;
+    }
+
+    const sampleCount = trackView.sampleCount;
+    const durationUs = Math.max(1, Math.round((endSeconds - startSeconds) * 1_000_000));
+    const baseSamples = [];
+    for (let index = 0; index < sampleCount; index += 1) {
+        const sample = trackView.getSampleByIndex(index);
+        if (!sample) {
+            continue;
+        }
+        baseSamples.push(sample);
+    }
+    if (baseSamples.length === 0) {
+        return trackView;
+    }
+
+    const deterministicSamples = [];
+    if (baseSamples.length === 1) {
+        const onlySample = baseSamples[0];
+        deterministicSamples.push({
+            pts: 0,
+            dts: 0,
+            duration: durationUs,
+            isKeyframe: onlySample.isKeyframe === true,
+            data: onlySample.data
+        });
+    } else {
+        const denominator = baseSamples.length - 1;
+        for (let index = 0; index < baseSamples.length; index += 1) {
+            const sample = baseSamples[index];
+            let ptsUs = Math.round((index * durationUs) / denominator);
+            if (index === 0) {
+                ptsUs = 0;
+            }
+            let nextPtsUs = durationUs;
+            if (index < baseSamples.length - 1) {
+                nextPtsUs = Math.round(((index + 1) * durationUs) / denominator);
+            }
+            const frameDurationUs = Math.max(1, nextPtsUs - ptsUs);
+            deterministicSamples.push({
+                pts: ptsUs,
+                dts: ptsUs,
+                duration: frameDurationUs,
+                isKeyframe: sample.isKeyframe === true,
+                data: sample.data
+            });
+        }
+    }
+
+    let originalContainerMeta = {};
+    if (trackView.containerMeta && typeof trackView.containerMeta === "object") {
+        originalContainerMeta = trackView.containerMeta;
+    }
+    const containerMeta = {
+        ...originalContainerMeta,
+        trackTimescale: 1_000_000
+    };
+
+    return {
+        mediaType: "video",
+        codecConfig: trackView.codecConfig,
+        containerMeta,
+        sampleCount: deterministicSamples.length,
+        ptsToSeconds(pts) {
+            return pts / 1_000_000;
+        },
+        secondsToPts(seconds) {
+            return Math.round(seconds * 1_000_000);
+        },
+        getSampleByIndex(index) {
+            const sample = deterministicSamples[index];
+            if (!sample) {
+                return null;
+            }
+            return sample;
+        },
+        *iterateSamplesByPtsRange(startPts, endPts) {
+            for (const sample of deterministicSamples) {
+                if (sample.pts < startPts) {
+                    continue;
+                }
+                if (sample.pts > endPts) {
+                    continue;
+                }
+                yield sample;
+            }
+        }
+    };
+}
 
 const CAPTION_FONT_FAMILY = "FrameSmithAntonSC";
 const CAPTION_FONT_URL = "./assets/fonts/AntonSC-Regular.ttf";
@@ -279,6 +486,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const exportBtn = document.getElementById("exportBtn");
     const videoFileInput = document.getElementById("videoFileInput");
     const videoSourceStatus = document.getElementById("videoSourceStatus");
+    const encodeDiagnosticsPanel = document.getElementById("encodeDiagnosticsPanel");
 
     // Demo Orchestration Only:
     // This HTMLVideoElement exists solely to support preview playback.
@@ -299,6 +507,53 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!videoSourceStatus) return;
         videoSourceStatus.textContent = message;
         videoSourceStatus.style.color = isError ? "#b00020" : "";
+    };
+
+    const appendEncodeDiagnosticsPanelLine = (label, payload) => {
+        if (!encodeDiagnosticsPanel) return;
+        let payloadText = "";
+        if (payload !== undefined) {
+            try {
+                payloadText = ` ${JSON.stringify(payload)}`;
+            } catch {
+                payloadText = ` ${String(payload)}`;
+            }
+        }
+        const line = `${label}${payloadText}`;
+        if (encodeDiagnosticsPanel.textContent.length > 0) {
+            encodeDiagnosticsPanel.textContent += "\n";
+        }
+        encodeDiagnosticsPanel.textContent += line;
+        encodeDiagnosticsPanel.scrollTop = encodeDiagnosticsPanel.scrollHeight;
+    };
+
+    const clearEncodeDiagnosticsPanel = () => {
+        if (!encodeDiagnosticsPanel) return;
+        encodeDiagnosticsPanel.textContent = "";
+    };
+
+    const dumpEncodeDiagnosticsPanelToConsole = () => {
+        if (!encodeDiagnosticsPanel) return;
+        const text = String(encodeDiagnosticsPanel.textContent || "").trim();
+        if (text.length === 0) return;
+        console.log("[Encode][DIAGNOSTICS_PANEL_DUMP_START]");
+        console.log(text);
+        console.log("[Encode][DIAGNOSTICS_PANEL_DUMP_END]");
+    };
+
+    const emitEncodeSignal = ({
+        level = "log",
+        label,
+        payload
+    }) => {
+        if (level === "warn") {
+            console.warn(label, payload);
+        } else if (level === "error") {
+            console.error(label, payload);
+        } else {
+            console.log(label, payload);
+        }
+        appendEncodeDiagnosticsPanelLine(label, payload);
     };
 
     const setWorkflowEnabled = (enabled) => {
@@ -611,25 +866,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         videoTrackView,
         accelerationOrderOverride
     }) {
-        const sourceVideoCodec = videoTrackView.codecConfig.codec;
-        const avcC = videoTrackView.codecConfig.avcC;
-        const hvcC = videoTrackView.codecConfig.hvcC;
-        let decodeVideoCodec;
-        if (sourceVideoCodec === "avc1" && avcC instanceof Uint8Array && avcC.length >= 4) {
-            decodeVideoCodec =
-                `avc1.${avcC[1].toString(16).padStart(2, "0").toUpperCase()}` +
-                `${avcC[2].toString(16).padStart(2, "0").toUpperCase()}` +
-                `${avcC[3].toString(16).padStart(2, "0").toUpperCase()}`;
-        } else {
-            decodeVideoCodec = sourceVideoCodec;
-        }
-
-        let codecDescription;
-        if (avcC instanceof Uint8Array) {
-            codecDescription = avcC;
-        } else if (hvcC instanceof Uint8Array) {
-            codecDescription = hvcC;
-        }
+        const codecShape = deriveDecodeVideoCodecAndDescription(videoTrackView);
+        const sourceVideoCodec = codecShape.sourceVideoCodec;
+        const decodeVideoCodec = codecShape.decodeVideoCodec;
+        const codecDescription = codecShape.codecDescription;
 
         let accelerationOrder = ["prefer-hardware", "no-preference", "prefer-software"];
         if (Array.isArray(accelerationOrderOverride) && accelerationOrderOverride.length > 0) {
@@ -729,342 +969,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
-    function createMediaElementVideoDecodeDriver({
-        sourceUrl,
-        fps
+    function resolveEncodeDecodePathMode({
+        didNormalizePredecode
     }) {
-        if (typeof document === "undefined" || typeof VideoFrame !== "function") {
-            throw new Error("media-element video decode fallback requires document + VideoFrame support");
+        if (didNormalizePredecode === true) {
+            return "normalized-webm-predecode";
         }
-        if (typeof sourceUrl !== "string" || sourceUrl.length === 0) {
-            throw new Error("media-element video decode fallback requires a source URL");
-        }
-
-        const decodeFps = Number.isFinite(fps) && fps > 0 ? fps : 30;
-        const frameStepSeconds = 1 / decodeFps;
-        const videoElement = document.createElement("video");
-        videoElement.muted = true;
-        videoElement.playsInline = true;
-        videoElement.preload = "auto";
-        videoElement.src = sourceUrl;
-        let attachedToDom = false;
-        if (typeof document !== "undefined" && document.body) {
-            videoElement.style.position = "fixed";
-            videoElement.style.left = "-99999px";
-            videoElement.style.top = "-99999px";
-            videoElement.style.width = "1px";
-            videoElement.style.height = "1px";
-            videoElement.style.opacity = "0";
-            videoElement.style.pointerEvents = "none";
-            document.body.appendChild(videoElement);
-            attachedToDom = true;
-        }
-
-        let metadataReady = false;
-        let reusableCanvas = null;
-        let reusableCanvasContext = null;
-
-        const ensureMetadata = async () => {
-            if (metadataReady) return;
-            if (videoElement.readyState >= 1 && Number.isFinite(videoElement.duration)) {
-                metadataReady = true;
-                return;
-            }
-            await waitForVideoEvent(videoElement, "loadedmetadata");
-            metadataReady = true;
-        };
-
-        const seekTo = async (targetSeconds) => {
-            const currentTime = Number(videoElement.currentTime);
-            if (Math.abs(currentTime - targetSeconds) <= 0.0005) {
-                return;
-            }
-            videoElement.currentTime = targetSeconds;
-            await waitForVideoEvent(videoElement, "seeked");
-        };
-
-        const closeFrames = (frames) => {
-            if (!Array.isArray(frames)) {
-                return;
-            }
-            for (const frame of frames) {
-                if (frame && typeof frame.close === "function") {
-                    try {
-                        frame.close();
-                    } catch {
-                        // Best effort cleanup.
-                    }
-                }
-            }
-        };
-
-        const decodeVideoFramesBySeeking = async ({ startSeconds, endSeconds }) => {
-            const frames = [];
-            const epsilon = frameStepSeconds / 10;
-
-            for (let timeSeconds = startSeconds; timeSeconds <= endSeconds + epsilon; timeSeconds += frameStepSeconds) {
-                let clampedTime = timeSeconds;
-                if (clampedTime < startSeconds) {
-                    clampedTime = startSeconds;
-                }
-                if (clampedTime > endSeconds) {
-                    clampedTime = endSeconds;
-                }
-                await seekTo(clampedTime);
-                const timestampUs = Math.round(clampedTime * 1_000_000);
-                const frame = cloneFrameFromElement(timestampUs);
-                frames.push(frame);
-            }
-
-            return frames;
-        };
-
-        const decodeVideoFramesByPlayback = async ({ startSeconds, endSeconds }) => {
-            const frames = [];
-
-            await seekTo(startSeconds);
-            videoElement.pause();
-
-            await new Promise((resolve, reject) => {
-                let finished = false;
-                let captureId = null;
-                let timeoutId = null;
-                let lastCapturedMediaTime = Number.NEGATIVE_INFINITY;
-                const captureStepSeconds = Math.max(0.010, frameStepSeconds * 0.45);
-
-                const cleanup = () => {
-                    if (captureId !== null) {
-                        clearInterval(captureId);
-                    }
-                    if (timeoutId !== null) {
-                        clearTimeout(timeoutId);
-                    }
-                    videoElement.pause();
-                    videoElement.removeEventListener("error", onError);
-                };
-
-                const finish = () => {
-                    if (finished) return;
-                    finished = true;
-                    cleanup();
-                    resolve();
-                };
-
-                const fail = (error) => {
-                    if (finished) return;
-                    finished = true;
-                    cleanup();
-                    closeFrames(frames);
-                    reject(error);
-                };
-
-                const onError = () => {
-                    const mediaError = videoElement.error;
-                    let details = "unknown media error";
-                    if (mediaError) {
-                        details = `code=${mediaError.code}`;
-                    }
-                    fail(new Error(`media-element playback decode failed (${details})`));
-                };
-
-                const captureCurrentFrame = () => {
-                    if (finished) return;
-
-                    let mediaTime = Number(videoElement.currentTime);
-                    if (!Number.isFinite(mediaTime)) return;
-                    if (mediaTime < startSeconds - 0.050) return;
-                    if (mediaTime - lastCapturedMediaTime < captureStepSeconds) return;
-                    lastCapturedMediaTime = mediaTime;
-
-                    const timestampUs = Math.round(mediaTime * 1_000_000);
-                    try {
-                        const frame = cloneFrameFromElement(timestampUs);
-                        frames.push(frame);
-                    } catch (error) {
-                        fail(error);
-                    }
-                };
-
-                const checkCompletion = () => {
-                    if (finished) return;
-                    const nowTime = Number(videoElement.currentTime);
-                    if (Number.isFinite(nowTime) && nowTime >= endSeconds - 0.001) {
-                        finish();
-                    }
-                };
-
-                videoElement.addEventListener("error", onError);
-
-                const rangeDurationSeconds = Math.max(0.25, endSeconds - startSeconds);
-                const timeoutMs = Math.max(15_000, Math.round((rangeDurationSeconds * 4_000) + 5_000));
-                timeoutId = setTimeout(() => {
-                    const nowTime = Number(videoElement.currentTime);
-                    if (Number.isFinite(nowTime) && nowTime >= endSeconds - 0.001) {
-                        finish();
-                        return;
-                    }
-                    fail(new Error(`media-element playback decode timed out after ${timeoutMs}ms`));
-                }, timeoutMs);
-
-                captureId = setInterval(() => {
-                    captureCurrentFrame();
-                    checkCompletion();
-                }, 16);
-
-                const playResult = videoElement.play();
-                if (playResult && typeof playResult.then === "function") {
-                    playResult.catch((error) => {
-                        fail(new Error(`media-element playback start failed: ${error?.message ?? String(error)}`));
-                    });
-                }
-            });
-
-            return frames;
-        };
-
-        const cloneFrameFromElement = (timestampUs) => {
-            try {
-                return new VideoFrame(videoElement, { timestamp: timestampUs });
-            } catch {
-                const width = Math.max(1, videoElement.videoWidth || 2);
-                const height = Math.max(1, videoElement.videoHeight || 2);
-                const needsCanvas =
-                    !reusableCanvas ||
-                    reusableCanvas.width !== width ||
-                    reusableCanvas.height !== height;
-                if (needsCanvas) {
-                    if (typeof OffscreenCanvas === "function") {
-                        reusableCanvas = new OffscreenCanvas(width, height);
-                    } else {
-                        reusableCanvas = document.createElement("canvas");
-                        reusableCanvas.width = width;
-                        reusableCanvas.height = height;
-                    }
-                    reusableCanvasContext = reusableCanvas.getContext("2d");
-                }
-
-                if (!reusableCanvasContext) {
-                    throw new Error("unable to create fallback canvas for media-element decode");
-                }
-
-                reusableCanvasContext.clearRect(0, 0, width, height);
-                reusableCanvasContext.drawImage(videoElement, 0, 0, width, height);
-                return new VideoFrame(reusableCanvas, { timestamp: timestampUs });
-            }
-        };
-
-        return {
-            async decodeVideoFrames({ exportRange }) {
-                await ensureMetadata();
-
-                const durationSeconds = Number(videoElement.duration);
-                if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-                    throw new Error("source duration is unavailable for media-element decode fallback");
-                }
-
-                const requestedStart = Number(exportRange?.startSeconds);
-                const requestedEnd = Number(exportRange?.endSeconds);
-                const safeStart = Number.isFinite(requestedStart) ? requestedStart : 0;
-                const safeEnd = Number.isFinite(requestedEnd) ? requestedEnd : safeStart;
-
-                const maxSeekable = Math.max(0, durationSeconds - frameStepSeconds / 2);
-                const startSeconds = Math.max(0, Math.min(safeStart, maxSeekable));
-                const endSeconds = Math.max(startSeconds, Math.min(safeEnd, maxSeekable));
-
-                try {
-                    const playbackFrames = await decodeVideoFramesByPlayback({ startSeconds, endSeconds });
-                    if (playbackFrames.length >= 2) {
-                        return playbackFrames;
-                    }
-                } catch (error) {
-                    console.warn("[Encode] media-element playback decode failed; using seek sampling fallback", {
-                        reason: error?.message ?? String(error),
-                        startSeconds,
-                        endSeconds
-                    });
-                }
-
-                return decodeVideoFramesBySeeking({ startSeconds, endSeconds });
-            },
-            dispose() {
-                try {
-                    videoElement.pause();
-                } catch {
-                    // no-op
-                }
-                if (attachedToDom && videoElement.parentNode) {
-                    videoElement.parentNode.removeChild(videoElement);
-                    attachedToDom = false;
-                }
-            }
-        };
-    }
-
-    function createHybridDecodePort({
-        videoDecodePort,
-        audioDecodePort
-    }) {
-        return {
-            async decodeRange({ plan, exportRange }) {
-                const videoBatch = videoDecodePort
-                    ? await videoDecodePort.decodeRange({ plan, exportRange })
-                    : null;
-                const audioBatch = audioDecodePort
-                    ? await audioDecodePort.decodeRange({ plan, exportRange })
-                    : null;
-
-                const decodedVideoFrames = Array.isArray(videoBatch?.decodedVideoFrames)
-                    ? videoBatch.decodedVideoFrames
-                    : [];
-                const decodedAudioData = Array.isArray(audioBatch?.decodedAudioData)
-                    ? audioBatch.decodedAudioData
-                    : [];
-
-                return new DecodedContainerBackedFragmentBatch({
-                    decodedVideoFrames,
-                    decodedAudioData
-                });
-            }
-        };
-    }
-
-    function createFallbackDecodePort({
-        primaryDecodePort,
-        fallbackDecodePort,
-        onFallback
-    }) {
-        let usingFallback = false;
-
-        return {
-            async decodeRange({ plan, exportRange }) {
-                if (usingFallback || !primaryDecodePort) {
-                    if (!fallbackDecodePort) {
-                        throw new Error("Fallback decode strategy is unavailable.");
-                    }
-                    return fallbackDecodePort.decodeRange({ plan, exportRange });
-                }
-
-                try {
-                    return await primaryDecodePort.decodeRange({ plan, exportRange });
-                } catch (error) {
-                    usingFallback = true;
-                    if (typeof onFallback === "function") {
-                        onFallback(error, exportRange);
-                    }
-                    if (!fallbackDecodePort) {
-                        throw error;
-                    }
-                    return fallbackDecodePort.decodeRange({ plan, exportRange });
-                }
-            }
-        };
-    }
-
-    function getErrorMessage(error) {
-        if (error && typeof error.message === "string" && error.message.length > 0) {
-            return error.message;
-        }
-        return String(error);
+        return "direct-webcodecs";
     }
 
     function resolveSourceUrlForFallback({
@@ -1091,15 +1002,520 @@ document.addEventListener("DOMContentLoaded", async () => {
         return "";
     }
 
+    function selectWebmNormalizationMimeType() {
+        if (typeof MediaRecorder !== "function") {
+            return "";
+        }
+
+        const candidates = [
+            "video/webm;codecs=vp9,opus",
+            "video/webm;codecs=vp8,opus",
+            "video/webm"
+        ];
+        if (typeof MediaRecorder.isTypeSupported !== "function") {
+            return candidates[0];
+        }
+
+        for (const candidate of candidates) {
+            if (MediaRecorder.isTypeSupported(candidate)) {
+                return candidate;
+            }
+        }
+        return "";
+    }
+
+    function collectProceduralItemsByKind({
+        timeline,
+        kind
+    }) {
+        const collectedItems = [];
+        if (!timeline || !Array.isArray(timeline.tracks)) {
+            return collectedItems;
+        }
+
+        for (const track of timeline.tracks) {
+            if (!track || !Array.isArray(track.clips)) {
+                continue;
+            }
+            for (const clip of track.clips) {
+                if (!clip || clip.kind !== kind || !Array.isArray(clip.items)) {
+                    continue;
+                }
+                for (const item of clip.items) {
+                    collectedItems.push(item);
+                }
+            }
+        }
+
+        return collectedItems;
+    }
+
+    function summarizeTrackViewKeys(trackView) {
+        const summary = {
+            sampleCount: 0,
+            keyTrueCount: 0,
+            keyFalseCount: 0,
+            keyUnknownCount: 0
+        };
+        if (!trackView || typeof trackView.sampleCount !== "number") {
+            return summary;
+        }
+
+        summary.sampleCount = trackView.sampleCount;
+        if (typeof trackView.getSampleByIndex !== "function") {
+            summary.keyUnknownCount = summary.sampleCount;
+            return summary;
+        }
+
+        for (let index = 0; index < trackView.sampleCount; index += 1) {
+            const sample = trackView.getSampleByIndex(index);
+            if (sample && sample.isKeyframe === true) {
+                summary.keyTrueCount += 1;
+                continue;
+            }
+            if (sample && sample.isKeyframe === false) {
+                summary.keyFalseCount += 1;
+                continue;
+            }
+            summary.keyUnknownCount += 1;
+        }
+
+        return summary;
+    }
+
+    function summarizeTrackViewTiming(trackView) {
+        const summary = {
+            sampleCount: 0,
+            firstPtsUs: null,
+            lastPtsUs: null,
+            spanUs: 0
+        };
+        if (!trackView || typeof trackView.sampleCount !== "number") {
+            return summary;
+        }
+        summary.sampleCount = trackView.sampleCount;
+        if (trackView.sampleCount === 0 || typeof trackView.getSampleByIndex !== "function") {
+            return summary;
+        }
+
+        const first = trackView.getSampleByIndex(0);
+        const last = trackView.getSampleByIndex(trackView.sampleCount - 1);
+        summary.firstPtsUs = typeof first?.pts === "number" ? first.pts : null;
+        summary.lastPtsUs = typeof last?.pts === "number" ? last.pts : null;
+        if (summary.firstPtsUs !== null && summary.lastPtsUs !== null) {
+            summary.spanUs = Math.max(0, summary.lastPtsUs - summary.firstPtsUs);
+        }
+        return summary;
+    }
+
+    function getRotationDegreesFromTrackView(trackView) {
+        if (
+            !trackView ||
+            !trackView.containerMeta ||
+            !trackView.containerMeta.displayTransform ||
+            typeof trackView.containerMeta.displayTransform.rotationDegrees !== "number"
+        ) {
+            return null;
+        }
+        return trackView.containerMeta.displayTransform.rotationDegrees;
+    }
+
+    function buildNormalizationCompletePayload({
+        normalized,
+        prerenderPlan,
+        normalizedVideoTrackView,
+        normalizedAudioTrackView,
+        sourceRotationDegrees
+    }) {
+        return {
+            normalizedContainer: "webm",
+            normalizationCaptureMode: normalized.captureMode,
+            normalizationRetried: normalized.normalizationRetried,
+            normalizationRetryReason: normalized.retryReason,
+            sourceRotationDegrees,
+            normalizedRotationDegrees: getRotationDegreesFromTrackView(normalizedVideoTrackView),
+            fragmentCount: prerenderPlan.fragments.length,
+            normalizedVideoKeySummary: summarizeTrackViewKeys(normalizedVideoTrackView),
+            normalizedVideoTiming: summarizeTrackViewTiming(normalizedVideoTrackView),
+            normalizedAudioTiming: summarizeTrackViewTiming(normalizedAudioTrackView)
+        };
+    }
+
+    function deriveDecodeVideoCodecAndDescription(videoTrackView) {
+        const sourceVideoCodec = videoTrackView.codecConfig.codec;
+        const avcC = videoTrackView.codecConfig.avcC;
+        const hvcC = videoTrackView.codecConfig.hvcC;
+
+        let decodeVideoCodec = sourceVideoCodec;
+        if (sourceVideoCodec === "avc1" && avcC instanceof Uint8Array && avcC.length >= 4) {
+            decodeVideoCodec =
+                `avc1.${avcC[1].toString(16).padStart(2, "0").toUpperCase()}` +
+                `${avcC[2].toString(16).padStart(2, "0").toUpperCase()}` +
+                `${avcC[3].toString(16).padStart(2, "0").toUpperCase()}`;
+        }
+
+        let codecDescription = null;
+        if (avcC instanceof Uint8Array) {
+            codecDescription = avcC;
+        } else if (hvcC instanceof Uint8Array) {
+            codecDescription = hvcC;
+        }
+
+        return {
+            sourceVideoCodec,
+            decodeVideoCodec,
+            codecDescription
+        };
+    }
+
+    async function probeVideoDecoderSupportForTrack({
+        videoTrackView,
+        accelerationOrder
+    }) {
+        if (typeof VideoDecoder !== "function") {
+            return {
+                supported: false,
+                checks: [],
+                reason: "VideoDecoder is unavailable"
+            };
+        }
+
+        if (typeof VideoDecoder.isConfigSupported !== "function") {
+            return {
+                supported: true,
+                checks: [],
+                reason: "VideoDecoder.isConfigSupported unavailable"
+            };
+        }
+
+        const codecShape = deriveDecodeVideoCodecAndDescription(videoTrackView);
+        const checks = [];
+        for (const hardwareAcceleration of accelerationOrder) {
+            const candidate = {
+                codec: codecShape.decodeVideoCodec,
+                hardwareAcceleration
+            };
+            if (codecShape.codecDescription) {
+                candidate.description = codecShape.codecDescription;
+            }
+
+            try {
+                const support = await VideoDecoder.isConfigSupported(candidate);
+                const supported = Boolean(support && support.supported);
+                checks.push({ hardwareAcceleration, supported });
+                if (supported) {
+                    return {
+                        supported: true,
+                        checks,
+                        reason: "supported"
+                    };
+                }
+            } catch (error) {
+                checks.push({
+                    hardwareAcceleration,
+                    supported: false,
+                    reason: error?.message ?? String(error)
+                });
+            }
+        }
+
+        return {
+            supported: false,
+            checks,
+            reason: "all decoder support probes reported unsupported"
+        };
+    }
+
+async function normalizeSourceRangeToWebmBytes({
+    sourceUrl,
+    exportRange
+}) {
+        if (typeof document === "undefined") {
+            throw new Error("source normalization requires document");
+        }
+        if (typeof MediaRecorder !== "function") {
+            throw new Error("source normalization requires MediaRecorder");
+        }
+        if (typeof sourceUrl !== "string" || sourceUrl.length === 0) {
+            throw new Error("source normalization requires a source URL");
+        }
+
+        const videoElement = document.createElement("video");
+        videoElement.src = sourceUrl;
+        videoElement.muted = true;
+        videoElement.playsInline = true;
+        videoElement.preload = "auto";
+
+        videoElement.style.position = "fixed";
+        videoElement.style.right = "8px";
+        videoElement.style.bottom = "8px";
+        videoElement.style.width = "120px";
+        videoElement.style.height = "auto";
+        videoElement.style.opacity = "0.01";
+        videoElement.style.pointerEvents = "none";
+        videoElement.controls = false;
+        document.body.appendChild(videoElement);
+
+        let canvasElement = null;
+        let canvasContext = null;
+        let stream = null;
+        let capturedVideoTrack = null;
+        let mediaRecorder = null;
+        const captureMode = "canvas-frame-drive";
+        try {
+            await waitForVideoEvent(videoElement, "loadedmetadata");
+
+            const startSecondsRequested = Number(exportRange?.startSeconds);
+            const endSecondsRequested = Number(exportRange?.endSeconds);
+            if (!Number.isFinite(startSecondsRequested) || !Number.isFinite(endSecondsRequested)) {
+                throw new Error("source normalization requires numeric exportRange");
+            }
+
+            const sourceDurationSeconds = Number(videoElement.duration);
+            if (!Number.isFinite(sourceDurationSeconds) || sourceDurationSeconds <= 0) {
+                throw new Error("source normalization: source duration unavailable");
+            }
+
+            const startSeconds = Math.max(0, Math.min(startSecondsRequested, sourceDurationSeconds));
+            const endSeconds = Math.max(
+                startSeconds,
+                Math.min(endSecondsRequested, sourceDurationSeconds)
+            );
+            if (endSeconds <= startSeconds) {
+                throw new Error("source normalization: invalid range");
+            }
+
+            const canvasWidth = Math.max(1, Number(videoElement.videoWidth) || 1);
+            const canvasHeight = Math.max(1, Number(videoElement.videoHeight) || 1);
+            canvasElement = document.createElement("canvas");
+            canvasElement.width = canvasWidth;
+            canvasElement.height = canvasHeight;
+            canvasElement.style.position = "fixed";
+            canvasElement.style.right = "8px";
+            canvasElement.style.bottom = "8px";
+            canvasElement.style.width = "120px";
+            canvasElement.style.height = "auto";
+            canvasElement.style.opacity = "0.01";
+            canvasElement.style.pointerEvents = "none";
+            document.body.appendChild(canvasElement);
+
+            canvasContext = canvasElement.getContext("2d");
+            if (!canvasContext) {
+                throw new Error("source normalization: unable to create canvas context");
+            }
+
+            if (typeof canvasElement.captureStream !== "function") {
+                throw new Error("source normalization: canvas captureStream unavailable");
+            }
+            stream = canvasElement.captureStream(0);
+            capturedVideoTrack = stream.getVideoTracks()[0] || null;
+            if (!capturedVideoTrack || typeof capturedVideoTrack.requestFrame !== "function") {
+                throw new Error("source normalization: canvas capture track requestFrame unavailable");
+            }
+
+            const mimeType = selectWebmNormalizationMimeType();
+            if (typeof mimeType !== "string" || mimeType.length === 0) {
+                throw new Error("source normalization: no supported WebM MediaRecorder mimeType");
+            }
+            console.log("[Encode] source normalization capture mode", {
+                captureMode,
+                mimeType
+            });
+
+            const chunks = [];
+            mediaRecorder = new MediaRecorder(stream, {
+                mimeType,
+                videoBitsPerSecond: 1_400_000,
+                audioBitsPerSecond: 128_000
+            });
+            mediaRecorder.addEventListener("dataavailable", (event) => {
+                if (event && event.data && event.data.size > 0) {
+                    chunks.push(event.data);
+                }
+            });
+
+            const stopped = new Promise((resolve, reject) => {
+                mediaRecorder.addEventListener("stop", () => resolve(), { once: true });
+                mediaRecorder.addEventListener("error", () => {
+                    const error = mediaRecorder.error;
+                    let reason = "unknown recorder error";
+                    if (error && typeof error.message === "string") {
+                        reason = error.message;
+                    }
+                    reject(new Error(`source normalization recorder failed: ${reason}`));
+                }, { once: true });
+            });
+
+            mediaRecorder.start();
+
+            const frameRate = PRE_RENDER_FPS;
+            const durationSeconds = endSeconds - startSeconds;
+            const frameCount = Math.max(1, Math.floor(durationSeconds * frameRate) + 1);
+            const seekTolerance = 0.0005;
+
+            const seekAndCaptureFrame = async (targetTimeSeconds) => {
+                const currentTime = Number(videoElement.currentTime);
+                if (!Number.isFinite(currentTime) || Math.abs(currentTime - targetTimeSeconds) > seekTolerance) {
+                    videoElement.currentTime = targetTimeSeconds;
+                    await waitForVideoEvent(videoElement, "seeked");
+                }
+                if (videoElement.readyState < 2) {
+                    await waitForVideoEvent(videoElement, "canplay");
+                }
+                canvasContext.clearRect(0, 0, canvasWidth, canvasHeight);
+                canvasContext.drawImage(videoElement, 0, 0, canvasWidth, canvasHeight);
+                capturedVideoTrack.requestFrame();
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            };
+
+            for (let index = 0; index < frameCount; index += 1) {
+                const offsetSeconds = index / frameRate;
+                const targetTimeSeconds = Math.min(endSeconds, startSeconds + offsetSeconds);
+                await seekAndCaptureFrame(targetTimeSeconds);
+            }
+
+            const finalFrameTimeSeconds = Math.min(endSeconds, startSeconds + ((frameCount - 1) / frameRate));
+            if ((endSeconds - finalFrameTimeSeconds) > (0.5 / frameRate)) {
+                await seekAndCaptureFrame(endSeconds);
+            }
+
+            videoElement.pause();
+            if (mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+            }
+            await stopped;
+
+            const blob = new Blob(chunks, { type: mimeType });
+            if (blob.size <= 0) {
+                throw new Error("source normalization recorder produced empty WebM");
+            }
+            const arrayBuffer = await blob.arrayBuffer();
+            return {
+                bytes: new Uint8Array(arrayBuffer),
+                captureMode
+            };
+        } finally {
+            try {
+                videoElement.pause();
+            } catch {
+                // no-op
+            }
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                try {
+                    mediaRecorder.stop();
+                } catch {
+                    // no-op
+                }
+            }
+            if (stream) {
+                const tracks = stream.getTracks();
+                for (const track of tracks) {
+                    try {
+                        track.stop();
+                    } catch {
+                        // no-op
+                    }
+                }
+            }
+            if (stream) {
+                const tracks = stream.getTracks();
+                for (const track of tracks) {
+                    try {
+                        track.stop();
+                    } catch {
+                        // no-op
+                    }
+                }
+            }
+            if (videoElement.parentNode) {
+                videoElement.parentNode.removeChild(videoElement);
+            }
+            if (canvasElement && canvasElement.parentNode) {
+                canvasElement.parentNode.removeChild(canvasElement);
+            }
+        }
+    }
+
+async function normalizeUnsupportedSourceToWorkingSet({
+    timeline,
+    sourceUrl,
+    exportRange,
+    originalAudioTrackView
+}) {
+        const normalizationResult = await normalizeSourceRangeToWebmBytes({
+            sourceUrl,
+            exportRange
+        });
+        const normalizedWebmBytes = normalizationResult.bytes;
+        const normalizedContainer = await openContainer({
+            containerType: "webm",
+            bytes: normalizedWebmBytes
+        });
+        const normalizedTrackViews = normalizedContainer.createTrackViews();
+        const normalizedVideoTrackViews = normalizedTrackViews.filter(
+            (trackView) => trackView && trackView.mediaType === "video"
+        );
+        const retimedNormalizedVideoTrackViews = normalizedVideoTrackViews.map((trackView) =>
+            retimeVideoTrackViewToExportRange({
+                trackView,
+                exportRange
+            })
+        );
+
+        for (const trackView of retimedNormalizedVideoTrackViews) {
+            if (!trackView.containerMeta || typeof trackView.containerMeta !== "object") {
+                trackView.containerMeta = {};
+            }
+            // Normalization capture records already-rendered pixels from a media element/canvas.
+            // Those pixels are display-oriented, so source container rotation must not be re-applied.
+            trackView.containerMeta.displayTransform = {
+                rotationDegrees: 0
+            };
+        }
+
+        const mergedTrackViews = [];
+        for (const videoTrackView of retimedNormalizedVideoTrackViews) {
+            mergedTrackViews.push(videoTrackView);
+        }
+        if (originalAudioTrackView && originalAudioTrackView.mediaType === "audio") {
+            mergedTrackViews.push(originalAudioTrackView);
+        }
+        if (mergedTrackViews.length === 0) {
+            throw new Error("source normalization did not produce usable track views");
+        }
+
+        const textOverlayItems = collectProceduralItemsByKind({
+            timeline,
+            kind: "text-overlay"
+        });
+        const imageOverlayItems = collectProceduralItemsByKind({
+            timeline,
+            kind: "image-overlay"
+        });
+
+        const normalizedTimeline = createTimelineFromPreparedAssets({
+            trackViews: mergedTrackViews,
+            textOverlayItems,
+            imageOverlayItems
+        });
+        const normalizedSourceBlob = new Blob([normalizedWebmBytes], { type: "video/webm" });
+        const normalizedSourceUrl = URL.createObjectURL(normalizedSourceBlob);
+        return {
+            timeline: normalizedTimeline,
+            sourceUrl: normalizedSourceUrl,
+            captureMode: normalizationResult.captureMode,
+            normalizationRetried: false,
+            retryReason: null
+        };
+    }
+
     function createSharedRenderExecutionContext({
         decodePort,
         timecodeFragmentIntentResolvers,
         timeline,
         exportFps,
         configuredVideoEncoderConfig,
-        videoTrackView,
-        videoRotationDegreesOverride,
-        decodeChunkSecondsOverride
+        videoTrackView
     }) {
         let videoRotationDegrees = 0;
         if (
@@ -1109,14 +1525,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             typeof videoTrackView.containerMeta.displayTransform.rotationDegrees === "number"
         ) {
             videoRotationDegrees = videoTrackView.containerMeta.displayTransform.rotationDegrees;
-        }
-        if (typeof videoRotationDegreesOverride === "number") {
-            videoRotationDegrees = videoRotationDegreesOverride;
-        }
-
-        let decodeChunkSeconds = null;
-        if (typeof decodeChunkSecondsOverride === "number" && Number.isFinite(decodeChunkSecondsOverride)) {
-            decodeChunkSeconds = decodeChunkSecondsOverride;
         }
 
         return {
@@ -1139,7 +1547,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     sampleRate: 48_000,
                     channels: 2
                 },
-                decodeChunkSeconds,
+                decodeChunkSeconds: null,
                 background: { r: 0, g: 0, b: 0, a: 1 }
             }
         };
@@ -1333,12 +1741,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     encodeBtn.onclick = async () => {
         let failedStage = "init";
         const encodeStartedAt = performance.now();
+        let normalizationSourceUrlToRevoke = null;
+        let didNormalizePredecode = false;
+        let didRuntimeSoftwareFallback = false;
         try {
             failedStage = "validate";
             if (!timeline) {
                 throw new Error("Timeline not ready. Load a video source first.");
             }
             const tStart = performance.now();
+            clearEncodeDiagnosticsPanel();
             console.log("[Encode] start");
             if (typeof VideoEncoder !== "function" || typeof AudioEncoder !== "function") {
                 throw new Error("WebCodecs VideoEncoder/AudioEncoder is not available in this browser.");
@@ -1408,18 +1820,19 @@ document.addEventListener("DOMContentLoaded", async () => {
                 endSeconds: exportRange.endSeconds
             });
 
-            const prerenderPlan = buildPrerenderPlanFromTimeline({ timeline });
+            let executionTimeline = timeline;
+            let prerenderPlan = buildPrerenderPlanFromTimeline({ timeline: executionTimeline });
             console.log("[Encode] prerender plan ready", {
                 fragmentCount: prerenderPlan.fragments.length
             });
 
             failedStage = "track_select";
-            const videoTrackView = timeline.tracks
+            let videoTrackView = executionTimeline.tracks
                 .flatMap(track => track.clips)
                 .map(clip => clip.trackView)
                 .find(view => view && view.mediaType === "video" && view.codecConfig);
 
-            const audioTrackView = timeline.tracks
+            let audioTrackView = executionTimeline.tracks
                 .flatMap(track => track.clips)
                 .map(clip => clip.trackView)
                 .find(view => view && view.mediaType === "audio" && view.codecConfig);
@@ -1429,6 +1842,60 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             if (!audioTrackView) {
                 throw new Error("No container-backed audio asset found on timeline.");
+            }
+            const sourceRotationDegrees = getRotationDegreesFromTrackView(videoTrackView);
+
+            const sourceUrlForNormalization = resolveSourceUrlForFallback({
+                currentVideoSourceUrl: currentVideoSourceObjectUrl,
+                videoElement: video
+            });
+            const decoderSupportProbe = await probeVideoDecoderSupportForTrack({
+                videoTrackView,
+                accelerationOrder: ["prefer-hardware", "no-preference", "prefer-software"]
+            });
+            if (!decoderSupportProbe.supported && sourceUrlForNormalization) {
+                emitEncodeSignal({
+                    level: "warn",
+                    label: "[Encode] source normalization requested for unsupported decoder config",
+                    payload: {
+                    codec: videoTrackView.codecConfig?.codec,
+                    checks: decoderSupportProbe.checks
+                    }
+                });
+                const normalized = await normalizeUnsupportedSourceToWorkingSet({
+                    timeline: executionTimeline,
+                    sourceUrl: sourceUrlForNormalization,
+                    exportRange,
+                    originalAudioTrackView: audioTrackView
+                });
+                didNormalizePredecode = true;
+                executionTimeline = normalized.timeline;
+                normalizationSourceUrlToRevoke = normalized.sourceUrl;
+                prerenderPlan = buildPrerenderPlanFromTimeline({ timeline: executionTimeline });
+
+                videoTrackView = executionTimeline.tracks
+                    .flatMap(track => track.clips)
+                    .map(clip => clip.trackView)
+                    .find(view => view && view.mediaType === "video" && view.codecConfig);
+                audioTrackView = executionTimeline.tracks
+                    .flatMap(track => track.clips)
+                    .map(clip => clip.trackView)
+                    .find(view => view && view.mediaType === "audio" && view.codecConfig);
+
+                if (!videoTrackView || !audioTrackView) {
+                    throw new Error("Source normalization failed to produce usable media track views.");
+                }
+
+                emitEncodeSignal({
+                    label: "[Encode] source normalization complete",
+                    payload: buildNormalizationCompletePayload({
+                        normalized,
+                        prerenderPlan,
+                        normalizedVideoTrackView: videoTrackView,
+                        normalizedAudioTrackView: audioTrackView,
+                        sourceRotationDegrees
+                    })
+                });
             }
 
             const videoEncodedChunks = [];
@@ -1553,34 +2020,21 @@ document.addEventListener("DOMContentLoaded", async () => {
                 };
             };
 
-            const primaryVideoDecoderResult = await createWrappedVideoDecoder({
-                accelerationOrder: ["prefer-hardware", "no-preference", "prefer-software"]
-            });
-            const softwareVideoDecoderResult = await createWrappedVideoDecoder({
-                accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
-            });
-
-            const audioOnlyDecodePort = createContainerWebCodecsDecodePort({
-                audioDecoder: wrappedAudioDecoder
-            });
-
-            let mediaElementFallbackDecodePort = null;
-            let mediaElementFallbackActive = false;
-            const sourceUrlForFallback = resolveSourceUrlForFallback({
-                currentVideoSourceUrl: currentVideoSourceObjectUrl,
-                videoElement: video
-            });
-            if (sourceUrlForFallback) {
-                const mediaElementDriver = createMediaElementVideoDecodeDriver({
-                    sourceUrl: sourceUrlForFallback,
-                    fps: exportFps
+            let primaryVideoDecoderResult;
+            let softwareVideoDecoderResult = {
+                wrappedVideoDecoder: null,
+                setupError: null
+            };
+            if (didNormalizePredecode) {
+                primaryVideoDecoderResult = await createWrappedVideoDecoder({
+                    accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
                 });
-                const mediaElementVideoDecodePort = createMediaElementDecodePort({
-                    mediaElementDriver
+            } else {
+                primaryVideoDecoderResult = await createWrappedVideoDecoder({
+                    accelerationOrder: ["prefer-hardware", "no-preference", "prefer-software"]
                 });
-                mediaElementFallbackDecodePort = createHybridDecodePort({
-                    videoDecodePort: mediaElementVideoDecodePort,
-                    audioDecodePort: audioOnlyDecodePort
+                softwareVideoDecoderResult = await createWrappedVideoDecoder({
+                    accelerationOrder: ["prefer-software", "no-preference", "prefer-hardware"]
                 });
             }
 
@@ -1600,123 +2054,55 @@ document.addEventListener("DOMContentLoaded", async () => {
                 });
             }
 
-            // Temporary survival path:
-            // This runtime fallback chain exists to keep export alive on failing mobile decode paths.
-            // Architecture target is documented in docs/framesmith-architecture.md:
-            // "Source Normalization Seam (Next Step)" + "WebM Demux Direction (MVP Plan)".
-            // Plan: normalize unsupported clip ranges into a WebM intermediate first,
-            // then run the standard deterministic demux/decode path here.
-            if (primaryWebCodecsDecodePort && softwareWebCodecsDecodePort) {
-                let softwareThenMediaDecodePort = softwareWebCodecsDecodePort;
-                if (mediaElementFallbackDecodePort) {
-                    softwareThenMediaDecodePort = createFallbackDecodePort({
-                        primaryDecodePort: softwareWebCodecsDecodePort,
-                        fallbackDecodePort: mediaElementFallbackDecodePort,
-                        onFallback(error, range) {
-                            mediaElementFallbackActive = true;
-                            let rangeStartSeconds = null;
-                            let rangeEndSeconds = null;
-                            if (range && typeof range.startSeconds === "number") {
-                                rangeStartSeconds = range.startSeconds;
+            if (primaryWebCodecsDecodePort) {
+                if (softwareWebCodecsDecodePort) {
+                    let softwareFallbackActive = false;
+                    decodePort = {
+                        async decodeRange({ plan, exportRange: range }) {
+                            if (softwareFallbackActive) {
+                                return softwareWebCodecsDecodePort.decodeRange({
+                                    plan,
+                                    exportRange: range
+                                });
                             }
-                            if (range && typeof range.endSeconds === "number") {
-                                rangeEndSeconds = range.endSeconds;
+                            try {
+                                return await primaryWebCodecsDecodePort.decodeRange({
+                                    plan,
+                                    exportRange: range
+                                });
+                            } catch (error) {
+                                softwareFallbackActive = true;
+                                didRuntimeSoftwareFallback = true;
+                                let rangeStartSeconds = null;
+                                let rangeEndSeconds = null;
+                                if (range && typeof range.startSeconds === "number") {
+                                    rangeStartSeconds = range.startSeconds;
+                                }
+                                if (range && typeof range.endSeconds === "number") {
+                                    rangeEndSeconds = range.endSeconds;
+                                }
+                                emitEncodeSignal({
+                                    level: "warn",
+                                    label: "[Encode] decode strategy fallback engaged",
+                                    payload: {
+                                        reason: error?.message ?? String(error),
+                                        rangeStartSeconds,
+                                        rangeEndSeconds,
+                                        nextStrategy: "webcodecs-video(software)"
+                                    }
+                                });
+                                return softwareWebCodecsDecodePort.decodeRange({
+                                    plan,
+                                    exportRange: range
+                                });
                             }
-                            console.warn("[Encode] decode strategy fallback engaged", {
-                                reason: getErrorMessage(error),
-                                rangeStartSeconds,
-                                rangeEndSeconds,
-                                nextStrategy: "media-element-video + webcodecs-audio"
-                            });
                         }
-                    });
-                }
-
-                decodePort = createFallbackDecodePort({
-                    primaryDecodePort: primaryWebCodecsDecodePort,
-                    fallbackDecodePort: softwareThenMediaDecodePort,
-                    onFallback(error, range) {
-                        let rangeStartSeconds = null;
-                        let rangeEndSeconds = null;
-                        if (range && typeof range.startSeconds === "number") {
-                            rangeStartSeconds = range.startSeconds;
-                        }
-                        if (range && typeof range.endSeconds === "number") {
-                            rangeEndSeconds = range.endSeconds;
-                        }
-                        console.warn("[Encode] decode strategy fallback engaged", {
-                            reason: getErrorMessage(error),
-                            rangeStartSeconds,
-                            rangeEndSeconds,
-                            nextStrategy: "webcodecs-video(software)"
-                        });
-                    }
-                });
-            } else if (primaryWebCodecsDecodePort) {
-                if (mediaElementFallbackDecodePort) {
-                    decodePort = createFallbackDecodePort({
-                        primaryDecodePort: primaryWebCodecsDecodePort,
-                        fallbackDecodePort: mediaElementFallbackDecodePort,
-                        onFallback(error, range) {
-                            mediaElementFallbackActive = true;
-                            let rangeStartSeconds = null;
-                            let rangeEndSeconds = null;
-                            if (range && typeof range.startSeconds === "number") {
-                                rangeStartSeconds = range.startSeconds;
-                            }
-                            if (range && typeof range.endSeconds === "number") {
-                                rangeEndSeconds = range.endSeconds;
-                            }
-                            console.warn("[Encode] decode strategy fallback engaged", {
-                                reason: getErrorMessage(error),
-                                rangeStartSeconds,
-                                rangeEndSeconds,
-                                nextStrategy: "media-element-video + webcodecs-audio"
-                            });
-                        }
-                    });
+                    };
                 } else {
                     decodePort = primaryWebCodecsDecodePort;
                 }
             } else if (softwareWebCodecsDecodePort) {
-                if (mediaElementFallbackDecodePort) {
-                    decodePort = createFallbackDecodePort({
-                        primaryDecodePort: softwareWebCodecsDecodePort,
-                        fallbackDecodePort: mediaElementFallbackDecodePort,
-                        onFallback(error, range) {
-                            mediaElementFallbackActive = true;
-                            let rangeStartSeconds = null;
-                            let rangeEndSeconds = null;
-                            if (range && typeof range.startSeconds === "number") {
-                                rangeStartSeconds = range.startSeconds;
-                            }
-                            if (range && typeof range.endSeconds === "number") {
-                                rangeEndSeconds = range.endSeconds;
-                            }
-                            console.warn("[Encode] decode strategy fallback engaged", {
-                                reason: getErrorMessage(error),
-                                rangeStartSeconds,
-                                rangeEndSeconds,
-                                nextStrategy: "media-element-video + webcodecs-audio"
-                            });
-                        }
-                    });
-                } else {
-                    decodePort = softwareWebCodecsDecodePort;
-                }
-            } else if (mediaElementFallbackDecodePort) {
-                mediaElementFallbackActive = true;
-                let setupReason = "video decoder setup failed";
-                if (primaryVideoDecoderResult.setupError) {
-                    setupReason = getErrorMessage(primaryVideoDecoderResult.setupError);
-                } else if (softwareVideoDecoderResult.setupError) {
-                    setupReason = getErrorMessage(softwareVideoDecoderResult.setupError);
-                }
-                console.warn("[Encode] video decoder unavailable/unsupported; using fallback decode strategy", {
-                    reason: setupReason,
-                    strategy: "media-element-video + webcodecs-audio"
-                });
-                decodePort = mediaElementFallbackDecodePort;
+                decodePort = softwareWebCodecsDecodePort;
             } else {
                 if (primaryVideoDecoderResult.setupError) {
                     throw primaryVideoDecoderResult.setupError;
@@ -1769,26 +2155,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                 bitrate: 128_000
             });
 
-            let videoRotationDegreesOverride;
-            if (mediaElementFallbackActive) {
-                videoRotationDegreesOverride = 0;
-            }
-            let decodeChunkSecondsOverride;
-            if (mediaElementFallbackActive) {
-                const exportDurationSeconds = exportRange.endSeconds - exportRange.startSeconds;
-                if (Number.isFinite(exportDurationSeconds) && exportDurationSeconds > 0) {
-                    decodeChunkSecondsOverride = exportDurationSeconds;
-                }
-            }
             const sharedRenderContext = createSharedRenderExecutionContext({
                 decodePort,
                 timecodeFragmentIntentResolvers,
-                timeline,
+                timeline: executionTimeline,
                 exportFps,
                 configuredVideoEncoderConfig,
-                videoTrackView,
-                videoRotationDegreesOverride,
-                decodeChunkSecondsOverride
+                videoTrackView
             });
             const exportExecutionContext = createExportExecutionContext({
                 sharedContext: sharedRenderContext,
@@ -1848,20 +2221,57 @@ document.addEventListener("DOMContentLoaded", async () => {
                 audioChunks: audioEncodedChunks.length,
                 elapsedMs: Math.round(performance.now() - tStart)
             });
-            console.log("[Encode][SUMMARY]", {
-                ok: true,
-                failedStage: null,
-                elapsedMs: Math.round(performance.now() - encodeStartedAt)
+            const decodePathMode = resolveEncodeDecodePathMode({
+                didNormalizePredecode
+            });
+            emitEncodeSignal({
+                label: "[Encode][DECODE_PATH]",
+                payload: {
+                    mode: decodePathMode,
+                    normalizedPredecode: didNormalizePredecode,
+                    runtimeSoftwareFallback: didRuntimeSoftwareFallback
+                }
+            });
+            emitEncodeSignal({
+                label: "[Encode][SUMMARY]",
+                payload: {
+                    ok: true,
+                    failedStage: null,
+                    elapsedMs: Math.round(performance.now() - encodeStartedAt),
+                    decodePathMode
+                }
             });
         } catch (error) {
-            console.error("Encode/export failed", error);
-            console.error("[Encode][SUMMARY]", {
-                ok: false,
-                failedStage,
-                elapsedMs: Math.round(performance.now() - encodeStartedAt),
-                errorName: error?.name ?? "Error",
-                errorMessage: error?.message ?? String(error)
+            const decodePathMode = resolveEncodeDecodePathMode({
+                didNormalizePredecode
             });
+            emitEncodeSignal({
+                label: "[Encode][DECODE_PATH]",
+                payload: {
+                    mode: decodePathMode,
+                    normalizedPredecode: didNormalizePredecode,
+                    runtimeSoftwareFallback: didRuntimeSoftwareFallback
+                }
+            });
+            console.error("Encode/export failed", error);
+            emitEncodeSignal({
+                level: "error",
+                label: "[Encode][SUMMARY]",
+                payload: {
+                    ok: false,
+                    failedStage,
+                    elapsedMs: Math.round(performance.now() - encodeStartedAt),
+                    errorName: error?.name ?? "Error",
+                    errorMessage: error?.message ?? String(error),
+                    decodePathMode
+                }
+            });
+        } finally {
+            if (normalizationSourceUrlToRevoke) {
+                URL.revokeObjectURL(normalizationSourceUrlToRevoke);
+                normalizationSourceUrlToRevoke = null;
+            }
+            dumpEncodeDiagnosticsPanelToConsole();
         }
     };
 
@@ -2657,5 +3067,10 @@ export const __test__ = {
     Timeline,
     Track,
     Clip,
+    summarizeTrackViewKeys,
+    summarizeTrackViewTiming,
+    getRotationDegreesFromTrackView,
+    buildNormalizationCompletePayload,
+    retimeVideoTrackViewToExportRange,
     ...TimelineCompiler
 };

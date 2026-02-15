@@ -282,6 +282,31 @@ export async function openContainerFromWebmSource({ webmByteSource }) {
             }
             if (track.mediaType === "audio") {
                 block.keyframe = true;
+            } else {
+                let hasReferenceBlock = false;
+                let hasKeyframeElement = false;
+                let keyframeElementValue = 0;
+
+                for (const blockGroupChild of blockGroupChildren) {
+                    if (blockGroupChild.id === WEBM_ELEMENT_IDS.BLOCK_GROUP_REFERENCE_BLOCK) {
+                        hasReferenceBlock = true;
+                        continue;
+                    }
+                    if (blockGroupChild.id === WEBM_ELEMENT_IDS.BLOCK_GROUP_KEYFRAME) {
+                        hasKeyframeElement = true;
+                        keyframeElementValue = readUnsignedInteger(
+                            webmBytes,
+                            blockGroupChild.dataOffset,
+                            blockGroupChild.size
+                        );
+                    }
+                }
+
+                if (hasKeyframeElement) {
+                    block.keyframe = keyframeElementValue !== 0;
+                } else {
+                    block.keyframe = !hasReferenceBlock;
+                }
             }
             appendBlockSample({
                 track,

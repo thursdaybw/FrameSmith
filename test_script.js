@@ -80,7 +80,10 @@ const {
     Track,
     Clip,
     buildAccessUnitPlanFragmentFromTrack,
-    buildPrerenderPlanFromTimeline
+    buildPrerenderPlanFromTimeline,
+    getRotationDegreesFromTrackView,
+    buildNormalizationCompletePayload,
+    retimeVideoTrackViewToExportRange
 } = __test__;
 
 // -------------------------------------------------
@@ -329,6 +332,152 @@ function test_containerClip_withNoResolvableSamples_isRejected() {
     );
 }
 
+function test_getRotationDegreesFromTrackView() {
+    const withRotation = {
+        containerMeta: {
+            displayTransform: {
+                rotationDegrees: 90
+            }
+        }
+    };
+    const withoutRotation = {
+        containerMeta: {
+            displayTransform: {}
+        }
+    };
+
+    assert(
+        getRotationDegreesFromTrackView(withRotation) === 90,
+        "rotation helper must return numeric rotation"
+    );
+    assert(
+        getRotationDegreesFromTrackView(withoutRotation) === null,
+        "rotation helper must return null when rotation is missing"
+    );
+}
+
+function test_buildNormalizationCompletePayload_shapeAndValues() {
+    const normalized = {
+        captureMode: "canvas-capture-stream",
+        normalizationRetried: true,
+        retryReason: "large normalized video tail gap"
+    };
+    const prerenderPlan = {
+        fragments: [{}, {}, {}]
+    };
+    const normalizedVideoTrackView = {
+        containerMeta: {
+            displayTransform: {
+                rotationDegrees: 0
+            }
+        },
+        sampleCount: 2,
+        getSampleByIndex(index) {
+            if (index === 0) return { pts: 0, isKeyframe: true };
+            return { pts: 33_333, isKeyframe: false };
+        }
+    };
+    const normalizedAudioTrackView = {
+        sampleCount: 2,
+        getSampleByIndex(index) {
+            if (index === 0) return { pts: 0 };
+            return { pts: 20_000 };
+        }
+    };
+
+    const payload = buildNormalizationCompletePayload({
+        normalized,
+        prerenderPlan,
+        normalizedVideoTrackView,
+        normalizedAudioTrackView,
+        sourceRotationDegrees: 90
+    });
+
+    assert(payload.normalizedContainer === "webm", "payload must declare normalized container");
+    assert(payload.normalizationCaptureMode === "canvas-capture-stream", "payload must include capture mode");
+    assert(payload.normalizationRetried === true, "payload must include retry flag");
+    assert(payload.normalizationRetryReason === "large normalized video tail gap", "payload must include retry reason");
+    assert(payload.sourceRotationDegrees === 90, "payload must include source rotation");
+    assert(payload.normalizedRotationDegrees === 0, "payload must include normalized rotation");
+    assert(payload.fragmentCount === 3, "payload must include prerender fragment count");
+    assert(payload.normalizedVideoKeySummary.sampleCount === 2, "payload video key summary must include sample count");
+    assert(payload.normalizedVideoKeySummary.keyTrueCount === 1, "payload video key summary true count must match");
+    assert(payload.normalizedVideoKeySummary.keyFalseCount === 1, "payload video key summary false count must match");
+    assert(payload.normalizedVideoTiming.spanUs === 33_333, "payload video timing span must match");
+    assert(payload.normalizedAudioTiming.spanUs === 20_000, "payload audio timing span must match");
+}
+
+function test_buildNormalizationCompletePayload_usesPtsToSecondsForTiming() {
+    const normalized = {
+        captureMode: "video-element-capture-stream",
+        normalizationRetried: false,
+        retryReason: null
+    };
+    const prerenderPlan = { fragments: [{}] };
+    const normalizedVideoTrackView = {
+        containerMeta: { displayTransform: { rotationDegrees: 0 } },
+        sampleCount: 2,
+        ptsToSeconds(pts) {
+            return pts / 1000;
+        },
+        getSampleByIndex(index) {
+            if (index === 0) return { pts: 0, isKeyframe: true };
+            return { pts: 5000, isKeyframe: false };
+        }
+    };
+    const normalizedAudioTrackView = {
+        sampleCount: 2,
+        ptsToSeconds(pts) {
+            return pts / 48_000;
+        },
+        getSampleByIndex(index) {
+            if (index === 0) return { pts: 0 };
+            return { pts: 48000 };
+        }
+    };
+
+    const payload = buildNormalizationCompletePayload({
+        normalized,
+        prerenderPlan,
+        normalizedVideoTrackView,
+        normalizedAudioTrackView,
+        sourceRotationDegrees: 270
+    });
+
+    assert(payload.normalizedVideoTiming.spanUs === 5_000_000, "video timing must be converted via ptsToSeconds");
+    assert(payload.normalizedAudioTiming.spanUs === 1_000_000, "audio timing must be converted via ptsToSeconds");
+}
+
+function test_retimeVideoTrackViewToExportRange_matchesExportDuration() {
+    const sourceTrackView = {
+        mediaType: "video",
+        codecConfig: { codec: "vp09.00.10.08" },
+        containerMeta: { trackTimescale: 1000 },
+        sampleCount: 4,
+        getSampleByIndex(index) {
+            const samples = [
+                { pts: 0, dts: 0, duration: 1000, isKeyframe: true, data: new Uint8Array([1]) },
+                { pts: 1000, dts: 1000, duration: 1000, isKeyframe: false, data: new Uint8Array([2]) },
+                { pts: 2000, dts: 2000, duration: 1000, isKeyframe: false, data: new Uint8Array([3]) },
+                { pts: 3000, dts: 3000, duration: 1000, isKeyframe: false, data: new Uint8Array([4]) }
+            ];
+            return samples[index] || null;
+        }
+    };
+
+    const retimed = retimeVideoTrackViewToExportRange({
+        trackView: sourceTrackView,
+        exportRange: { startSeconds: 0, endSeconds: 5.5 }
+    });
+
+    assert(retimed.sampleCount === 4, "retimed track must preserve sample count");
+    const first = retimed.getSampleByIndex(0);
+    const last = retimed.getSampleByIndex(retimed.sampleCount - 1);
+    assert(first.pts === 0, "retimed first pts must be zero");
+    assert(last.pts === 5_500_000, "retimed last pts must match export duration");
+    assert(retimed.ptsToSeconds(last.pts) === 5.5, "retimed ptsToSeconds must use microsecond timescale");
+}
+
 const COLORS = {
     blue:  "color: #4aa3ff",
     green: "color: #2ecc71",
@@ -343,7 +492,7 @@ function log(color, label, name) {
     );
 }
 
-const SCRIPT_TESTS = [
+export const SCRIPT_TESTS = [
     test_singleClip_fullTrack,
     test_clip_trimming,
     test_multiple_clips_same_track,
@@ -356,6 +505,10 @@ const SCRIPT_TESTS = [
     test_prerender_planning_output_shape,
     test_track_with_no_clips,
     test_containerClip_withNoResolvableSamples_isRejected,
+    test_getRotationDegreesFromTrackView,
+    test_buildNormalizationCompletePayload_shapeAndValues,
+    test_buildNormalizationCompletePayload_usesPtsToSecondsForTiming,
+    test_retimeVideoTrackViewToExportRange_matchesExportDuration,
 ];
 
 
@@ -422,4 +575,6 @@ const ALL_TESTS = [
 ];
 
 // THIS is the only global leak
-window.runScriptTests = runScriptTests;
+if (typeof window !== "undefined") {
+    window.runScriptTests = runScriptTests;
+}

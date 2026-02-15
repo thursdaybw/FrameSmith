@@ -32,7 +32,7 @@ No stage cheats.
 
 ## Demux Baseline (Current)
 
-Date updated: February 14, 2026
+Date updated: February 15, 2026
 
 Current operating decision for timeline export:
 
@@ -154,7 +154,7 @@ The goal of that pass is better speed/battery on devices where hardware decode i
 
 ## Mobile HEVC Decode Gap (Current, Separate Issue)
 
-Date updated: February 14, 2026
+Date updated: February 15, 2026
 
 This is a different problem from the hardware stall above.
 
@@ -177,17 +177,14 @@ So "plays in player" does not guarantee "decodes through `VideoDecoder`".
 
 For video decode, FrameSmith now does this:
 
-1. Try WebCodecs decode first (`prefer-hardware`, then `no-preference`, then `prefer-software`).
-2. If decode setup is unsupported, or decode stalls at runtime, switch strategy.
-3. Fallback strategy: media-element video decode + WebCodecs audio decode.
+1. Try direct WebCodecs decode first.
+2. If source codec is unsupported by `VideoDecoder` on this device/browser path, normalize source to WebM (`vp9/opus`) first.
+3. Decode normalized WebM through the standard deterministic decode path.
 
-This keeps export moving instead of hard-failing on HEVC decode setup.
+Important:
 
-### Important limitation right now
-
-Media-element fallback currently works as a survival path, but quality/timing is not yet stable for all tested HEVC phone clips (for example black first frame or frozen video frame behavior on some runs).
-
-So this is logged as "works around hard failure, still needs quality hardening."
+- runtime media-element decode fallback was removed from the export decode chain.
+- decode remains behind a decode-port seam, but active implementation is WebCodecs-backed.
 
 ### Camera recording path (future source, not core workaround)
 
@@ -204,9 +201,9 @@ That path is useful for capture-first UX, but it does not replace the main archi
 - Keep timeline/project settings authoritative for output.
 - Treat HEVC fallback hardening as a real engineering task, not a hidden shortcut.
 
-## Source Normalization Seam (Next Step)
+## Source Normalization Seam (Current MVP Guardrail)
 
-Date updated: February 14, 2026
+Date updated: February 15, 2026
 
 This is the planned boundary for unsupported/unstable source inputs.
 
@@ -234,11 +231,44 @@ Plain language:
 - Source normalization seam sits before it.
 - Normalized output then goes through standard demux/decode path.
 
-### Current policy
+### Current implementation status (MVP)
 
-- Keep existing media-element runtime fallback as temporary survival code.
-- Do not expand that fallback chain further.
-- Build normalization path and then simplify runtime decode path.
+- If `VideoDecoder.isConfigSupported(...)` reports unsupported for all decode modes
+  on the selected source track, export now attempts a predecode normalization step.
+- Normalization path:
+  - source URL -> hidden `<video>` playback window
+  - `captureStream()` + `MediaRecorder` to WebM (`vp9/opus` when supported)
+  - reopen normalized bytes through `openContainer({ containerType: "webm", bytes })`
+  - rebuild working timeline with the same procedural overlays
+  - continue through normal deterministic demux/decode/encode path
+
+### Temporary guardrails (explicit stop-gaps)
+
+These are intentionally defensive and are documented as temporary:
+
+- normalization capture mode can switch between:
+  - `video-element-capture-stream`
+  - `canvas-capture-stream`
+- if normalized video coverage is too short for export range, normalization retries once with alternate capture mode
+- a small recorder drain delay is applied at normalization end to reduce dropped tail frames
+
+These guardrails are here to keep MVP export reliable while we build the proper deterministic normalization implementation.
+
+### Not the final design
+
+Current normalization uses browser realtime capture semantics, so it is not yet the final deterministic form.
+
+Target direction:
+
+- explicit frame-driven normalization (deterministic sampling/encode)
+- keep same seam contract
+- retain current guardrails as fallback behavior when needed
+
+### Regression test targets to add
+
+- Browser harness test: normalized HEVC path preserves expected portrait orientation (no rotate/stretch regression).
+- Browser harness test: normalized video span remains within acceptable tail-gap bounds for export range.
+- Browser harness test: if initial normalization coverage is low, alternate capture-mode retry is attempted and reported.
 
 ## Legacy Preview Surface (Current Status)
 

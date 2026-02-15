@@ -21,7 +21,9 @@ export const WEBM_ELEMENT_IDS = Object.freeze({
     CLUSTER_TIMECODE: 0xe7,
     SIMPLE_BLOCK: 0xa3,
     BLOCK_GROUP: 0xa0,
-    BLOCK: 0xa1
+    BLOCK: 0xa1,
+    BLOCK_GROUP_REFERENCE_BLOCK: 0xfb,
+    BLOCK_GROUP_KEYFRAME: 0x9b
 });
 
 export const WEBM_CONTAINER_ELEMENT_IDS = new Set([

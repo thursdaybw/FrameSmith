@@ -479,11 +479,12 @@ function createAdaptiveBackpressureProfile({
 }
 
 function createVideoBackpressureProfile() {
+    const VIDEO_SEGMENT_TIMEOUT_MS = 6000;
     return {
         getConfig() {
             return {
                 maxQueueSize: 16,
-                timeoutMs: 30000,
+                timeoutMs: VIDEO_SEGMENT_TIMEOUT_MS,
                 pollMs: 5
             };
         },
@@ -555,6 +556,7 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
     audioDecoder,
     exportRange = null
 }) {
+    const VIDEO_SEGMENT_TIMEOUT_MS = 6000;
     // If callers run decode in multiple passes, ensure each pass starts with
     // empty output buffers so decoded frames do not accumulate across passes.
     if (videoDecoder && typeof videoDecoder.getDecodedOutputs === "function") {
@@ -694,7 +696,7 @@ export async function decodeContainerAccessUnitsFromPreRenderPlanBatch({
                     await withTimeout({
                         label: "decodeContainerBatch videoDecoder.flush(segment)",
                         promise: videoDecoder.flush(),
-                        timeoutMs: 30000
+                        timeoutMs: VIDEO_SEGMENT_TIMEOUT_MS
                     });
 
                     if (typeof videoDecoder.getLastError === "function") {
