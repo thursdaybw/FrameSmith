@@ -39,10 +39,8 @@ import { drawRenderIntentsOnCanvas } from "./src/composition/composeAtTime.js";
 import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js?v=2026-02-15-1";
 import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/createContainerWebCodecsDecodePort.js";
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
-import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
 import { EncodePipelineRun } from "./src/app/encode/EncodePipelineRun.js";
-import { buildDisplayTransformFromTrackMatrix } from "./src/mux/native/demux/track/displayTransform.js";
 import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";
 
 function summarizeTrackViewKeys(trackView) {
@@ -301,8 +299,7 @@ async function ensureCaptionFontLoaded() {
 
 function readRuntimeConfig() {
     const searchParams = new URLSearchParams(window.location.search);
-    const requestedVideoDemuxer = searchParams.get("videoDemuxer");
-    const videoDemuxer = requestedVideoDemuxer === "mp4box" ? "mp4box" : "native";
+    const videoDemuxer = "native";
     const fixtureUrl = searchParams.get("fixture") || searchParams.get("fixtureUrl");
     const fixtureAutoEncodeOnLoad =
         searchParams.get("fixtureAutoEncode") === "1" ||
@@ -3674,83 +3671,8 @@ async function createTimeline({ mp4Bytes, runtimeConfig }) {
     const container = openContainerFromMp4({ mp4Bytes });
     const nativeTrackViews = container.createTrackViews();
 
-    const requestedVideoDemuxer = runtimeConfig?.demux?.videoDemuxer;
-    const selectedVideoDemuxer = requestedVideoDemuxer === "mp4box"
-        ? "mp4box"
-        : "native";
-
-    const summarizeTrackCadenceUs = (trackView, sampleLimit = 120) => {
-        const sampleCount = Number(trackView?.sampleCount ?? 0);
-        const limit = Math.min(sampleCount, sampleLimit);
-        const durationsUs = [];
-        for (let index = 0; index < limit; index += 1) {
-            const sample = trackView.getSampleByIndex(index);
-            const durationPts = Number(sample?.duration);
-            if (!Number.isFinite(durationPts) || durationPts <= 0) continue;
-            const durationUs = Math.round(trackView.ptsToSeconds(durationPts) * 1_000_000);
-            if (Number.isFinite(durationUs) && durationUs > 0) {
-                durationsUs.push(durationUs);
-            }
-        }
-        if (durationsUs.length === 0) return null;
-        const sorted = durationsUs.slice().sort((a, b) => a - b);
-        const medianUs = sorted[Math.floor(sorted.length / 2)];
-        return { medianUs, minUs: sorted[0], maxUs: sorted[sorted.length - 1], sampleCount: durationsUs.length };
-    };
-
-    const shouldFallbackNativeVideoTrack = (trackView) => {
-        if (!trackView || trackView.mediaType !== "video") return false;
-        const cadence = summarizeTrackCadenceUs(trackView);
-        if (!cadence) return false;
-        // Practical bounds for phone/social footage:
-        // <1ms or >200ms per frame implies broken timescale conversion.
-        const invalidCadence = cadence.medianUs < 1_000 || cadence.medianUs > 200_000;
-        if (invalidCadence) {
-            console.warn("[Timeline] native video cadence invalid; will fallback to mp4box", cadence);
-        }
-        return invalidCadence;
-    };
-
-    const shouldAutoFallbackToMp4Box =
-        selectedVideoDemuxer === "native" &&
-        shouldFallbackNativeVideoTrack(nativeTrackViews.find(trackView => trackView.mediaType === "video"));
-
-    if (selectedVideoDemuxer === "mp4box") {
-        const mp4BoxVideoTrackView = await createMp4BoxVideoTrackView({ mp4Bytes });
-        const mergedTrackViews = [
-            mp4BoxVideoTrackView,
-            ...nativeTrackViews.filter(trackView => trackView.mediaType !== "video")
-        ];
-        console.log("[Timeline] demux selection", {
-            selectedVideoDemuxer,
-            trackViewMediaTypes: mergedTrackViews.map(trackView => trackView.mediaType)
-        });
-        return createTimelineFromPreparedAssets({
-            trackViews: mergedTrackViews,
-            textOverlayItems: transcriptOverlayItems,
-            imageOverlayItems
-        });
-    }
-
-    if (shouldAutoFallbackToMp4Box) {
-        const mp4BoxVideoTrackView = await createMp4BoxVideoTrackView({ mp4Bytes });
-        const mergedTrackViews = [
-            mp4BoxVideoTrackView,
-            ...nativeTrackViews.filter(trackView => trackView.mediaType !== "video")
-        ];
-        console.log("[Timeline] demux selection", {
-            selectedVideoDemuxer: "native->mp4box-fallback",
-            trackViewMediaTypes: mergedTrackViews.map(trackView => trackView.mediaType)
-        });
-        return createTimelineFromPreparedAssets({
-            trackViews: mergedTrackViews,
-            textOverlayItems: transcriptOverlayItems,
-            imageOverlayItems
-        });
-    }
-
     console.log("[Timeline] demux selection", {
-        selectedVideoDemuxer,
+        selectedVideoDemuxer: "native",
         trackViewMediaTypes: nativeTrackViews.map(trackView => trackView.mediaType)
     });
 
@@ -3759,119 +3681,6 @@ async function createTimeline({ mp4Bytes, runtimeConfig }) {
         textOverlayItems: transcriptOverlayItems,
         imageOverlayItems
     });
-}
-
-async function createMp4BoxVideoTrackView({ mp4Bytes }) {
-    const demuxer = new Mp4BoxDemuxer(mp4Bytes.buffer.slice(
-        mp4Bytes.byteOffset,
-        mp4Bytes.byteOffset + mp4Bytes.byteLength
-    ));
-
-    const parsed = await demuxer.parse();
-    const videoTrack = parsed?.videoTrack;
-    const avcCBuffer = demuxer.getAvcCBuffer();
-
-    if (!videoTrack) {
-        throw new Error("createMp4BoxVideoTrackView: video track not found");
-    }
-    if (!(avcCBuffer instanceof ArrayBuffer)) {
-        throw new Error("createMp4BoxVideoTrackView: avcC not available from Mp4BoxDemuxer");
-    }
-
-    const toMicroseconds = (value, timescale) => {
-        if (typeof value !== "number" || typeof timescale !== "number" || timescale <= 0) {
-            return null;
-        }
-        return Math.round((value / timescale) * 1_000_000);
-    };
-
-    const samples = Array.isArray(parsed?.videoSamples) ? parsed.videoSamples : [];
-    const normalizedSamples = samples
-        .map((sample, index) => {
-            const timescale =
-                sample?.raw?.timescale ??
-                videoTrack.timescale;
-            const ptsUs =
-                toMicroseconds(sample?.raw?.cts, timescale) ??
-                (typeof sample?.timestamp === "number" ? sample.timestamp : null);
-            const dtsUs =
-                toMicroseconds(sample?.raw?.dts, timescale) ??
-                ptsUs;
-            const durationUs =
-                toMicroseconds(sample?.raw?.duration, timescale) ??
-                (typeof sample?.duration === "number" ? sample.duration : null);
-
-            if (typeof ptsUs !== "number" || typeof durationUs !== "number") {
-                return null;
-            }
-
-            return {
-                _index: index,
-                ptsUs,
-                dtsUs,
-                durationUs,
-                isKeyframe: sample?.type === "key",
-                data: sample?.data
-            };
-        })
-        .filter(Boolean);
-
-    console.log("[Timeline][mp4box] normalized video sample summary", {
-        inputSampleCount: samples.length,
-        normalizedSampleCount: normalizedSamples.length
-    });
-
-    const displayTransform = buildDisplayTransformFromTrackMatrix(videoTrack.matrix);
-    if (displayTransform.rotationDegrees !== 0) {
-        console.log("[Timeline][mp4box] inferred track rotation", {
-            rotationDegrees: displayTransform.rotationDegrees
-        });
-    }
-
-    return {
-        mediaType: "video",
-        containerMeta: {
-            trackTimescale: 1_000_000,
-            codedWidth: videoTrack.track_width,
-            codedHeight: videoTrack.track_height,
-            displayTransform
-        },
-        codecConfig: {
-            codec: "avc1",
-            avcC: new Uint8Array(avcCBuffer)
-        },
-        sampleCount: normalizedSamples.length,
-        ptsToSeconds(pts) {
-            return pts / 1_000_000;
-        },
-        secondsToPts(seconds) {
-            return Math.round(seconds * 1_000_000);
-        },
-        getSampleByIndex(index) {
-            const sample = normalizedSamples[index];
-            if (!sample) return null;
-            return {
-                pts: sample.ptsUs,
-                dts: sample.dtsUs,
-                duration: sample.durationUs,
-                isKeyframe: sample.isKeyframe,
-                data: sample.data
-            };
-        },
-        *iterateSamplesByPtsRange(startPts, endPts) {
-            for (const sample of normalizedSamples) {
-                if (sample.ptsUs < startPts) continue;
-                if (sample.ptsUs > endPts) continue;
-                yield {
-                    pts: sample.ptsUs,
-                    dts: sample.dtsUs,
-                    duration: sample.durationUs,
-                    isKeyframe: sample.isKeyframe,
-                    data: sample.data
-                };
-            }
-        }
-    };
 }
 
 /**
