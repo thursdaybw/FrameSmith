@@ -3450,7 +3450,6 @@ async function loadTimelineImageOverlays() {
     const overlayItem = {
         id: "logo-overlay-default",
         startSeconds: 0,
-        endSeconds: 10,
         drawable,
         style: {
             ...DEFAULT_IMAGE_OVERLAY_STYLE
@@ -3969,6 +3968,10 @@ export function createTimelineFromPreparedAssets({
 
     const videoClipRange = resolveTrackClipRangeSeconds(videoTracks[0], "video");
     const audioClipRange = resolveTrackClipRangeSeconds(audioTracks[0], "audio");
+    const mediaTimelineEndSeconds = Math.max(
+        Number(videoClipRange.endSeconds) || 0,
+        Number(audioClipRange.endSeconds) || 0
+    );
 
     timeline.addTrack(videoTrack);
     timeline.addTrack(audioTrack);
@@ -4033,11 +4036,24 @@ export function createTimelineFromPreparedAssets({
         const imageOverlayTrack = new Track();
         timeline.addTrack(imageOverlayTrack);
 
-        const imageOverlayStartSeconds = imageOverlayItems.reduce((minStart, item) => {
+        const normalizedImageOverlayItems = imageOverlayItems.map((item) => {
+            if (!item || typeof item !== "object") {
+                return item;
+            }
+            if (typeof item.endSeconds === "number" && Number.isFinite(item.endSeconds)) {
+                return item;
+            }
+            return {
+                ...item,
+                endSeconds: mediaTimelineEndSeconds > 0 ? mediaTimelineEndSeconds : 10
+            };
+        });
+
+        const imageOverlayStartSeconds = normalizedImageOverlayItems.reduce((minStart, item) => {
             const start = typeof item?.startSeconds === "number" ? item.startSeconds : minStart;
             return Math.min(minStart, start);
         }, Number.POSITIVE_INFINITY);
-        const imageOverlayEndSeconds = imageOverlayItems.reduce((maxEnd, item) => {
+        const imageOverlayEndSeconds = normalizedImageOverlayItems.reduce((maxEnd, item) => {
             const end = typeof item?.endSeconds === "number" ? item.endSeconds : maxEnd;
             return Math.max(maxEnd, end);
         }, 0);
@@ -4047,7 +4063,7 @@ export function createTimelineFromPreparedAssets({
                 kind: "image-overlay",
                 startSeconds: Number.isFinite(imageOverlayStartSeconds) ? imageOverlayStartSeconds : 0,
                 endSeconds: imageOverlayEndSeconds > 0 ? imageOverlayEndSeconds : 10,
-                items: imageOverlayItems
+                items: normalizedImageOverlayItems
             })
         );
     }
