@@ -28,6 +28,34 @@ Each stage has one job.
 Each stage hands its output to the next.
 No stage cheats.
 
+## Captioning MVP Flow (Current)
+
+Date updated: February 16, 2026
+
+For the branding app UX (not the engine API), caption generation now runs from UI controls:
+
+1. User loads a source video.
+2. FrameSmith extracts WAV audio in-browser (16k mono PCM) and warms this in background.
+3. User clicks `Transcribe`.
+4. App calls Drupal endpoints:
+   - `transcription-task-init`
+   - `upload-audio`
+   - `transcription-provision`
+5. App polls `transcription-provision-status` until transcript is ready.
+6. App fetches `json_url` from status payload and applies runtime text overlays.
+7. User previews, encodes, exports as normal.
+
+UI behavior:
+
+- A dedicated transcription progress badge shows stage progress (prepare/upload/queue/poll/apply/done/error).
+- Transcript overlays are runtime-applied and replace fixture transcript overlays for the current source.
+- Loading a new source clears prior runtime transcript state.
+
+Boundary rule:
+
+- FrameSmith engine remains timeline/decode/compose/encode infrastructure.
+- The Drupal transcription orchestration is app-layer behavior on top of the engine.
+
 ---
 
 ## Demux Baseline (Current)

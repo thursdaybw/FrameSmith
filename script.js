@@ -43,6 +43,7 @@ import { Mp4BoxDemuxer } from "./src/demux/Mp4BoxDemuxer.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
 import { EncodePipelineRun } from "./src/app/encode/EncodePipelineRun.js";
 import { buildDisplayTransformFromTrackMatrix } from "./src/mux/native/demux/track/displayTransform.js";
+import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";
 
 function summarizeTrackViewKeys(trackView) {
     const summary = {
@@ -306,6 +307,11 @@ function readRuntimeConfig() {
     const fixtureAutoEncodeOnLoad =
         searchParams.get("fixtureAutoEncode") === "1" ||
         searchParams.get("autoEncode") === "1";
+    const transcriptionBaseUrl = searchParams.get("transcriptionBaseUrl") || "";
+    const transcriptionVideoId =
+        searchParams.get("transcriptionVideoId") ||
+        searchParams.get("videoId") ||
+        "";
     const outputWidth = 720;
     const outputHeight = 1280;
     return {
@@ -319,6 +325,10 @@ function readRuntimeConfig() {
         testing: {
             fixtureUrl,
             fixtureAutoEncodeOnLoad
+        },
+        transcription: {
+            baseUrl: transcriptionBaseUrl,
+            videoId: transcriptionVideoId
         },
         debug: {
             enableEncodeDiagnostics: searchParams.get("encodeDiagnostics") !== "0"
@@ -349,10 +359,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     const previewBtn = document.getElementById("previewBtn");
+    const transcribeBtn = document.getElementById("transcribeBtn");
     const encodeBtn = document.getElementById("encodeBtn");
     const exportBtn = document.getElementById("exportBtn");
     const videoFileInput = document.getElementById("videoFileInput");
     const videoSourceStatus = document.getElementById("videoSourceStatus");
+    const transcriptionRunStatus = document.getElementById("transcriptionRunStatus");
     const encodeRunStatus = document.getElementById("encodeRunStatus");
     const encodeDiagnosticsPanel = document.getElementById("encodeDiagnosticsPanel");
 
@@ -371,9 +383,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     let lastExportUrl = null;
     let cachedSelectedVideo = null;
     let isEncodeInProgress = false;
+    let isTranscribeInProgress = false;
     let currentEncodeStageName = "init";
     let previewAnimationFrameId = null;
     let previewPlan = null;
+    let lastWhisperAudioSourceKey = null;
 
     const setHasLoadedSourceUiState = (hasSource) => {
         document.body.classList.toggle("has-source", !!hasSource);
@@ -433,8 +447,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
 
     const setWorkflowEnabled = (enabled) => {
-        const disabled = !enabled || isEncodeInProgress;
+        const disabled = !enabled || isEncodeInProgress || isTranscribeInProgress;
         previewBtn.disabled = disabled;
+        if (transcribeBtn) {
+            transcribeBtn.disabled = disabled;
+        }
         encodeBtn.disabled = disabled;
         if (!enabled || isEncodeInProgress) {
             exportBtn.disabled = true;
@@ -478,7 +495,508 @@ document.addEventListener("DOMContentLoaded", async () => {
         encodeRunStatus.textContent = stageView.label;
     };
 
+    const setTranscriptionRunBadge = ({
+        visible,
+        message = "Transcribe…",
+        tone = "working"
+    }) => {
+        if (!transcriptionRunStatus) {
+            return;
+        }
+        transcriptionRunStatus.style.display = visible ? "inline-flex" : "none";
+        transcriptionRunStatus.textContent = message;
+        transcriptionRunStatus.classList.toggle("done", tone === "done");
+        transcriptionRunStatus.classList.toggle("error", tone === "error");
+    };
+
+    const setTranscriptionStageStatus = (stage, detail = "") => {
+        const stageMap = {
+            prepare_audio: { percent: 10, label: "Preparing audio" },
+            create_task: { percent: 25, label: "Creating task" },
+            upload_audio: { percent: 45, label: "Uploading audio" },
+            queue: { percent: 55, label: "Queueing job" },
+            polling: { percent: 70, label: "Waiting for worker" },
+            apply_transcript: { percent: 92, label: "Applying captions" },
+            done: { percent: 100, label: "Captions ready" }
+        };
+        const view = stageMap[stage];
+        if (!view) {
+            setTranscriptionRunBadge({
+                visible: true,
+                message: "Transcribe…",
+                tone: "working"
+            });
+            return;
+        }
+        const suffix = detail ? ` (${detail})` : "";
+        const tone = stage === "done" ? "done" : "working";
+        setTranscriptionRunBadge({
+            visible: true,
+            message: `Transcribe ${view.percent}% ${view.label}${suffix}`,
+            tone
+        });
+    };
+
+    const setTranscriptionErrorStatus = (detail = "") => {
+        const suffix = detail ? `: ${detail}` : "";
+        setTranscriptionRunBadge({
+            visible: true,
+            message: `Transcribe failed${suffix}`,
+            tone: "error"
+        });
+    };
+
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    async function decodeAudioBufferFromSourceBytes(sourceBytes) {
+        const AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext;
+        if (typeof AudioContextCtor !== "function") {
+            throw new Error("AudioContext is not available in this browser.");
+        }
+        const audioContext = new AudioContextCtor();
+        try {
+            const workingCopy = sourceBytes.slice();
+            return await audioContext.decodeAudioData(workingCopy.buffer);
+        } finally {
+            if (typeof audioContext.close === "function") {
+                await audioContext.close();
+            }
+        }
+    }
+
+    async function resampleAudioBufferForWhisper({
+        audioBuffer,
+        targetSampleRate,
+        targetChannels
+    }) {
+        if (!audioBuffer) {
+            throw new Error("resampleAudioBufferForWhisper: audioBuffer is required.");
+        }
+        const frameCount = Math.max(1, Math.ceil(audioBuffer.duration * targetSampleRate));
+        const offlineContext = new OfflineAudioContext(
+            targetChannels,
+            frameCount,
+            targetSampleRate
+        );
+        const source = offlineContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(offlineContext.destination);
+        source.start(0);
+        return await offlineContext.startRendering();
+    }
+
+    async function extractWhisperReadyAudioFromLoadedSource({
+        targetSampleRate = 16_000,
+        targetChannels = 1,
+        showStatus = true
+    } = {}) {
+        if (!cachedSelectedVideo || !(cachedSelectedVideo.bytes instanceof Uint8Array)) {
+            throw new Error("No loaded source bytes are available.");
+        }
+        const currentSourceKey = String(cachedSelectedVideo.fileKey || "");
+        const hasCachedWhisperAudio =
+            lastWhisperAudioSourceKey === currentSourceKey &&
+            window.__lastWhisperAudioBlob instanceof Blob &&
+            window.__lastWhisperAudioBytes instanceof Uint8Array;
+        if (hasCachedWhisperAudio) {
+            if (showStatus) {
+                setVideoSourceStatus("Audio ready for Whisper");
+            }
+            return {
+                blob: window.__lastWhisperAudioBlob,
+                bytes: window.__lastWhisperAudioBytes,
+                meta: window.__lastWhisperAudioMeta
+            };
+        }
+
+        if (showStatus) {
+            setVideoSourceStatus("Preparing audio for captions...");
+        }
+        const decodedAudioBuffer = await decodeAudioBufferFromSourceBytes(cachedSelectedVideo.bytes);
+        const renderedAudioBuffer = await resampleAudioBufferForWhisper({
+            audioBuffer: decodedAudioBuffer,
+            targetSampleRate,
+            targetChannels
+        });
+        const wavBytes = encodePcm16WavFromAudioBuffer(renderedAudioBuffer);
+        const wavBlob = new Blob([wavBytes], {
+            type: "audio/wav"
+        });
+        window.__lastWhisperAudioBlob = wavBlob;
+        window.__lastWhisperAudioBytes = wavBytes;
+        window.__lastWhisperAudioMeta = {
+            sampleRate: renderedAudioBuffer.sampleRate,
+            channels: renderedAudioBuffer.numberOfChannels,
+            durationSeconds: Number(renderedAudioBuffer.duration.toFixed(3)),
+            bytes: wavBytes.length
+        };
+        lastWhisperAudioSourceKey = currentSourceKey;
+        if (showStatus) {
+            setVideoSourceStatus("Audio ready for Whisper");
+        }
+        return {
+            blob: wavBlob,
+            bytes: wavBytes,
+            meta: window.__lastWhisperAudioMeta
+        };
+    }
+
+    function createFallbackUuid() {
+        const randomHex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
+        return (
+            `${randomHex()}${randomHex()}-${randomHex()}-4${randomHex().slice(1)}-` +
+            `${(8 + Math.floor(Math.random() * 4)).toString(16)}${randomHex().slice(1)}-` +
+            `${randomHex()}${randomHex()}${randomHex()}`
+        );
+    }
+
+    function createTranscriptionVideoId() {
+        const configuredVideoId = String(runtimeConfig?.transcription?.videoId || "").trim();
+        if (configuredVideoId.length > 0) {
+            return configuredVideoId;
+        }
+        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+            return globalThis.crypto.randomUUID();
+        }
+        return createFallbackUuid();
+    }
+
+    function resolveTranscriptionBaseUrl(explicitBaseUrl) {
+        const base = String(explicitBaseUrl || runtimeConfig?.transcription?.baseUrl || "").trim();
+        if (base.length > 0) {
+            return base;
+        }
+        return window.location.origin;
+    }
+
+    async function fetchJsonOrThrow(url, options) {
+        let response;
+        try {
+            response = await fetch(url, options);
+        } catch (error) {
+            throw new Error(
+                `Network request failed for ${url}. If this is cross-origin, check CORS and auth cookies. ` +
+                `Original error: ${error?.message || String(error)}`
+            );
+        }
+        const text = await response.text();
+        let parsed = null;
+        try {
+            parsed = text.length > 0 ? JSON.parse(text) : null;
+        } catch {
+            parsed = null;
+        }
+        if (!response.ok) {
+            throw new Error(
+                `Request failed (${response.status}) ${url}: ${parsed?.error || text || response.statusText}`
+            );
+        }
+        if (parsed === null) {
+            throw new Error(`Expected JSON response from ${url}`);
+        }
+        return parsed;
+    }
+
+    async function loadWhisperJsonFromStatusPayload({
+        transcriptionBaseUrl,
+        statusPayload
+    }) {
+        const jsonUrlValue = String(statusPayload?.json_url || "").trim();
+        if (jsonUrlValue.length === 0) {
+            return null;
+        }
+        const resolvedBaseUrl = resolveTranscriptionBaseUrl(transcriptionBaseUrl);
+        const resolvedJsonUrl = new URL(jsonUrlValue, resolvedBaseUrl).toString();
+        return fetchJsonOrThrow(resolvedJsonUrl, {
+            method: "GET",
+            credentials: "include"
+        });
+    }
+
+    async function applyWhisperTranscriptToTimeline({
+        whisperJson,
+        sourceLabel = "runtime-whisper"
+    }) {
+        const overlayItems = buildTextOverlayItemsFromWhisperJson(whisperJson);
+        runtimeTranscriptOverlayItems = overlayItems;
+        window.__runtimeTranscriptOverlayItems = overlayItems;
+        window.__runtimeWhisperTranscriptJson = whisperJson;
+
+        console.log("[Timeline][text-overlay] applied runtime transcript overlay items", {
+            sourceLabel,
+            itemCount: overlayItems.length
+        });
+
+        if (cachedSelectedVideo?.bytes instanceof Uint8Array) {
+            await initializeTimelineFromBytes(cachedSelectedVideo.bytes);
+            previewPlan = null;
+            renderPreviewOverlayAtCurrentTime();
+        }
+
+        return overlayItems;
+    }
+
+    /**
+     * Extract WAV from loaded source and upload it to Drupal transcription endpoints.
+     */
+    async function sendWhisperAudioToDrupal({
+        transcriptionBaseUrl,
+        videoId,
+        targetSampleRate = 16_000,
+        targetChannels = 1,
+        startProvision = false
+    } = {}) {
+        const resolvedBaseUrl = resolveTranscriptionBaseUrl(transcriptionBaseUrl);
+        const resolvedVideoId = String(videoId || createTranscriptionVideoId());
+
+        setVideoSourceStatus("Preparing audio for transcription...");
+        setTranscriptionStageStatus("prepare_audio");
+        const whisperAudio = await extractWhisperReadyAudioFromLoadedSource({
+            targetSampleRate,
+            targetChannels,
+            showStatus: false
+        });
+
+        setVideoSourceStatus("Creating transcription task...");
+        setTranscriptionStageStatus("create_task");
+        const initUrl = new URL("/video-forge/transcription-task-init", resolvedBaseUrl);
+        initUrl.searchParams.set("video_id", resolvedVideoId);
+        const taskInit = await fetchJsonOrThrow(initUrl.toString(), {
+            method: "GET",
+            credentials: "include"
+        });
+        const taskId = String(taskInit.task_id || "");
+        if (taskId.length === 0) {
+            throw new Error("Transcription task init response did not include task_id.");
+        }
+
+        setVideoSourceStatus("Uploading audio to transcription service...");
+        setTranscriptionStageStatus("upload_audio");
+        const uploadUrl = new URL("/video-forge/upload-audio", resolvedBaseUrl);
+        uploadUrl.searchParams.set("task_id", taskId);
+        const formData = new FormData();
+        formData.append("file", whisperAudio.blob, `${taskId}.wav`);
+        const uploadResult = await fetchJsonOrThrow(uploadUrl.toString(), {
+            method: "POST",
+            credentials: "include",
+            body: formData
+        });
+
+        let provisionResult = null;
+        if (startProvision) {
+            setVideoSourceStatus("Queueing transcription...");
+            setTranscriptionStageStatus("queue");
+            const provisionUrl = new URL("/video-forge/transcription-provision", resolvedBaseUrl);
+            provisionUrl.searchParams.set("task_id", taskId);
+            provisionResult = await fetchJsonOrThrow(provisionUrl.toString(), {
+                method: "GET",
+                credentials: "include"
+            });
+        }
+
+        const result = {
+            baseUrl: resolvedBaseUrl,
+            videoId: resolvedVideoId,
+            taskId,
+            taskInit,
+            uploadResult,
+            provisionResult,
+            audioMeta: whisperAudio.meta
+        };
+        window.__lastWhisperDrupalResult = result;
+        setVideoSourceStatus(startProvision ? "Transcription queued" : "Audio uploaded for transcription");
+        console.log("[Whisper][Drupal] upload complete", result);
+        return result;
+    }
+
+    async function pollWhisperTranscriptionStatus({
+        transcriptionBaseUrl,
+        taskId,
+        pollIntervalMs = 3_000,
+        timeoutMs = 10 * 60 * 1_000
+    }) {
+        const resolvedBaseUrl = resolveTranscriptionBaseUrl(transcriptionBaseUrl);
+        const startedAt = Date.now();
+        const history = [];
+
+        while (Date.now() - startedAt <= timeoutMs) {
+            const statusUrl = new URL("/video-forge/transcription-provision-status", resolvedBaseUrl);
+            statusUrl.searchParams.set("task_id", taskId);
+            const statusPayload = await fetchJsonOrThrow(statusUrl.toString(), {
+                method: "GET",
+                credentials: "include"
+            });
+            history.push(statusPayload);
+
+            const status = String(statusPayload?.status || "").toLowerCase();
+            setTranscriptionStageStatus("polling", status || "working");
+            const transcriptReady = statusPayload?.transcript_ready === true;
+            if (transcriptReady || status === "transcribed") {
+                setVideoSourceStatus("Transcription complete");
+                return {
+                    ok: true,
+                    taskId,
+                    statusPayload,
+                    history
+                };
+            }
+
+            if (status === "failed" || status === "error") {
+                return {
+                    ok: false,
+                    taskId,
+                    statusPayload,
+                    history
+                };
+            }
+
+            setVideoSourceStatus(`Transcription status: ${status || "working"}...`);
+            await sleep(pollIntervalMs);
+        }
+
+        return {
+            ok: false,
+            taskId,
+            statusPayload: null,
+            history,
+            timeout: true,
+            reason: "timeout_waiting_for_worker_or_transcription"
+        };
+    }
+
+    /**
+     * End-to-end transcription helper:
+     * extract WAV -> upload -> queue -> poll until transcript ready.
+     */
+    async function startWhisperTranscriptionAndPoll({
+        transcriptionBaseUrl,
+        videoId,
+        targetSampleRate = 16_000,
+        targetChannels = 1,
+        pollIntervalMs = 3_000,
+        timeoutMs = 10 * 60 * 1_000
+    } = {}) {
+        const uploadAndQueueResult = await sendWhisperAudioToDrupal({
+            transcriptionBaseUrl,
+            videoId,
+            targetSampleRate,
+            targetChannels,
+            startProvision: true
+        });
+
+        const pollResult = await pollWhisperTranscriptionStatus({
+            transcriptionBaseUrl: uploadAndQueueResult.baseUrl,
+            taskId: uploadAndQueueResult.taskId,
+            pollIntervalMs,
+            timeoutMs
+        });
+
+        const result = {
+            ...uploadAndQueueResult,
+            pollResult
+        };
+
+        if (pollResult.ok && pollResult.statusPayload) {
+            try {
+                setTranscriptionStageStatus("apply_transcript");
+                const whisperJson = await loadWhisperJsonFromStatusPayload({
+                    transcriptionBaseUrl: uploadAndQueueResult.baseUrl,
+                    statusPayload: pollResult.statusPayload
+                });
+                if (whisperJson) {
+                    const overlayItems = await applyWhisperTranscriptToTimeline({
+                        whisperJson,
+                        sourceLabel: `task:${uploadAndQueueResult.taskId}`
+                    });
+                    result.whisperJson = whisperJson;
+                    result.overlayItemCount = overlayItems.length;
+                }
+            } catch (error) {
+                result.whisperJsonError = error?.message || String(error);
+                console.warn("[Whisper][Drupal] transcript JSON load/apply failed", {
+                    taskId: uploadAndQueueResult.taskId,
+                    error: result.whisperJsonError
+                });
+            }
+        }
+
+        window.__lastWhisperTranscriptionResult = result;
+        if (pollResult.ok) {
+            setTranscriptionStageStatus("done");
+            console.log("[Whisper][Drupal] transcription complete", result);
+            return result;
+        }
+        if (pollResult.timeout) {
+            setTranscriptionStageStatus("polling", "queued");
+            setVideoSourceStatus("Transcription queued. Waiting for queue worker...");
+            console.log("[Whisper][Drupal] queued; waiting for worker/transcription", result);
+        } else {
+            setTranscriptionErrorStatus(String(pollResult?.statusPayload?.status || "failed"));
+            console.warn("[Whisper][Drupal] transcription incomplete", result);
+        }
+        return result;
+    }
+
+    async function fetchAndApplyWhisperTranscriptFromTask({
+        taskId,
+        transcriptionBaseUrl,
+        pollIntervalMs = 3_000,
+        timeoutMs = 5 * 60 * 1_000,
+        waitForJson = true
+    }) {
+        if (!taskId || typeof taskId !== "string") {
+            throw new Error("fetchAndApplyWhisperTranscriptFromTask: taskId is required.");
+        }
+        const resolvedBaseUrl = resolveTranscriptionBaseUrl(transcriptionBaseUrl);
+        const startedAt = Date.now();
+        let statusPayload = null;
+        let whisperJson = null;
+
+        while (Date.now() - startedAt <= timeoutMs) {
+            const statusUrl = new URL("/video-forge/transcription-provision-status", resolvedBaseUrl);
+            statusUrl.searchParams.set("task_id", taskId);
+            statusPayload = await fetchJsonOrThrow(statusUrl.toString(), {
+                method: "GET",
+                credentials: "include"
+            });
+
+            whisperJson = await loadWhisperJsonFromStatusPayload({
+                transcriptionBaseUrl: resolvedBaseUrl,
+                statusPayload
+            });
+            if (whisperJson) {
+                break;
+            }
+
+            if (!waitForJson) {
+                break;
+            }
+
+            const status = String(statusPayload?.status || "");
+            setVideoSourceStatus(`Waiting for transcript JSON (${status || "queued"})...`);
+            await sleep(pollIntervalMs);
+        }
+
+        if (!whisperJson) {
+            const status = String(statusPayload?.status || "unknown");
+            throw new Error(
+                `No json_url available yet for task ${taskId} (status=${status}). ` +
+                `If running in dev, execute: ddev drush queue:run video_forge_provision`
+            );
+        }
+        const overlayItems = await applyWhisperTranscriptToTimeline({
+            whisperJson,
+            sourceLabel: `task:${taskId}`
+        });
+        const result = {
+            taskId,
+            statusPayload,
+            whisperJson,
+            overlayItemCount: overlayItems.length
+        };
+        window.__lastWhisperTranscriptFetchResult = result;
+        return result;
+    }
 
     /**
      * Stop preview overlay rendering loop.
@@ -688,6 +1206,21 @@ document.addEventListener("DOMContentLoaded", async () => {
             fileKey,
             bytes
         };
+        runtimeTranscriptOverlayItems = null;
+        window.__runtimeTranscriptOverlayItems = null;
+        window.__runtimeWhisperTranscriptJson = null;
+        window.__lastWhisperTranscriptFetchResult = null;
+        window.__lastWhisperTranscriptionResult = null;
+        window.__lastWhisperDrupalResult = null;
+        window.__lastWhisperAudioBlob = null;
+        window.__lastWhisperAudioBytes = null;
+        window.__lastWhisperAudioMeta = null;
+        lastWhisperAudioSourceKey = null;
+        setTranscriptionRunBadge({
+            visible: false,
+            message: "Transcribe…",
+            tone: "working"
+        });
         previewPlan = null;
         stopPreviewLoop();
 
@@ -705,6 +1238,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         setHasLoadedSourceUiState(true);
 
         await initializeTimelineFromBytes(cachedSelectedVideo.bytes);
+
+        // Warm up audio extraction in the background so "Transcribe" starts faster.
+        void extractWhisperReadyAudioFromLoadedSource({ showStatus: false }).catch((error) => {
+            console.warn("[Whisper][Drupal] audio warmup skipped", {
+                errorName: error?.name || "Error",
+                errorMessage: error?.message || String(error)
+            });
+        });
     }
 
     /**
@@ -2574,6 +3115,47 @@ async function normalizeUnsupportedSourceToWorkingSet({
         await startPreviewPlayback();
     };
 
+    if (transcribeBtn) {
+        transcribeBtn.onclick = async () => {
+            if (isTranscribeInProgress || isEncodeInProgress) {
+                return;
+            }
+            if (!timeline || !(cachedSelectedVideo?.bytes instanceof Uint8Array)) {
+                setVideoSourceStatus("Load a video before transcribing", true);
+                return;
+            }
+
+            isTranscribeInProgress = true;
+            transcribeBtn.textContent = "Working…";
+            setTranscriptionRunBadge({
+                visible: true,
+                message: "Transcribe 0% Starting",
+                tone: "working"
+            });
+            setWorkflowEnabled(!!timeline);
+
+            try {
+                const result = await startWhisperTranscriptionAndPoll();
+                if (result?.pollResult?.ok) {
+                    setVideoSourceStatus("Captions ready");
+                } else if (result?.taskId) {
+                    setVideoSourceStatus(`Transcription queued (task ${result.taskId.slice(0, 8)}…)`);
+                }
+            } catch (error) {
+                setVideoSourceStatus(
+                    `Transcription failed: ${error?.message || String(error)}`,
+                    true
+                );
+                setTranscriptionErrorStatus(error?.message || String(error));
+                console.error("[Whisper][Drupal] transcription failed", error);
+            } finally {
+                isTranscribeInProgress = false;
+                transcribeBtn.textContent = "Transcribe";
+                setWorkflowEnabled(!!timeline);
+            }
+        };
+    }
+
     /**
      * Encode Button Handler
      *
@@ -2704,8 +3286,18 @@ async function normalizeUnsupportedSourceToWorkingSet({
 
     setWorkflowEnabled(false);
     setVideoSourceStatus("No video loaded");
+    setTranscriptionRunBadge({
+        visible: false,
+        message: "Transcribe…",
+        tone: "working"
+    });
     setHasLoadedSourceUiState(false);
     setPreviewModeUiState(false);
+    window.__extractWhisperAudio = extractWhisperReadyAudioFromLoadedSource;
+    window.__sendWhisperAudioToDrupal = sendWhisperAudioToDrupal;
+    window.__pollWhisperTranscriptionStatus = pollWhisperTranscriptionStatus;
+    window.__startWhisperTranscriptionAndPoll = startWhisperTranscriptionAndPoll;
+    window.__fetchAndApplyWhisperTranscriptFromTask = fetchAndApplyWhisperTranscriptFromTask;
 
     if (runtimeConfig.testing.fixtureUrl) {
         try {
@@ -2808,6 +3400,8 @@ const DEFAULT_IMAGE_OVERLAY_PULSE = Object.freeze({
     smallScalePct: 24,
     cycleSeconds: 6.5
 });
+
+let runtimeTranscriptOverlayItems = null;
 
 async function loadImageDrawableFromPath(path) {
     try {
@@ -2983,6 +3577,13 @@ function buildTextOverlayItemsFromWhisperJson(whisperJson) {
 }
 
 async function loadTimelineTextOverlays() {
+    if (Array.isArray(runtimeTranscriptOverlayItems) && runtimeTranscriptOverlayItems.length > 0) {
+        console.log("[Timeline][text-overlay] using runtime transcript overlay items", {
+            itemCount: runtimeTranscriptOverlayItems.length
+        });
+        return runtimeTranscriptOverlayItems;
+    }
+
     const transcriptCandidates = [
         "./90502899-3eba-43a0-a8ed-3834d685e7b4.json"
     ];

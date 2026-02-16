@@ -175,6 +175,38 @@
         animation: pulse 1s ease-in-out infinite;
       }
 
+      .status-cluster {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .transcription-status {
+        color: #0f766e;
+      }
+
+      .transcription-status::before {
+        background: #14b8a6;
+      }
+
+      .transcription-status.done {
+        color: #166534;
+      }
+
+      .transcription-status.done::before {
+        background: #22c55e;
+        animation: none;
+      }
+
+      .transcription-status.error {
+        color: #b00020;
+      }
+
+      .transcription-status.error::before {
+        background: #ef4444;
+        animation: none;
+      }
+
       @keyframes pulse {
         0% { opacity: 0.4; transform: scale(0.8); }
         50% { opacity: 1; transform: scale(1); }
@@ -249,13 +281,17 @@
             </div>
             <div class="action-rail">
               <button id="previewBtn" class="action-btn">Play</button>
+              <button id="transcribeBtn" class="action-btn">Transcribe</button>
               <button id="encodeBtn" class="action-btn">Encode</button>
               <button id="exportBtn" class="action-btn" disabled="disabled">Export</button>
             </div>
           </div>
           <div class="meta-row">
             <span id="videoSourceStatus"></span>
-            <span id="encodeRunStatus" class="run-status">Encoding…</span>
+            <div class="status-cluster">
+              <span id="transcriptionRunStatus" class="run-status transcription-status">Transcribe…</span>
+              <span id="encodeRunStatus" class="run-status">Encoding…</span>
+            </div>
           </div>
         </article>
         <details class="diagnostics">

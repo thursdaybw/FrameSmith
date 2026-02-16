@@ -109,7 +109,7 @@ function parseArgs(argv) {
 
 function printHelp() {
     console.log(`
-Phone browser E2E runner (ADB + Chrome DevTools CDP)
+Browser E2E runner (ADB or local Chrome DevTools CDP)
 
 Usage:
   node scripts/phone-e2e-runner.mjs [options]
@@ -124,8 +124,8 @@ Options:
   --out-dir <path>       Output folder for logs/artifacts. Default: artifacts/phone-e2e
   --start-server         Start local python http server (off by default)
   --server-port <n>      Local server port when --start-server is set. Default: 8000
-  --no-adb               Do not run adb commands; attach to existing DevTools target
-  --skip-launch          Do not launch URL; expect target already open on phone
+  --no-adb               Do not run adb commands; use local DevTools CDP endpoint
+  --skip-launch          Do not launch URL; expect target already open
   --ws-url <url>         Direct CDP websocket URL (implies --no-adb --skip-launch)
   --devtools-url <url>   Full Chrome Inspect/DevTools frontend URL containing ws=
   --help                 Show this help
@@ -204,6 +204,15 @@ async function getJson(url) {
     const response = await fetch(url);
     if (!response.ok) {
         throw new Error(`GET ${url} failed (${response.status})`);
+    }
+    return response.json();
+}
+
+async function openInspectableTarget({ devtoolsPort, appUrl }) {
+    const endpoint = `http://127.0.0.1:${devtoolsPort}/json/new?${encodeURIComponent(appUrl)}`;
+    const response = await fetch(endpoint, { method: "PUT" });
+    if (!response.ok) {
+        throw new Error(`PUT ${endpoint} failed (${response.status})`);
     }
     return response.json();
 }
@@ -287,12 +296,18 @@ function buildAppUrl({ baseUrl, indexPath, fixture }) {
 }
 
 async function waitForInspectableTarget({ devtoolsPort, expectedUrl, timeoutMs }) {
+    const expected = new URL(expectedUrl);
+    const expectedRunId = expected.searchParams.get("e2eRunId");
+    const expectedOriginPath = `${expected.origin}${expected.pathname}`;
     const startedAt = Date.now();
     while (Date.now() - startedAt <= timeoutMs) {
         const targets = await getJson(`http://127.0.0.1:${devtoolsPort}/json/list`);
         const match = targets.find((target) => {
             const value = String(target.url || "");
-            return value.includes(expectedUrl);
+            if (expectedRunId && value.includes(`e2eRunId=${expectedRunId}`)) {
+                return true;
+            }
+            return value.startsWith(expectedOriginPath);
         });
         if (match && match.webSocketDebuggerUrl) {
             return match;
@@ -496,11 +511,19 @@ async function main() {
                 webSocketDebuggerUrl: explicitWsUrl
             };
         } else {
-            target = await waitForInspectableTarget({
-                devtoolsPort: args.devtoolsPort,
-                expectedUrl: appUrl,
-                timeoutMs: Math.min(60_000, args.timeoutMs)
-            });
+            if (args.noAdb && !args.skipLaunch) {
+                target = await openInspectableTarget({
+                    devtoolsPort: args.devtoolsPort,
+                    appUrl
+                });
+            }
+            if (!target || !target.webSocketDebuggerUrl) {
+                target = await waitForInspectableTarget({
+                    devtoolsPort: args.devtoolsPort,
+                    expectedUrl: appUrl,
+                    timeoutMs: Math.min(60_000, args.timeoutMs)
+                });
+            }
         }
 
         const client = new CdpClient({
