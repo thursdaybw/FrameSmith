@@ -669,6 +669,31 @@ document.addEventListener("DOMContentLoaded", async () => {
         setLatestTranscriptText(text);
     };
 
+    function buildTranscriptTextFromOverlayItems(overlayItems) {
+        if (!Array.isArray(overlayItems) || overlayItems.length === 0) {
+            return "";
+        }
+        const lines = overlayItems.map((item) => {
+            if (!Array.isArray(item?.words) || item.words.length === 0) {
+                return "";
+            }
+            return item.words
+                .map((word) => (typeof word?.text === "string" ? word.text.trim() : ""))
+                .filter(Boolean)
+                .join(" ");
+        });
+        return lines.filter(Boolean).join("\n");
+    }
+
+    const setLatestTranscriptFromOverlayItems = (overlayItems, fallbackJson) => {
+        const text = buildTranscriptTextFromOverlayItems(overlayItems);
+        if (text.trim().length > 0) {
+            setLatestTranscriptText(text);
+            return;
+        }
+        setLatestTranscriptFromJson(fallbackJson);
+    };
+
     updateTranscriptControlsState();
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -846,7 +871,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         setRuntimeTranscriptOverlayItems(overlayItems);
         window.__runtimeTranscriptOverlayItems = overlayItems;
         window.__runtimeWhisperTranscriptJson = whisperJson;
-        setLatestTranscriptFromJson(whisperJson);
+        setLatestTranscriptFromOverlayItems(overlayItems, whisperJson);
 
         console.log("[Timeline][text-overlay] applied runtime transcript overlay items", {
             sourceLabel,
