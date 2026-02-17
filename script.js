@@ -365,6 +365,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const previewBtn = document.getElementById("previewBtn");
     const transcribeBtn = document.getElementById("transcribeBtn");
+    const showTranscriptBtn = document.getElementById("showTranscriptBtn");
     const encodeBtn = document.getElementById("encodeBtn");
     const exportBtn = document.getElementById("exportBtn");
     const videoFileInput = document.getElementById("videoFileInput");
@@ -372,6 +373,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const transcriptionRunStatus = document.getElementById("transcriptionRunStatus");
     const encodeRunStatus = document.getElementById("encodeRunStatus");
     const encodeDiagnosticsPanel = document.getElementById("encodeDiagnosticsPanel");
+    const transcriptPanel = document.getElementById("transcriptPanel");
+    const transcriptPanelText = document.getElementById("transcriptPanelText");
+    const transcriptPanelCloseBtn = document.getElementById("transcriptPanelCloseBtn");
+    const closeTranscriptPanelBtn = document.getElementById("closeTranscriptPanelBtn");
+    const copyTranscriptBtn = document.getElementById("copyTranscriptBtn");
+    const copyTranscriptBtnDefaultLabel = copyTranscriptBtn?.textContent || "Copy";
 
     // Demo Orchestration Only:
     // This HTMLVideoElement exists solely to support preview playback.
@@ -393,6 +400,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     let previewAnimationFrameId = null;
     let previewPlan = null;
     let lastWhisperAudioSourceKey = null;
+    let latestTranscriptText = "";
+    let copyFeedbackTimeoutId = null;
 
     const setHasLoadedSourceUiState = (hasSource) => {
         document.body.classList.toggle("has-source", !!hasSource);
@@ -550,6 +559,117 @@ document.addEventListener("DOMContentLoaded", async () => {
             tone: "error"
         });
     };
+
+    function openTranscriptPanel() {
+        if (!transcriptPanel || !showTranscriptBtn) return;
+        const hasTranscript = typeof latestTranscriptText === "string" && latestTranscriptText.trim().length > 0;
+        if (!hasTranscript) return;
+        transcriptPanel.classList.add("visible");
+        transcriptPanel.setAttribute("aria-modal", "true");
+    }
+
+    function closeTranscriptPanel() {
+        if (!transcriptPanel) return;
+        transcriptPanel.classList.remove("visible");
+        transcriptPanel.setAttribute("aria-modal", "false");
+    }
+
+    const resetCopyBtnLabel = () => {
+        if (!copyTranscriptBtn) return;
+        if (copyFeedbackTimeoutId !== null) {
+            window.clearTimeout(copyFeedbackTimeoutId);
+            copyFeedbackTimeoutId = null;
+        }
+        copyTranscriptBtn.textContent = copyTranscriptBtnDefaultLabel;
+    };
+
+    const updateTranscriptPanelDisplayText = (text) => {
+        if (!transcriptPanelText) return;
+        const normalized = typeof text === "string" ? text : "";
+        transcriptPanelText.textContent = normalized.length > 0 ? normalized : "Transcript not available yet.";
+    };
+
+    async function writeTextToClipboard(text) {
+        if (typeof text !== "string" || text.length === 0) {
+            return false;
+        }
+        if (navigator?.clipboard && typeof navigator.clipboard.writeText === "function") {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "readonly");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.pointerEvents = "none";
+        document.body.appendChild(textarea);
+        textarea.select();
+        let success = false;
+        try {
+            success = document.execCommand("copy");
+        } catch {
+            success = false;
+        }
+        document.body.removeChild(textarea);
+        return success;
+    }
+
+    const updateTranscriptControlsState = () => {
+        const hasTranscript = typeof latestTranscriptText === "string" && latestTranscriptText.trim().length > 0;
+        const disabled = !hasTranscript;
+        if (showTranscriptBtn) {
+            showTranscriptBtn.disabled = disabled;
+        }
+        if (copyTranscriptBtn) {
+            copyTranscriptBtn.disabled = disabled;
+            resetCopyBtnLabel();
+        }
+        if (disabled) {
+            closeTranscriptPanel();
+        }
+    };
+
+    const setLatestTranscriptText = (text) => {
+        latestTranscriptText = typeof text === "string" ? text : "";
+        updateTranscriptPanelDisplayText(latestTranscriptText);
+        updateTranscriptControlsState();
+    };
+
+    function buildTranscriptTextFromWhisperJson(whisperJson) {
+        if (!whisperJson || !Array.isArray(whisperJson.segments)) {
+            return "";
+        }
+        const lines = [];
+        for (const segment of whisperJson.segments) {
+            const trimmed = typeof segment?.text === "string" ? segment.text.trim() : "";
+            if (trimmed.length > 0) {
+                lines.push(trimmed);
+                continue;
+            }
+            if (Array.isArray(segment?.words)) {
+                const wordLine = segment.words
+                    .map((word) => (typeof word?.word === "string" ? word.word.trim() : ""))
+                    .filter(Boolean)
+                    .join(" ");
+                if (wordLine.length > 0) {
+                    lines.push(wordLine);
+                }
+            }
+        }
+        return lines.join("\n");
+    }
+
+    const setLatestTranscriptFromJson = (whisperJson) => {
+        if (!whisperJson) {
+            setLatestTranscriptText("");
+            return;
+        }
+        const text = buildTranscriptTextFromWhisperJson(whisperJson);
+        setLatestTranscriptText(text);
+    };
+
+    updateTranscriptControlsState();
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -726,6 +846,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         setRuntimeTranscriptOverlayItems(overlayItems);
         window.__runtimeTranscriptOverlayItems = overlayItems;
         window.__runtimeWhisperTranscriptJson = whisperJson;
+        setLatestTranscriptFromJson(whisperJson);
 
         console.log("[Timeline][text-overlay] applied runtime transcript overlay items", {
             sourceLabel,
@@ -3158,6 +3279,31 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 transcribeBtn.textContent = "Transcribe";
                 setWorkflowEnabled(!!timeline);
             }
+        };
+    }
+
+    if (showTranscriptBtn) {
+        showTranscriptBtn.onclick = openTranscriptPanel;
+    }
+    if (transcriptPanelCloseBtn) {
+        transcriptPanelCloseBtn.onclick = closeTranscriptPanel;
+    }
+    if (closeTranscriptPanelBtn) {
+        closeTranscriptPanelBtn.onclick = closeTranscriptPanel;
+    }
+    if (copyTranscriptBtn) {
+        copyTranscriptBtn.onclick = async () => {
+            const success = await writeTextToClipboard(latestTranscriptText);
+            if (copyTranscriptBtn) {
+                copyTranscriptBtn.textContent = success ? "Copied" : "Copy failed";
+            }
+            if (copyFeedbackTimeoutId !== null) {
+                window.clearTimeout(copyFeedbackTimeoutId);
+            }
+            copyFeedbackTimeoutId = window.setTimeout(() => {
+                resetCopyBtnLabel();
+                copyFeedbackTimeoutId = null;
+            }, 1200);
         };
     }
 
