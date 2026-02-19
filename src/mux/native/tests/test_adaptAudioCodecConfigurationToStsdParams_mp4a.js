@@ -14,12 +14,18 @@ export function test_adaptAudioCodecConfigurationToStsdParams_mp4a() {
 
     const out =
         adaptAudioCodecConfigurationToStsdParams({
-            codecConfiguration: {
+            semanticCodec: {
                 codec: "mp4a.40.2",
-                esds,
+                config: {
+                    representation: "container",
+                    bytes: esds
+                }
+            },
+            buildParameters: {
                 channelCount: 2,
                 sampleRate: 48000
-            }
+            },
+            buildHints: {}
         });
 
     assertEqual(

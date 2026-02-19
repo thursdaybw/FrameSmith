@@ -1,10 +1,11 @@
 import { adaptAudioCodecConfigurationToStsdParams } from "../../adapters/adaptAudioCodecConfigurationToStsdParams.js";
+import { getCodecContainerConfig } from "../../codec-normalization/getCodecContainerConfig.js";
 
 export const mp4aProfile = Object.freeze({
     id: "mp4a",
     mediaFamily: "audio",
     sampleEntryTypes: Object.freeze(["mp4a"]),
-    configKeys: Object.freeze(["esds"]),
+    configKeys: Object.freeze(["config"]),
     supportsMuxEmission: true,
     editListMediaTimeStrategy: "encoder_delay_samples",
     hasImplicitAudioDurationTrim: true,
@@ -28,7 +29,10 @@ export const mp4aProfile = Object.freeze({
 
         return {
             codec: "mp4a",
-            esds: sampleEntryReport.derived.esds,
+            config: {
+                representation: "container",
+                bytes: sampleEntryReport.derived.esds
+            },
             channelCount,
             sampleRate
         };
@@ -36,12 +40,16 @@ export const mp4aProfile = Object.freeze({
 
     adaptStsdParamsFromSemanticTrack({ codecName, semanticCodec, buildParameters, buildHints }) {
         return adaptAudioCodecConfigurationToStsdParams({
-            codecConfiguration: {
-                codec:        codecName,
-                esds:         semanticCodec.esds,
+            semanticCodec: {
+                ...semanticCodec,
+                codec: codecName
+            },
+            buildParameters: {
                 channelCount: buildParameters.channelCount,
-                sampleRate:   buildParameters.sampleRate,
-                btrt:         buildHints?.btrt
+                sampleRate:   buildParameters.sampleRate
+            },
+            buildHints: {
+                btrt: buildHints?.btrt
             }
         });
     },

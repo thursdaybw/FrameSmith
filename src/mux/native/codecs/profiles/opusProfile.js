@@ -1,10 +1,11 @@
 import { adaptAudioCodecConfigurationToStsdParams } from "../../adapters/adaptAudioCodecConfigurationToStsdParams.js";
+import { getCodecContainerConfig } from "../../codec-normalization/getCodecContainerConfig.js";
 
 export const opusProfile = Object.freeze({
     id: "opus",
     mediaFamily: "audio",
     sampleEntryTypes: Object.freeze(["opus"]),
-    configKeys: Object.freeze(["dOps"]),
+    configKeys: Object.freeze(["config"]),
     supportsMuxEmission: true,
     editListMediaTimeStrategy: "frame_quantized_encoder_delay",
     hasImplicitAudioDurationTrim: false,
@@ -21,7 +22,10 @@ export const opusProfile = Object.freeze({
 
         return {
             codec: "opus",
-            dOps: sampleEntryReport.derived.dOps,
+            config: {
+                representation: "container",
+                bytes: sampleEntryReport.derived.dOps
+            },
             channelCount,
             sampleRate
         };
@@ -29,12 +33,16 @@ export const opusProfile = Object.freeze({
 
     adaptStsdParamsFromSemanticTrack({ codecName, semanticCodec, buildParameters, buildHints }) {
         return adaptAudioCodecConfigurationToStsdParams({
-            codecConfiguration: {
-                codec:        codecName,
-                dOps:         semanticCodec.dOps,
+            semanticCodec: {
+                ...semanticCodec,
+                codec: codecName
+            },
+            buildParameters: {
                 channelCount: buildParameters.channelCount,
-                sampleRate:   buildParameters.sampleRate,
-                btrt:         buildHints?.btrt
+                sampleRate:   buildParameters.sampleRate
+            },
+            buildHints: {
+                btrt: buildHints?.btrt
             }
         });
     },

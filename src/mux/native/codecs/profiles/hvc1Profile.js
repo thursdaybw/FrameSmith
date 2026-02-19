@@ -2,7 +2,7 @@ export const hvc1Profile = Object.freeze({
     id: "hvc1",
     mediaFamily: "video",
     sampleEntryTypes: Object.freeze(["hvc1", "hev1"]),
-    configKeys: Object.freeze(["hvcC"]),
+    configKeys: Object.freeze(["config"]),
     supportsMuxEmission: false,
     editListMediaTimeStrategy: "encoder_delay_samples",
     hasImplicitAudioDurationTrim: false,
@@ -15,9 +15,11 @@ export const hvc1Profile = Object.freeze({
         }
 
         return {
-            codec: sampleEntryType,
-            hvcC: sampleEntryReport.derived.hvcC,
-            hvcCCompleteness: "container-complete"
+            codec: sampleEntryReport.box.type, // "hvc1" or "hev1"
+            config: {
+                representation: "container",
+                bytes: sampleEntryReport.derived.hvcC
+            }
         };
     },
 

@@ -118,10 +118,7 @@ function validateMp4TrackInput(track, trackIndex) {
         codec,
         [
             "codec",
-            "avcC",
-            "avcCCompleteness",
-            "esds",
-            "dOps",
+            "config"
         ]
     );
 
@@ -131,33 +128,64 @@ function validateMp4TrackInput(track, trackIndex) {
         );
     }
 
-    // video
-    if (codec.avcC !== undefined) {
-        if (!(codec.avcC instanceof Uint8Array)) {
-            throw new Error(
-                "semanticCore.codec.avcC must be a Uint8Array if provided"
-            );
-        }
+    const config = codec.config;
+
+    if (!config || typeof config !== "object") {
+        throw new Error(
+            "semanticCore.codec.config must be an object"
+        );
     }
 
-    // audio
-    if (codec.esds !== undefined) {
-        if (!(codec.esds instanceof Uint8Array)) {
-            throw new Error(
-                "semanticCore.codec.esds must be a Uint8Array if provided"
-            );
-        }
+    assertAllowedKeys(
+        "semanticCore.codec.config",
+        config,
+        [
+            "representation",
+            "bytes",
+            "completeness"
+        ]
+    );
+
+    if (
+        config.representation !== "container" &&
+        config.representation !== "elementary"
+    ) {
+        throw new Error(
+            "semanticCore.codec.config.representation must be \"container\" or \"elementary\""
+        );
     }
 
-    if (codec.avcCCompleteness !== undefined) {
+    if (
+        config.representation !== "container" &&
+        config.representation !== "elementary"
+    ) {
+        throw new Error(
+            "semanticCore.codec.config.representation must be \"container\" or \"elementary\""
+        );
+    }
+
+    if (config.completeness !== undefined) {
         if (
-            codec.avcCCompleteness !== "semantic" &&
-            codec.avcCCompleteness !== "container-complete"
+            config.completeness !== "semantic" &&
+            config.completeness !== "container-complete"
         ) {
             throw new Error(
-                "semanticCore.codec.avcCCompleteness has invalid value"
+                "semanticCore.codec.config.completeness must be \"semantic\" or \"container-complete\""
             );
         }
+    }
+
+    if (!(config.bytes instanceof Uint8Array)) {
+        throw new Error(
+            "semanticCore.codec.config.bytes must be a Uint8Array"
+        );
+    }
+
+
+    if (!(config.bytes instanceof Uint8Array)) {
+        throw new Error(
+            "semanticCore.codec.config.bytes must be a Uint8Array"
+        );
     }
 
     // ---------------------------------------------------------
@@ -219,7 +247,7 @@ function validateMp4TrackInput(track, trackIndex) {
     if (
         track.semanticHints !== undefined &&
         (track.semanticHints === null ||
-         typeof track.semanticHints !== "object")
+            typeof track.semanticHints !== "object")
     ) {
         throw new Error(
             "semanticHints must be an object if provided"
@@ -330,4 +358,3 @@ function assertAllowedKeys(context, obj, allowedKeys) {
         ].join("\n")
     );
 }
-

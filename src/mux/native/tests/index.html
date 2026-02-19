@@ -7,7 +7,6 @@
 <button id="run-boundary">Run Boundary Tests</button>
 <button id="run-integration">Run Integration Tests</button>
 <button id="run-all">Run All Tests</button>
-<script src="../../../../vendor/mp4box.js/dist/mp4box.all.global.js"></script>
 <script type="module">
 /*
 if (location.hostname === "localhost") {
@@ -142,7 +141,9 @@ import {
 import { testSerializer } from "./test_serializer.js"
 
 import { 
-    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_OPUS,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC_AudioSpecificConfigOnly,
 } from "./test_NativeMuxer_EndToEnd_FromMp4BuildInput.js";
 
 import { 
@@ -1229,7 +1230,11 @@ const testsAll = [
     //generateWebCodecsAvOpusFixtures,
     //testNativeMuxer_MP4_FromResolvedParts_Equals_FFmpegOracle,
     //test_SourceClient_WebCodecs_ProducesMp4BuildInput,
-    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical,
+
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_OPUS,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC_AudioSpecificConfigOnly,
+
     test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic,
     ];
 

@@ -127,7 +127,7 @@ function extractVideoTrackFromMp4({ mp4Bytes, audioCodecName }) {
     }
 
 
-    const codec = extractTrackCodecConfigurationFromMp4({ mp4Bytes, zeroBasedTrackIndex: 0 });
+    const codecConfig = extractTrackCodecConfigurationFromMp4({ mp4Bytes, zeroBasedTrackIndex: 0 });
 
     const buildParameters = extractTrackContainerMetadataFromMp4({ mp4Bytes, zeroBasedTrackIndex: 0 });
 
@@ -167,6 +167,14 @@ function extractVideoTrackFromMp4({ mp4Bytes, audioCodecName }) {
 
     // HARD-CODE oracle chunking for now
     //buildHints.chunkingStrategy = "one-sample-per-chunk";
+
+    console.log("extractVideoTrack codecConfig", codecConfig);
+
+    const codec = codecConfig;
+
+    if (!(codec.config.bytes instanceof Uint8Array)) {
+        console.log("BAD CODEC CONFIG", codec);
+    }
 
     return {
         semanticCore: {
@@ -248,9 +256,16 @@ function extractAudioTrackFromMp4({ mp4Bytes }) {
         ).getEmitterInput()
     }
 
-    const codec = { codec: codecConfig.codec, }  
+    const codec = {
+        codec: codecConfig.codec,
+        config: codecConfig.config
+    };
 
-    if (codecConfig.codec == "opus") { 
+    if (!(codec.config?.bytes instanceof Uint8Array)) {
+        console.log("BAD CODEC CONFIG", { track: "audio", codecConfig });
+    }
+
+    if (codecConfig.codec == "opus") {
 
         buildHints.chunkingStrategy      = "ffmpeg-opus-packet-grouped";
         buildHints.packetizationStrategy = "ffmpeg-opus-packetization";
@@ -262,16 +277,15 @@ function extractAudioTrackFromMp4({ mp4Bytes }) {
             )
             .getEmitterInput();
 
-        codec.dOps = codecConfig.dOps;
-
-        semanticHints.encoderDelaySamples = deriveOpusEncoderDelaySamples({ accessUnits, codecConfig });
+        semanticHints.encoderDelaySamples = deriveOpusEncoderDelaySamples({
+            accessUnits,
+            codecConfig: { dOps: codec.config.bytes }
+        });
 
     }
     else if (codecConfig.codec == "mp4a") {
         semanticHints.codecPacketRuns = deriveExpandedChunkSampleCounts({ mp4Bytes, zeroBasedTrackIndex: 1 });
-        codec.esds = codecConfig.esds;
-        semanticHints.encoderDelaySamples = extractAacEncoderDelaySamples(codecConfig.esds);
-
+        semanticHints.encoderDelaySamples = extractAacEncoderDelaySamples(codec.config.bytes);
     }
     else {
         throw new Error(

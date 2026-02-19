@@ -1,10 +1,11 @@
 import { adaptCodecConfigurationToStsdParams } from "../../adapters/adaptCodecConfigurationToStsdParams.js";
+import { getCodecContainerConfig } from "../../codec-normalization/getCodecContainerConfig.js";
 
 export const avc1Profile = Object.freeze({
     id: "avc1",
     mediaFamily: "video",
     sampleEntryTypes: Object.freeze(["avc1"]),
-    configKeys: Object.freeze(["avcC"]),
+    configKeys: Object.freeze(["config"]),
     supportsMuxEmission: true,
     editListMediaTimeStrategy: "encoder_delay_samples",
     hasImplicitAudioDurationTrim: false,
@@ -17,20 +18,23 @@ export const avc1Profile = Object.freeze({
 
         return {
             codec: "avc1",
-            avcC: sampleEntryReport.derived.avcC,
-            avcCCompleteness: "container-complete"
+            config: {
+                representation: "container",
+                bytes: sampleEntryReport.derived.avcC
+            }
         };
     },
 
-    adaptStsdParamsFromSemanticTrack({ codecName, semanticCodec, buildParameters, buildHints }) {
+    adaptStsdParamsFromSemanticTrack({
+        codecName,
+        semanticCodec,
+        buildParameters,
+        buildHints
+    }) {
         return adaptCodecConfigurationToStsdParams({
-            codec:          codecName,
-            avcC:           semanticCodec.avcC,
-            width:          buildParameters.codedWidth,
-            height:         buildParameters.codedHeight,
-            compressorName: buildHints?.compressorName ?? "AVC Coding",
-            pasp:           buildHints?.pasp,
-            btrt:           buildHints?.btrt
+            semanticCodec,
+            buildParameters,
+            buildHints
         });
     },
 

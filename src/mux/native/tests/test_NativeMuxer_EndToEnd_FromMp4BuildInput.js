@@ -135,13 +135,46 @@ import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
     */
 
 // TEST A
-export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
+async function runEndToEndCanonicalTest({ referencePath }) {
 
-    //const resp = await fetch("reference/reference_av.mp4");
-    const resp = await fetch("reference/reference_av_opus.mp4");
+    const resp = await fetch(referencePath);
     const goldenMp4 = new Uint8Array(await resp.arrayBuffer());
 
     const mp4BuildInput = await runGoldenMp4AVTestClient({ mp4Bytes: goldenMp4 });
+
+    return executeCanonicalAssertions({ mp4BuildInput, goldenMp4 });
+}
+
+
+export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC() {
+    await runEndToEndCanonicalTest({ referencePath: "reference/reference_av.mp4" });
+}
+
+export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_OPUS() {
+    await runEndToEndCanonicalTest({ referencePath: "reference/reference_av_opus.mp4" });
+}
+
+export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC_AudioSpecificConfigOnly() {
+    await runEndToEndCanonicalTest_AudioSpecificConfigOnly({ referencePath: "reference/reference_av.mp4" });
+}
+
+async function runEndToEndCanonicalTest_AudioSpecificConfigOnly({ referencePath }) {
+
+    const resp = await fetch(referencePath);
+    const goldenMp4 = new Uint8Array(await resp.arrayBuffer());
+
+    const mp4BuildInput = await runGoldenMp4AVTestClient({ mp4Bytes: goldenMp4 });
+
+    for (const track of mp4BuildInput.tracks) {
+        if (track.semanticCore?.codec?.codec === "mp4a") {
+            delete track.semanticCore.codec.esds;
+        }
+    }
+
+    return executeCanonicalAssertions({ mp4BuildInput, goldenMp4 });
+}
+
+async function executeCanonicalAssertions({ mp4BuildInput, goldenMp4 }) {
 
     // ---------------------------------------------------------
     // Compile MP4 (debug object temporarily enabled)
@@ -194,6 +227,7 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
         "\nprodT1Stco", prodT1Stco.box, 
         "\n=============================================\n",
     );
+
 
     const goldT1Stsz = getGoldenTruthBox .getSemanticBoxDataFromBox(
         {
@@ -334,7 +368,6 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
         }
     ).readBoxReport();
 
-
     const ftypBoxProd = getGoldenTruthBox .getSemanticBoxDataFromBox(
         {
             boxBytes: outBytes,
@@ -379,7 +412,7 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
     }
 
     // -----------------------------------------------------
-    // mDat header  
+    // mDat header
     // -----------------------------------------------------
     const mdatBytes = getGoldenTruthBox .getSemanticBoxDataFromBox(
         {
@@ -415,7 +448,6 @@ export async function test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical() {
         console.log("[DEBUG] Downloading canonical MP4…");
         downloadMp4(outBytes, "canonical-native-muxer.mp4");
     }
-
 }
 
 export const SELECTORS = [
@@ -618,5 +650,3 @@ function downloadMp4(bytes, filename) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
-
-

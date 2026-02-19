@@ -69,13 +69,22 @@ export function test_adaptEncodedOutputsToMp4BuildInput_buildsValidTracks() {
     assert(videoTrack.semanticCore.accessUnits.length === 2, "video track must contain all encoded video units");
     assert(videoTrack.semanticCore.accessUnits[0].pts === 5_000_000, "video PTS must match encoded chunk timestamp");
     assert(videoTrack.semanticCore.accessUnits[0].isKey === true, "video keyframe flag must map from chunk type");
-    assert(videoTrack.semanticCore.codec.avcCCompleteness === "semantic", "video avcC completeness must be semantic");
+    assert(videoTrack.semanticCore.codec.config.completeness === "semantic", "video codec completeness must be semantic");
     assert(videoTrack.payloads.accessUnitPayloads[0] instanceof Uint8Array, "video payloads must be Uint8Array");
 
     assert(audioTrack.semanticCore.accessUnits.length === 2, "audio track must contain all encoded audio units");
     assert(audioTrack.semanticCore.accessUnits[1].pts === 5_500_000, "audio PTS must match encoded chunk timestamp");
     assert(audioTrack.semanticCore.codec.codec === "opus", "audio codec string must propagate");
-    assert(audioTrack.semanticCore.codec.dOps instanceof Uint8Array, "audio dOps must be set from decoder config description");
+    assert(audioTrack.semanticCore.codec.config.bytes instanceof Uint8Array, "audio codec bytes must be set from decoder config description");
+    assert(
+        audioTrack.semanticCore.codec.config.representation === "container",
+        "audio codec representation must be container"
+    );
+
+    assert(
+        audioTrack.semanticCore.codec.config.bytes instanceof Uint8Array,
+        "audio codec bytes must be set from decoder config description"
+    );
     assert(audioTrack.payloads.accessUnitPayloads[1] instanceof Uint8Array, "audio payloads must be Uint8Array");
 }
 

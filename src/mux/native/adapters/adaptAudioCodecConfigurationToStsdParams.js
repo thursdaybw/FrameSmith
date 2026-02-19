@@ -1,4 +1,3 @@
-
 import {
     normalizeWebCodecsDopsToFfmpegCompact,
     NotWebCodecsOpusHeadError
@@ -7,49 +6,52 @@ import {
 import { applyBtrtContainerPolicy } from "../policies/applyBtrtContainerPolicy.js";
 
 import { parseAudioSpecificConfigFromEsds } from "../codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
+import { getCodecContainerConfig } from "../codec-normalization/getCodecContainerConfig.js";
 
-/**
- * adaptAudioCodecConfigurationToStsdParams
- * ========================================
- *
- * Tier 3 adapter.
- *
- * Translates semantic audio codec configuration into
- * emit-ready STSD sample entry parameters.
- *
- * This adapter:
- * - derives audio shape from codec configuration
- * - normalizes WebCodecs OpusHead → FFmpeg-compatible dOps
- * - applies only single-valid defaults
- *
- * This adapter does NOT:
- * - apply container compatibility policy
- * - invent flags
- * - touch btrt
- */
-export function adaptAudioCodecConfigurationToStsdParams({ codecConfiguration }) {
+export function adaptAudioCodecConfigurationToStsdParams({
+    semanticCodec,
+    buildParameters,
+    buildHints
+}) {
+    // ---------------------------------------------------------
+    // Contract validation
+    // ---------------------------------------------------------
 
-    let stsdParams = {};
+    if (!semanticCodec || typeof semanticCodec !== "object") {
+        throw new Error(
+            "adaptAudioCodecConfigurationToStsdParams: semanticCodec is required"
+        );
+    }
 
-    if (codecConfiguration.codec === "opus") {
+    if (!buildParameters || typeof buildParameters !== "object") {
+        throw new Error(
+            "adaptAudioCodecConfigurationToStsdParams: buildParameters is required"
+        );
+    }
 
-        if (!(codecConfiguration.dOps instanceof Uint8Array)) {
-            throw new Error(
-                "adaptAudioCodecConfigurationToStsdParams: opus requires dOps Uint8Array"
-            );
-        }
+    if (!buildHints || typeof buildHints !== "object") {
+        throw new Error(
+            "adaptAudioCodecConfigurationToStsdParams: buildHints is required"
+        );
+    }
 
-        // ---------------------------------------------------------
-        // Normalize WebCodecs OpusHead → MP4 compact dOps (7 bytes)
-        // ---------------------------------------------------------
+    const { containerBytes } = getCodecContainerConfig(semanticCodec);
 
-        let normalizedPayload
+    let stsdParams;
+
+    // =========================================================
+    // OPUS
+    // =========================================================
+
+    if (semanticCodec.codec === "opus") {
+        let normalizedPayload;
 
         try {
-            normalizedPayload = normalizeWebCodecsDopsToFfmpegCompact(codecConfiguration.dOps);
+            normalizedPayload =
+                normalizeWebCodecsDopsToFfmpegCompact(containerBytes);
         } catch (err) {
             if (err instanceof NotWebCodecsOpusHeadError) {
-                normalizedPayload = codecConfiguration.dOps;
+                normalizedPayload = containerBytes;
             } else {
                 throw err;
             }
@@ -61,104 +63,97 @@ export function adaptAudioCodecConfigurationToStsdParams({ codecConfiguration })
             );
         }
 
-        if (!Number.isInteger(codecConfiguration.channelCount) || codecConfiguration.channelCount <= 0) {
+        const channelCount = buildParameters.channelCount;
+        const sampleRate   = buildParameters.sampleRate;
+
+        if (!Number.isInteger(channelCount) || channelCount <= 0) {
             throw new Error(
-                "adaptAudioCodecConfigurationToStsdParams: invalid channelCount from dOps"
+                "adaptAudioCodecConfigurationToStsdParams: invalid channelCount"
             );
         }
 
-        if (!Number.isInteger(codecConfiguration.sampleRate) || codecConfiguration.sampleRate <= 0) {
+        if (!Number.isInteger(sampleRate) || sampleRate <= 0) {
             throw new Error(
-                "adaptAudioCodecConfigurationToStsdParams: invalid sampleRate from dOps"
+                "adaptAudioCodecConfigurationToStsdParams: invalid sampleRate"
             );
         }
 
-        // ---------------------------------------------------------
-        // Emit-ready STSD params (policy-free)
-        // ---------------------------------------------------------
         stsdParams = {
             codec: "opus",
-
-            channelCount: codecConfiguration.channelCount,
-            sampleRate:   (codecConfiguration.sampleRate << 16) >>> 0,
-
-            //sampleRate: 0xbb800000, // 48000 << 16
-            // MP4 single-valid defaults
+            channelCount,
+            sampleRate: (sampleRate << 16) >>> 0,
             sampleSize: 16,
             dataReferenceIndex: 1,
-
-            // dOps (container policy, hard-coded)
             dOps: {
                 payload: normalizedPayload,
                 version: 0,
-                flags: 131384, 
-            },
-
-            btrt: {
+                flags: 131384
             }
         };
+    }
 
-    } else if (codecConfiguration.codec.startsWith("mp4a")) {
+    // =========================================================
+    // MP4A (AAC)
+    // =========================================================
 
-            if (!(codecConfiguration.esds instanceof Uint8Array)) {
-                throw new Error(
-                    "adaptAudioCodecConfigurationToStsdParams: mp4a requires esds Uint8Array"
-                );
-            }
+    else if (semanticCodec.codec.startsWith("mp4a")) {
+        let channelCount;
+        let sampleRate;
 
-            let channelCount;
-            let sampleRate;
+        const asc = parseAudioSpecificConfigFromEsds({
+            esds: containerBytes
+        });
 
-            const asc = parseAudioSpecificConfigFromEsds({
-                    esds: codecConfiguration.esds
-                });
+        if (asc !== null) {
+            const samplingFrequencyTable = [
+                96000, 88200, 64000, 48000,
+                44100, 32000, 24000, 22050,
+                16000, 12000, 11025, 8000,
+                7350
+            ];
 
-            if (asc !== null) {
+            channelCount = asc.channelConfiguration;
+            sampleRate   =
+                samplingFrequencyTable[asc.samplingFrequencyIndex];
+        } else {
+            channelCount = buildParameters.channelCount;
+            sampleRate   = buildParameters.sampleRate;
+        }
 
-                const samplingFrequencyTable = [
-                    96000, 88200, 64000, 48000,
-                    44100, 32000, 24000, 22050,
-                    16000, 12000, 11025, 8000,
-                    7350
-                ];
+        if (!Number.isInteger(channelCount) ||
+            !Number.isInteger(sampleRate)) {
+            throw new Error(
+                "adaptAudioCodecConfigurationToStsdParams: unable to resolve channelCount/sampleRate"
+            );
+        }
 
-                channelCount = asc.channelConfiguration;
-                sampleRate   = samplingFrequencyTable[asc.samplingFrequencyIndex];
+        stsdParams = {
+            codec: "mp4a",
+            esds: new Uint8Array(containerBytes),
+            channelCount,
+            sampleRate,
+            sampleSize: 16,
+            dataReferenceIndex: 1
+        };
+    }
 
-            } else {
+    // =========================================================
+    // Unsupported
+    // =========================================================
 
-                channelCount = codecConfiguration.channelCount;
-                sampleRate   = codecConfiguration.sampleRate;
-            }
-
-            if (!Number.isInteger(channelCount) ||
-                !Number.isInteger(sampleRate)) {
-                throw new Error(
-                    "adaptAudioCodecConfigurationToStsdParams: unable to resolve channelCount/sampleRate"
-                );
-            }
-
-         stsdParams = {
-                codec: "mp4a",
-                esds: new Uint8Array(codecConfiguration.esds),
-                channelCount,
-                sampleRate,
-                sampleSize: 16,
-                dataReferenceIndex: 1,
-            };
-
-    } else {
-
+    else {
         throw new Error(
-            `adaptAudioCodecConfigurationToStsdParams: unsupported codec ${codec}`
+            `adaptAudioCodecConfigurationToStsdParams: unsupported codec ${semanticCodec.codec}`
         );
     }
 
-    // - sourced ONLY from buildHints
-    // - validated and passed through verbatim
-    // - omitted if not supplied
-    stsdParams.btrt = applyBtrtContainerPolicy({ btrt: codecConfiguration?.btrt })
+    // ---------------------------------------------------------
+    // Container policies
+    // ---------------------------------------------------------
+
+    stsdParams.btrt = applyBtrtContainerPolicy({
+        btrt: buildHints?.btrt
+    });
 
     return stsdParams;
-
 }
