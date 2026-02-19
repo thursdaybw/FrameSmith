@@ -4,6 +4,12 @@
  * This module is the SINGLE source of truth for mapping
  * WebCodecs encoder output into Mp4BuildInput tracks.
  *
+ * Review this modules location. It's in src/mux/native,
+ * I'm not sure it should live here. Need to review, it's
+ * basically a webcodecs adapter, but also not something
+ * I want the app to care about, while also it increases my
+ * compiler's API
+ *
  * Do not duplicate. Do not wrap. Do not reinterpret.
  */
 
@@ -29,13 +35,27 @@ export function buildVideoTrackFromWebCodecs({
         });
     }
 
+    const descriptionBytes =
+        decoderConfig.description instanceof Uint8Array
+            ? new Uint8Array(decoderConfig.description)
+            : decoderConfig.description instanceof ArrayBuffer
+                ? new Uint8Array(decoderConfig.description)
+                : null;
+
+    if (!(descriptionBytes instanceof Uint8Array) || descriptionBytes.length === 0) {
+        throw new Error("buildVideoTrackFromWebCodecs: decoderConfig.description is required");
+    }
+
     return {
         semanticCore: {
             accessUnits,
             codec: {
                 codec: decoderConfig.codec,
-                avcC: new Uint8Array(decoderConfig.description),
-                avcCCompleteness: "semantic"
+                config: {
+                    representation: "container",
+                    completeness: "semantic",
+                    bytes: descriptionBytes
+                }
             }
         },
 
@@ -69,14 +89,49 @@ export function buildAudioTrackFromWebCodecs({
         });
     }
 
-    const dOps = new Uint8Array(decoderConfig.description);
+    function toBytes(value) {
+        if (value instanceof Uint8Array) return new Uint8Array(value);
+        if (value instanceof ArrayBuffer) return new Uint8Array(value);
+        return null;
+    }
+
+    const codecString = typeof decoderConfig?.codec === "string"
+        ? decoderConfig.codec.toLowerCase()
+        : "";
+
+    const esdsBytes = toBytes(decoderConfig?.esds);
+    const dOpsBytes = toBytes(decoderConfig?.dOps);
+    const descriptionBytes = toBytes(decoderConfig?.description);
+
+    let representation = "container";
+    let configBytes = esdsBytes ?? dOpsBytes ?? descriptionBytes;
+
+    if (!configBytes || configBytes.length === 0) {
+        throw new Error("buildAudioTrackFromWebCodecs: missing decoder config bytes");
+    }
+
+    if (codecString.startsWith("mp4a")) {
+        if (esdsBytes && esdsBytes.length > 0) {
+            representation = "container";
+            configBytes = esdsBytes;
+        } else {
+            representation = "elementary";
+            configBytes = descriptionBytes;
+        }
+    } else if (codecString.startsWith("opus")) {
+        representation = "container";
+        configBytes = dOpsBytes ?? descriptionBytes;
+    }
 
     return {
         semanticCore: {
             accessUnits,
             codec: {
                 codec: decoderConfig.codec,
-                dOps
+                config: {
+                    representation,
+                    bytes: configBytes
+                }
             }
         },
 

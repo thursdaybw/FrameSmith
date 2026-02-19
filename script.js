@@ -1487,24 +1487,42 @@ document.addEventListener("DOMContentLoaded", async () => {
             return new Uint8Array([byte0, byte1]);
         };
 
-        const sourceEsds = audioTrackView.codecConfig.esds;
+        const audioCodecConfig = audioTrackView.codecConfig ?? {};
+        const audioCodecRepresentation = audioCodecConfig?.config?.representation;
+        const audioCodecBytes = audioCodecConfig?.config?.bytes instanceof Uint8Array
+            ? audioCodecConfig.config.bytes
+            : null;
+        const sourceEsds =
+            audioCodecConfig.codec === "mp4a" && audioCodecRepresentation === "container"
+                ? audioCodecBytes
+                : (audioCodecConfig.esds instanceof Uint8Array ? audioCodecConfig.esds : null);
         const aacAsc = sourceEsds
             ? parseAudioSpecificConfigFromEsds({ esds: sourceEsds })
             : null;
-        const audioDecoderCodecFromSource = audioTrackView.codecConfig.codec === "mp4a" && aacAsc?.audioObjectType
+        const audioDecoderCodecFromSource = audioCodecConfig.codec === "mp4a" && aacAsc?.audioObjectType
             ? `mp4a.40.${aacAsc.audioObjectType}`
             : audioDecoderCodec;
-        const normalizedAudioSampleRate = (audioTrackView.codecConfig.sampleRate ?? 48_000) > 192_000
-            ? ((audioTrackView.codecConfig.sampleRate ?? 48_000) >>> 16)
-            : (audioTrackView.codecConfig.sampleRate ?? 48_000);
+        const normalizedAudioSampleRate = (audioCodecConfig.sampleRate ?? 48_000) > 192_000
+            ? ((audioCodecConfig.sampleRate ?? 48_000) >>> 16)
+            : (audioCodecConfig.sampleRate ?? 48_000);
 
-        let audioDecoderDescription = audioTrackView.codecConfig.codec === "mp4a"
-            ? extractAudioSpecificConfigBytesFromEsds(sourceEsds)
-            : (audioTrackView.codecConfig.dOps ?? audioTrackView.codecConfig.esds);
-        const audioDecoderChannelCount = audioTrackView.codecConfig.channelCount ?? 2;
+        let audioDecoderDescription = null;
+        if (audioCodecConfig.codec === "mp4a") {
+            if (audioCodecRepresentation === "elementary" && audioCodecBytes instanceof Uint8Array) {
+                audioDecoderDescription = audioCodecBytes;
+            } else {
+                audioDecoderDescription = extractAudioSpecificConfigBytesFromEsds(sourceEsds);
+            }
+        } else {
+            audioDecoderDescription =
+                (audioCodecBytes instanceof Uint8Array ? audioCodecBytes : null) ??
+                audioCodecConfig.dOps ??
+                audioCodecConfig.esds;
+        }
+        const audioDecoderChannelCount = audioCodecConfig.channelCount ?? 2;
         const audioDecoderSampleRate = normalizedAudioSampleRate;
 
-        if (!audioDecoderDescription && audioTrackView.codecConfig.codec === "mp4a") {
+        if (!audioDecoderDescription && audioCodecConfig.codec === "mp4a") {
             audioDecoderDescription = createAacLcAudioSpecificConfig({
                 sampleRate: audioDecoderSampleRate,
                 channelCount: audioDecoderChannelCount
@@ -1861,9 +1879,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function deriveDecodeVideoCodecAndDescription(videoTrackView) {
-        const sourceVideoCodec = videoTrackView.codecConfig.codec;
-        const avcC = videoTrackView.codecConfig.avcC;
-        const hvcC = videoTrackView.codecConfig.hvcC;
+        const videoCodecConfig = videoTrackView.codecConfig ?? {};
+        const sourceVideoCodec = videoCodecConfig.codec;
+        const videoCodecRepresentation = videoCodecConfig?.config?.representation;
+        const videoCodecBytes = videoCodecConfig?.config?.bytes instanceof Uint8Array
+            ? videoCodecConfig.config.bytes
+            : null;
+        const avcC =
+            sourceVideoCodec === "avc1" && videoCodecRepresentation === "container"
+                ? videoCodecBytes
+                : videoCodecConfig.avcC;
+        const hvcC =
+            (sourceVideoCodec === "hvc1" || sourceVideoCodec === "hev1") &&
+            videoCodecRepresentation === "container"
+                ? videoCodecBytes
+                : videoCodecConfig.hvcC;
 
         let decodeVideoCodec = sourceVideoCodec;
         if (sourceVideoCodec === "avc1" && avcC instanceof Uint8Array && avcC.length >= 4) {
