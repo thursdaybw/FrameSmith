@@ -3072,11 +3072,78 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 throw error;
             }
         });
-        audioEncoder.configure({
-            codec: "opus",
-            sampleRate: 48_000,
-            numberOfChannels: 2,
-            bitrate: 128_000
+
+        const audioEncoderCandidates = [
+            {
+                codec: "mp4a.40.2",
+                sampleRate: 48_000,
+                numberOfChannels: 2,
+                bitrate: 192_000
+            },
+            {
+                codec: "opus",
+                sampleRate: 48_000,
+                numberOfChannels: 2,
+                bitrate: 128_000
+            }
+        ];
+
+        let selectedAudioEncoderConfig = null;
+        const supportChecks = [];
+
+        for (const candidate of audioEncoderCandidates) {
+            let isSupported = true;
+
+            if (typeof AudioEncoder.isConfigSupported === "function") {
+                try {
+                    const support = await AudioEncoder.isConfigSupported(candidate);
+                    isSupported = Boolean(support?.supported);
+                    supportChecks.push({
+                        codec: candidate.codec,
+                        supported: isSupported
+                    });
+                } catch (error) {
+                    isSupported = false;
+                    supportChecks.push({
+                        codec: candidate.codec,
+                        supported: false,
+                        reason: error?.message ?? String(error)
+                    });
+                }
+            }
+
+            if (!isSupported) {
+                continue;
+            }
+
+            try {
+                audioEncoder.configure(candidate);
+                selectedAudioEncoderConfig = candidate;
+                break;
+            } catch (error) {
+                supportChecks.push({
+                    codec: candidate.codec,
+                    supported: false,
+                    reason: error?.message ?? String(error)
+                });
+            }
+        }
+
+        if (!selectedAudioEncoderConfig) {
+            throw new Error(
+                "createConfiguredEncoders: no supported audio encoder config " +
+                `checks=${JSON.stringify(supportChecks)}`
+            );
+        }
+
+        emitEncodeSignal({
+            label: "[Encode] selected audio encoder config",
+            payload: {
+                codec: selectedAudioEncoderConfig.codec,
+                sampleRate: selectedAudioEncoderConfig.sampleRate,
+                channels: selectedAudioEncoderConfig.numberOfChannels,
+                bitrate: selectedAudioEncoderConfig.bitrate
+            }
         });
 
         return {
