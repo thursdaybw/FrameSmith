@@ -2975,6 +2975,10 @@ async function normalizeUnsupportedSourceToWorkingSet({
         error,
         range
     }) {
+
+
+        globalThis.__encodeDiag = { ...(globalThis.__encodeDiag || {}), fallbackEngagedAt: performance.now() };
+        
         let rangeStartSeconds = null;
         let rangeEndSeconds = null;
         if (range && typeof range.startSeconds === "number") {

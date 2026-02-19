@@ -311,11 +311,19 @@ export class ExportExecutionStrategy {
 
                 if (hasDecodedVideoCadence && !loggedVideoCadence) {
                     loggedVideoCadence = true;
+                    globalThis.__encodeDiag = {
+                        ...(globalThis.__encodeDiag || {}),
+                        composeStartAt: performance.now()
+                    };
                     console.log("[ExportExecutionStrategy] video compose/encode from decoded cadence", {
                         decodedVideoFrames: decodedVideoFrames.length,
                         exportRangeVideoFrames: videoFramesFromDecodedRange.length,
                         cfrOutputFrames: videoCompositionTimes.length
                     });
+                    if (globalThis.__encodeDiag?.fallbackEngagedAt) {
+                        const deltaMs = globalThis.__encodeDiag.composeStartAt - globalThis.__encodeDiag.fallbackEngagedAt;
+                        console.log("[Encode][FALLBACK→COMPOSE_DELTA_MS]", deltaMs.toFixed(2));
+                    }
                 }
 
                 const videoFrameSearchState = { index: 0 };
@@ -573,6 +581,22 @@ export class ExportExecutionStrategy {
                     videoChunkCount: encodedVideoChunks.length,
                     audioChunkCount: encodedAudioChunks.length
                 });
+
+                if (mp4BuildInput?.tracks?.length) {
+                    console.log(
+                        "[MP4 CODEC DIAG BEFORE COMPILE]",
+                        mp4BuildInput.tracks.map((t, i) => ({
+                            trackIndex: i,
+                            codecString: t.semanticCore?.codec?.codec ?? null,
+                            representation: t.semanticCore?.codec?.config?.representation ?? null,
+                            completeness: t.semanticCore?.codec?.config?.completeness ?? null,
+                            configBytesLength: t.semanticCore?.codec?.config?.bytes?.length ?? null,
+                            first16Bytes: t.semanticCore?.codec?.config?.bytes
+                            ? Array.from(t.semanticCore.codec.config.bytes.slice(0, 16))
+                            : null
+                        }))
+                    );
+                }
 
                 const compileStartedAtMs = getNowMs();
                 mp4Bytes = this.createMp4FromInputsFn(mp4BuildInput);
