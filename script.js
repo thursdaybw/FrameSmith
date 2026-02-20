@@ -118,6 +118,23 @@ function summarizeTrackViewTiming(trackView) {
     return summary;
 }
 
+function deriveFpsFromTrackViewTiming(trackView) {
+    if (!trackView || typeof trackView.sampleCount !== "number" || trackView.sampleCount < 2) {
+        return null;
+    }
+    const timing = summarizeTrackViewTiming(trackView);
+    if (!Number.isFinite(timing?.spanUs) || timing.spanUs <= 0) {
+        return null;
+    }
+    const frames = trackView.sampleCount;
+    const fps = ((frames - 1) * 1_000_000) / timing.spanUs;
+    if (!Number.isFinite(fps) || fps <= 0) {
+        return null;
+    }
+    const clamped = Math.max(12, Math.min(60, fps));
+    return Math.round(clamped * 1000) / 1000;
+}
+
 function getRotationDegreesFromTrackView(trackView) {
     if (
         !trackView ||
@@ -1979,212 +1996,196 @@ async function normalizeSourceRangeToWebmBytes({
     sourceUrl,
     exportRange
 }) {
-        if (typeof document === "undefined") {
-            throw new Error("source normalization requires document");
+    if (typeof document === "undefined") {
+        throw new Error("source normalization requires document");
+    }
+    if (typeof MediaRecorder !== "function") {
+        throw new Error("source normalization requires MediaRecorder");
+    }
+    if (typeof sourceUrl !== "string" || sourceUrl.length === 0) {
+        throw new Error("source normalization requires a source URL");
+    }
+
+    const videoElement = document.createElement("video");
+    videoElement.src = sourceUrl;
+    videoElement.muted = true;
+    videoElement.playsInline = true;
+    videoElement.preload = "auto";
+    videoElement.controls = false;
+    videoElement.style.position = "fixed";
+    videoElement.style.right = "8px";
+    videoElement.style.bottom = "8px";
+    videoElement.style.width = "120px";
+    videoElement.style.height = "auto";
+    videoElement.style.opacity = "0.01";
+    videoElement.style.pointerEvents = "none";
+    document.body.appendChild(videoElement);
+
+    let stream = null;
+    let mediaRecorder = null;
+    const captureMode = "video-capture-stream";
+    try {
+        await waitForVideoEvent(videoElement, "loadedmetadata");
+
+        const startSecondsRequested = Number(exportRange?.startSeconds);
+        const endSecondsRequested = Number(exportRange?.endSeconds);
+        if (!Number.isFinite(startSecondsRequested) || !Number.isFinite(endSecondsRequested)) {
+            throw new Error("source normalization requires numeric exportRange");
         }
-        if (typeof MediaRecorder !== "function") {
-            throw new Error("source normalization requires MediaRecorder");
+
+        const sourceDurationSeconds = Number(videoElement.duration);
+        if (!Number.isFinite(sourceDurationSeconds) || sourceDurationSeconds <= 0) {
+            throw new Error("source normalization: source duration unavailable");
         }
-        if (typeof sourceUrl !== "string" || sourceUrl.length === 0) {
-            throw new Error("source normalization requires a source URL");
+
+        const startSeconds = Math.max(0, Math.min(startSecondsRequested, sourceDurationSeconds));
+        const endSeconds = Math.max(
+            startSeconds,
+            Math.min(endSecondsRequested, sourceDurationSeconds)
+        );
+        if (endSeconds <= startSeconds) {
+            throw new Error("source normalization: invalid range");
         }
 
-        const videoElement = document.createElement("video");
-        videoElement.src = sourceUrl;
-        videoElement.muted = true;
-        videoElement.playsInline = true;
-        videoElement.preload = "auto";
+        if (typeof videoElement.captureStream !== "function") {
+            throw new Error("source normalization: video captureStream unavailable");
+        }
 
-        videoElement.style.position = "fixed";
-        videoElement.style.right = "8px";
-        videoElement.style.bottom = "8px";
-        videoElement.style.width = "120px";
-        videoElement.style.height = "auto";
-        videoElement.style.opacity = "0.01";
-        videoElement.style.pointerEvents = "none";
-        videoElement.controls = false;
-        document.body.appendChild(videoElement);
+        const capturedStream = videoElement.captureStream();
+        const capturedVideoTrack = capturedStream.getVideoTracks()[0] || null;
+        if (!capturedVideoTrack) {
+            throw new Error("source normalization: no captured video track");
+        }
+        stream = new MediaStream([capturedVideoTrack]);
 
-        let canvasElement = null;
-        let canvasContext = null;
-        let stream = null;
-        let capturedVideoTrack = null;
-        let mediaRecorder = null;
-        const captureMode = "canvas-frame-drive";
-        try {
-            await waitForVideoEvent(videoElement, "loadedmetadata");
+        const mimeType = selectWebmNormalizationMimeType();
+        if (typeof mimeType !== "string" || mimeType.length === 0) {
+            throw new Error("source normalization: no supported WebM MediaRecorder mimeType");
+        }
 
-            const startSecondsRequested = Number(exportRange?.startSeconds);
-            const endSecondsRequested = Number(exportRange?.endSeconds);
-            if (!Number.isFinite(startSecondsRequested) || !Number.isFinite(endSecondsRequested)) {
-                throw new Error("source normalization requires numeric exportRange");
+        const chunks = [];
+        mediaRecorder = new MediaRecorder(stream, {
+            mimeType,
+            videoBitsPerSecond: 1_400_000
+        });
+        mediaRecorder.addEventListener("dataavailable", (event) => {
+            if (event && event.data && event.data.size > 0) {
+                chunks.push(event.data);
             }
+        });
 
-            const sourceDurationSeconds = Number(videoElement.duration);
-            if (!Number.isFinite(sourceDurationSeconds) || sourceDurationSeconds <= 0) {
-                throw new Error("source normalization: source duration unavailable");
-            }
+        const stopped = new Promise((resolve, reject) => {
+            mediaRecorder.addEventListener("stop", () => resolve(), { once: true });
+            mediaRecorder.addEventListener("error", () => {
+                const error = mediaRecorder.error;
+                const reason = error?.message ?? "unknown recorder error";
+                reject(new Error(`source normalization recorder failed: ${reason}`));
+            }, { once: true });
+        });
 
-            const startSeconds = Math.max(0, Math.min(startSecondsRequested, sourceDurationSeconds));
-            const endSeconds = Math.max(
-                startSeconds,
-                Math.min(endSecondsRequested, sourceDurationSeconds)
-            );
-            if (endSeconds <= startSeconds) {
-                throw new Error("source normalization: invalid range");
-            }
+        videoElement.currentTime = startSeconds;
+        await waitForVideoEvent(videoElement, "seeked");
+        if (videoElement.readyState < 2) {
+            await waitForVideoEvent(videoElement, "canplay");
+        }
 
-            const canvasWidth = Math.max(1, Number(videoElement.videoWidth) || 1);
-            const canvasHeight = Math.max(1, Number(videoElement.videoHeight) || 1);
-            canvasElement = document.createElement("canvas");
-            canvasElement.width = canvasWidth;
-            canvasElement.height = canvasHeight;
-            canvasElement.style.position = "fixed";
-            canvasElement.style.right = "8px";
-            canvasElement.style.bottom = "8px";
-            canvasElement.style.width = "120px";
-            canvasElement.style.height = "auto";
-            canvasElement.style.opacity = "0.01";
-            canvasElement.style.pointerEvents = "none";
-            document.body.appendChild(canvasElement);
+        mediaRecorder.start();
 
-            canvasContext = canvasElement.getContext("2d");
-            if (!canvasContext) {
-                throw new Error("source normalization: unable to create canvas context");
-            }
+        const captureTimeoutMs = Math.min(
+            300_000,
+            Math.max(30_000, Math.ceil((endSeconds - startSeconds) * 6_000))
+        );
+        const captureCompletion = new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                cleanup();
+                reject(new Error("source normalization: playback capture timeout"));
+            }, captureTimeoutMs);
 
-            if (typeof canvasElement.captureStream !== "function") {
-                throw new Error("source normalization: canvas captureStream unavailable");
-            }
-            stream = canvasElement.captureStream(0);
-            capturedVideoTrack = stream.getVideoTracks()[0] || null;
-            if (!capturedVideoTrack || typeof capturedVideoTrack.requestFrame !== "function") {
-                throw new Error("source normalization: canvas capture track requestFrame unavailable");
-            }
+            let intervalId = null;
 
-            const mimeType = selectWebmNormalizationMimeType();
-            if (typeof mimeType !== "string" || mimeType.length === 0) {
-                throw new Error("source normalization: no supported WebM MediaRecorder mimeType");
-            }
-            const chunks = [];
-            mediaRecorder = new MediaRecorder(stream, {
-                mimeType,
-                videoBitsPerSecond: 1_400_000,
-                audioBitsPerSecond: 128_000
-            });
-            mediaRecorder.addEventListener("dataavailable", (event) => {
-                if (event && event.data && event.data.size > 0) {
-                    chunks.push(event.data);
-                }
-            });
-
-            const stopped = new Promise((resolve, reject) => {
-                mediaRecorder.addEventListener("stop", () => resolve(), { once: true });
-                mediaRecorder.addEventListener("error", () => {
-                    const error = mediaRecorder.error;
-                    let reason = "unknown recorder error";
-                    if (error && typeof error.message === "string") {
-                        reason = error.message;
-                    }
-                    reject(new Error(`source normalization recorder failed: ${reason}`));
-                }, { once: true });
-            });
-
-            mediaRecorder.start();
-
-            const frameRate = PRE_RENDER_FPS;
-            const durationSeconds = endSeconds - startSeconds;
-            const frameCount = Math.max(1, Math.floor(durationSeconds * frameRate) + 1);
-            const seekTolerance = 0.0005;
-
-            const seekAndCaptureFrame = async (targetTimeSeconds) => {
+            const check = () => {
                 const currentTime = Number(videoElement.currentTime);
-                if (!Number.isFinite(currentTime) || Math.abs(currentTime - targetTimeSeconds) > seekTolerance) {
-                    videoElement.currentTime = targetTimeSeconds;
-                    await waitForVideoEvent(videoElement, "seeked");
+                if ((Number.isFinite(currentTime) && currentTime >= endSeconds) || videoElement.ended) {
+                    cleanup();
+                    resolve();
                 }
-                if (videoElement.readyState < 2) {
-                    await waitForVideoEvent(videoElement, "canplay");
-                }
-                canvasContext.clearRect(0, 0, canvasWidth, canvasHeight);
-                canvasContext.drawImage(videoElement, 0, 0, canvasWidth, canvasHeight);
-                capturedVideoTrack.requestFrame();
-                await new Promise((resolve) => setTimeout(resolve, 0));
             };
 
-            for (let index = 0; index < frameCount; index += 1) {
-                const offsetSeconds = index / frameRate;
-                const targetTimeSeconds = Math.min(endSeconds, startSeconds + offsetSeconds);
-                await seekAndCaptureFrame(targetTimeSeconds);
-            }
+            const onTimeUpdate = () => check();
+            const onEnded = () => check();
 
-            const finalFrameTimeSeconds = Math.min(endSeconds, startSeconds + ((frameCount - 1) / frameRate));
-            if ((endSeconds - finalFrameTimeSeconds) > (0.5 / frameRate)) {
-                await seekAndCaptureFrame(endSeconds);
-            }
+            const cleanup = () => {
+                clearTimeout(timeoutId);
+                if (intervalId !== null) {
+                    clearInterval(intervalId);
+                    intervalId = null;
+                }
+                videoElement.removeEventListener("timeupdate", onTimeUpdate);
+                videoElement.removeEventListener("ended", onEnded);
+            };
 
+            intervalId = setInterval(check, 100);
+            videoElement.addEventListener("timeupdate", onTimeUpdate);
+            videoElement.addEventListener("ended", onEnded);
+            check();
+        });
+
+        const playResult = videoElement.play();
+        if (playResult && typeof playResult.then === "function") {
+            await playResult;
+        }
+        await captureCompletion;
+
+        videoElement.pause();
+        if (mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop();
+        }
+        await stopped;
+
+        const blob = new Blob(chunks, { type: mimeType });
+        if (blob.size <= 0) {
+            throw new Error("source normalization recorder produced empty WebM");
+        }
+        const arrayBuffer = await blob.arrayBuffer();
+        return {
+            bytes: new Uint8Array(arrayBuffer),
+            captureMode
+        };
+    } finally {
+        try {
             videoElement.pause();
-            if (mediaRecorder.state !== "inactive") {
-                mediaRecorder.stop();
-            }
-            await stopped;
-
-            const blob = new Blob(chunks, { type: mimeType });
-            if (blob.size <= 0) {
-                throw new Error("source normalization recorder produced empty WebM");
-            }
-            const arrayBuffer = await blob.arrayBuffer();
-            return {
-                bytes: new Uint8Array(arrayBuffer),
-                captureMode
-            };
-        } finally {
+        } catch {
+            // no-op
+        }
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
             try {
-                videoElement.pause();
+                mediaRecorder.stop();
             } catch {
                 // no-op
             }
-            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        }
+        if (stream) {
+            const tracks = stream.getTracks();
+            for (const track of tracks) {
                 try {
-                    mediaRecorder.stop();
+                    track.stop();
                 } catch {
                     // no-op
                 }
             }
-            if (stream) {
-                const tracks = stream.getTracks();
-                for (const track of tracks) {
-                    try {
-                        track.stop();
-                    } catch {
-                        // no-op
-                    }
-                }
-            }
-            if (stream) {
-                const tracks = stream.getTracks();
-                for (const track of tracks) {
-                    try {
-                        track.stop();
-                    } catch {
-                        // no-op
-                    }
-                }
-            }
-            if (videoElement.parentNode) {
-                videoElement.parentNode.removeChild(videoElement);
-            }
-            if (canvasElement && canvasElement.parentNode) {
-                canvasElement.parentNode.removeChild(canvasElement);
-            }
+        }
+        if (videoElement.parentNode) {
+            videoElement.parentNode.removeChild(videoElement);
         }
     }
+}
 
 async function normalizeUnsupportedSourceToWorkingSet({
     timeline,
     sourceUrl,
     exportRange,
-    originalAudioTrackView
+    originalAudioTrackView,
+    sourceRotationDegrees
 }) {
         const normalizationResult = await normalizeSourceRangeToWebmBytes({
             sourceUrl,
@@ -2210,10 +2211,14 @@ async function normalizeUnsupportedSourceToWorkingSet({
             if (!trackView.containerMeta || typeof trackView.containerMeta !== "object") {
                 trackView.containerMeta = {};
             }
-            // Normalization capture records already-rendered pixels from a media element/canvas.
-            // Those pixels are display-oriented, so source container rotation must not be re-applied.
+            // Canvas-driven normalization captures display-oriented pixels.
+            // video.captureStream() may preserve source orientation, so keep source rotation there.
+            const normalizedRotationDegrees =
+                normalizationResult.captureMode === "video-capture-stream"
+                    ? (typeof sourceRotationDegrees === "number" ? sourceRotationDegrees : 0)
+                    : 0;
             trackView.containerMeta.displayTransform = {
-                rotationDegrees: 0
+                rotationDegrees: normalizedRotationDegrees
             };
         }
 
@@ -2924,7 +2929,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 prerenderPlan,
                 videoTrackView,
                 audioTrackView,
-                normalizationSourceUrlToRevoke: null
+                normalizationSourceUrlToRevoke: null,
+                recommendedExportFps: null
             };
         }
 
@@ -2942,12 +2948,23 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 checks: decoderSupportProbe.checks
             }
         });
+        const compatibilityNotice =
+            "Best compatibility mode may stutter; use Open Camera (H.264) or capture in-app.";
+        emitEncodeSignal({
+            level: "warn",
+            label: "[Encode] compatibility notice",
+            payload: {
+                message: compatibilityNotice
+            }
+        });
+        setVideoSourceStatus(compatibilityNotice);
 
         const normalized = await normalizeUnsupportedSourceToWorkingSet({
             timeline: executionTimeline,
             sourceUrl: sourceUrlForNormalization,
             exportRange,
-            originalAudioTrackView: audioTrackView
+            originalAudioTrackView: audioTrackView,
+            sourceRotationDegrees
         });
         const normalizedTimeline = normalized.timeline;
         const normalizedPlan = buildPrerenderPlanFromTimeline({ timeline: normalizedTimeline });
@@ -2964,13 +2981,24 @@ async function normalizeUnsupportedSourceToWorkingSet({
             })
         });
 
+        const recommendedExportFps = deriveFpsFromTrackViewTiming(selected.videoTrackView);
+        if (Number.isFinite(recommendedExportFps)) {
+            emitEncodeSignal({
+                label: "[Encode] normalization export fps override",
+                payload: {
+                    recommendedExportFps
+                }
+            });
+        }
+
         return {
             didNormalizePredecode: true,
             executionTimeline: normalizedTimeline,
             prerenderPlan: normalizedPlan,
             videoTrackView: selected.videoTrackView,
             audioTrackView: selected.audioTrackView,
-            normalizationSourceUrlToRevoke: normalized.sourceUrl
+            normalizationSourceUrlToRevoke: normalized.sourceUrl,
+            recommendedExportFps
         };
     }
 

@@ -210,6 +210,9 @@ export class EncodePipelineRun {
             this.state.normalizationSourceUrlToRevoke.value = this.trackContext.normalizationSourceUrlToRevoke;
             this.planContext.executionTimeline = this.trackContext.executionTimeline;
             this.planContext.prerenderPlan = this.trackContext.prerenderPlan;
+            if (Number.isFinite(this.trackContext.recommendedExportFps)) {
+                this.planContext.exportFps = this.trackContext.recommendedExportFps;
+            }
         } finally {
             this.endStage(stageName);
         }
