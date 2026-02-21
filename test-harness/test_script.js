@@ -44,36 +44,36 @@
  * explicitly with new tests and a new abstraction.
  */
 
-import { __test__ } from "./script.js";
+import { __test__ } from "../script.js";
 
-import { TRACKVIEW_TESTS } from "./src/mux/native/demux/trackview/test_createContainerTrackViewFromMp4.js";
+import { TRACKVIEW_TESTS } from "../src/mux/native/demux/trackview/test_createContainerTrackViewFromMp4.js";
 
-import { PROCEDURAL_CLIP_TESTS } from "./src/mux/native/demux/trackview/test_proceduralClips_prerenderPlanning.js";
+import { PROCEDURAL_CLIP_TESTS } from "../src/mux/native/demux/trackview/test_proceduralClips_prerenderPlanning.js";
 
-import { PRERENDER_DECODE_CONTAINER_VIDEO_TESTS } from "./src/prerender/test_decodeContainerAccessUnits_containerVideo.js";
-import { PRERENDER_DECODE_CONTAINER_AUDIO_TESTS } from "./src/prerender/test_decodeContainerAccessUnits_containerAudio.js";
+import { PRERENDER_DECODE_CONTAINER_VIDEO_TESTS } from "../src/prerender/test_decodeContainerAccessUnits_containerVideo.js";
+import { PRERENDER_DECODE_CONTAINER_AUDIO_TESTS } from "../src/prerender/test_decodeContainerAccessUnits_containerAudio.js";
 import {
     PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DISPATCH_TESTS
-} from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_ignoresProceduralFragments.js";
+} from "../src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_ignoresProceduralFragments.js";
 import {
     PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_EMPTY_PLAN_TESTS
-} from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_noAccessUnits.js";
+} from "../src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_noAccessUnits.js";
 import {
     PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_ORDER_TESTS
-} from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_preservesDecoderOrder.js";
-import { PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DETERMINISM_TESTS } from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_determinism.js";
+} from "../src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_preservesDecoderOrder.js";
+import { PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DETERMINISM_TESTS } from "../src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_determinism.js";
 
-import { PROCEDURAL_EXECUTION_TESTS } from "./src/timeline/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
-import { TEXT_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_textOverlayRenderer.js";
-import { IMAGE_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_imageOverlayRenderer.js";
-import { CONTAINER_DECODE_TESTS } from "./src/timeline/container/execution/test_executeAccessUnitFragmentDecode.js";
+import { PROCEDURAL_EXECUTION_TESTS } from "../src/timeline/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
+import { TEXT_OVERLAY_RENDERER_TESTS } from "../src/timeline/procedural/resolvers/test_textOverlayRenderer.js";
+import { IMAGE_OVERLAY_RENDERER_TESTS } from "../src/timeline/procedural/resolvers/test_imageOverlayRenderer.js";
+import { CONTAINER_DECODE_TESTS } from "../src/timeline/container/execution/test_executeAccessUnitFragmentDecode.js";
 
-import { PRERENDER_TIME_RESOLUTION_TESTS } from "./src/prerender/test_resolveProceduralFragmentsAtTimeFromPlan.js";
-import { INTEGRATION_TESTS } from "./src/integration/test_FrameSmith_PublicApi_EndToEnd_ExportExecutionStrategy.js";
-import { COMPOSITION_TESTS } from "./src/composition/test_composeAtTime.js";
-import { ENCODE_TESTS } from "./src/encode/test_encodeAtTime.js";
-import { EXPORT_ADAPTER_TESTS } from "./src/export/test_adaptEncodedOutputsToMp4BuildInput.js";
-import { EXPORT_EXECUTION_STRATEGY_TESTS } from "./src/prerender/strategies/test_ExportExecutionStrategy.js";
+import { PRERENDER_TIME_RESOLUTION_TESTS } from "../src/prerender/test_resolveProceduralFragmentsAtTimeFromPlan.js";
+import { INTEGRATION_TESTS } from "../src/integration/test_FrameSmith_PublicApi_EndToEnd_ExportExecutionStrategy.js";
+import { COMPOSITION_TESTS } from "../src/composition/test_composeAtTime.js";
+import { ENCODE_TESTS } from "../src/encode/test_encodeAtTime.js";
+import { EXPORT_ADAPTER_TESTS } from "../src/export/test_adaptEncodedOutputsToMp4BuildInput.js";
+import { EXPORT_EXECUTION_STRATEGY_TESTS } from "../src/prerender/strategies/test_ExportExecutionStrategy.js";
 
 const {
     Timeline,

@@ -65,9 +65,19 @@ function deepEqual(a, b) {
     return JSON.stringify(a) === JSON.stringify(b);
 }
 
+let __cachedTestMp4Bytes = null;
+
 async function loadTestMp4() {
+
+    if (__cachedTestMp4Bytes) {
+        return __cachedTestMp4Bytes;
+    }
+
     const resp = await fetch("./test.mp4");
     const bytes = new Uint8Array(await resp.arrayBuffer());
+
+    __cachedTestMp4Bytes = bytes;
+
     return bytes;
 }
 
