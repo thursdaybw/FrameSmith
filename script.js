@@ -1101,8 +1101,22 @@ if (FRAMESMITH_APP_ROOT) {
                 setVideoSourceStatus("Transcription queued. Waiting for queue worker...");
                 console.log("[Whisper][Drupal] queued; waiting for worker/transcription", result);
             } else {
-                setTranscriptionErrorStatus(String(pollResult?.statusPayload?.status || "failed"));
-                console.warn("[Whisper][Drupal] transcription incomplete", result);
+                const statusPayload = pollResult?.statusPayload || {};
+                const rawStatus = String(statusPayload.status || "failed");
+                const backendError = String(statusPayload.error_message || "").trim();
+
+                // Prefer the backend-provided human-readable error
+                const detail = backendError.length > 0
+                    ? backendError
+                    : rawStatus;
+
+                setTranscriptionErrorStatus(detail);sdf
+
+                console.warn("[Whisper][Drupal] transcription incomplete", {
+                    status: rawStatus,
+                    error_message: backendError,
+                    result
+                });
             }
             return result;
         }
