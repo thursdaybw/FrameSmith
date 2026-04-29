@@ -928,6 +928,36 @@ document.addEventListener("DOMContentLoaded", async () => {
         return overlayItems;
     }
 
+    async function uploadWhisperAudioChunkWithRetry({
+        uploadUrl,
+        formData,
+        index,
+        total,
+        maxAttempts = 3
+    }) {
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+                return await fetchJsonOrThrow(uploadUrl.toString(), {
+                    method: "POST",
+                    credentials: "include",
+                    body: formData
+                });
+            } catch (error) {
+                lastError = error;
+                if (attempt >= maxAttempts) {
+                    break;
+                }
+                const retryDelayMs = Math.min(2_000, 250 * attempt);
+                setVideoSourceStatus(
+                    `Uploading audio chunk ${index + 1}/${total} failed; retrying (${attempt + 1}/${maxAttempts})...`
+                );
+                await sleep(retryDelayMs);
+            }
+        }
+        throw lastError || new Error("Audio chunk upload failed.");
+    }
+
     async function uploadWhisperAudioBlobInChunks({
         resolvedBaseUrl,
         taskId,
@@ -964,11 +994,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             formData.append("task_id", taskId);
             formData.append("auto_launch", isFinalChunk ? "1" : "0");
 
-            setVideoSourceStatus(`Uploading audio to transcription service... ${Math.round(((index + 1) / total) * 100)}%`);
-            const chunkResult = await fetchJsonOrThrow(uploadUrl.toString(), {
-                method: "POST",
-                credentials: "include",
-                body: formData
+            setVideoSourceStatus(
+                `Uploading audio to transcription service... ${Math.round(((index + 1) / total) * 100)}%`
+            );
+            const chunkResult = await uploadWhisperAudioChunkWithRetry({
+                uploadUrl,
+                formData,
+                index,
+                total
             });
 
             if (isFinalChunk) {
