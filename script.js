@@ -929,6 +929,119 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     /**
+     * Builds a fresh multipart body for one upload attempt.
+     *
+     * Mobile browsers can treat request bodies as one-shot streams once a
+     * fetch attempt has started or failed. Rebuilding FormData for every retry
+     * keeps chunk retry behaviour independent of those browser internals.
+     */
+    function createWhisperAudioChunkFormData({
+        chunk,
+        index,
+        taskId,
+        autoLaunch
+    }) {
+        const formData = new FormData();
+        formData.append("file", chunk, `part-${index}.bin`);
+        formData.append("task_id", taskId);
+        formData.append("auto_launch", autoLaunch ? "1" : "0");
+        return formData;
+    }
+
+    async function uploadWhisperAudioChunkWithRetry({
+        uploadUrl,
+        chunk,
+        index,
+        total,
+        taskId,
+        autoLaunch,
+        maxAttempts = 3
+    }) {
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            const formData = createWhisperAudioChunkFormData({
+                chunk,
+                index,
+                taskId,
+                autoLaunch
+            });
+            try {
+                return await fetchJsonOrThrow(uploadUrl.toString(), {
+                    method: "POST",
+                    credentials: "include",
+                    body: formData
+                });
+            } catch (error) {
+                lastError = error;
+                if (attempt >= maxAttempts) {
+                    break;
+                }
+                const retryDelayMs = Math.min(2_000, 250 * attempt);
+                setVideoSourceStatus(
+                    `Uploading audio chunk ${index + 1}/${total} failed; retrying (${attempt + 1}/${maxAttempts})...`
+                );
+                await sleep(retryDelayMs);
+            }
+        }
+        throw lastError || new Error("Audio chunk upload failed.");
+    }
+
+    async function uploadWhisperAudioBlobInChunks({
+        resolvedBaseUrl,
+        taskId,
+        blob,
+        filename,
+        chunkSize = 1 * 1024 * 1024
+    }) {
+        if (!(blob instanceof Blob)) {
+            throw new Error("uploadWhisperAudioBlobInChunks: blob is required.");
+        }
+        if (!taskId) {
+            throw new Error("uploadWhisperAudioBlobInChunks: taskId is required.");
+        }
+
+        const total = Math.max(1, Math.ceil(blob.size / chunkSize));
+        const uploadId = globalThis.crypto && typeof globalThis.crypto.randomUUID === "function"
+            ? globalThis.crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        let finalResult = null;
+
+        for (let index = 0; index < total; index += 1) {
+            const start = index * chunkSize;
+            const end = Math.min(start + chunkSize, blob.size);
+            const chunk = blob.slice(start, end, blob.type || "audio/wav");
+            const uploadUrl = new URL("/api/framesmith/transcription/upload", resolvedBaseUrl);
+            uploadUrl.searchParams.set("task_id", taskId);
+            uploadUrl.searchParams.set("upload_id", uploadId);
+            uploadUrl.searchParams.set("index", String(index));
+            uploadUrl.searchParams.set("total", String(total));
+
+            const isFinalChunk = index + 1 === total;
+            setVideoSourceStatus(
+                `Uploading audio to transcription service... ${Math.round(((index + 1) / total) * 100)}%`
+            );
+            const chunkResult = await uploadWhisperAudioChunkWithRetry({
+                uploadUrl,
+                chunk,
+                index,
+                total,
+                taskId,
+                autoLaunch: isFinalChunk
+            });
+
+            window.__lastWhisperUploadProgress = chunkResult?.upload_progress || null;
+            if (isFinalChunk) {
+                finalResult = chunkResult;
+            }
+        }
+
+        if (!finalResult) {
+            throw new Error("Chunked audio upload did not return a final response.");
+        }
+        return finalResult;
+    }
+
+    /**
      * Extract WAV from loaded source and upload it to Drupal transcription endpoints.
      */
     async function sendWhisperAudioToDrupal({
@@ -962,21 +1075,18 @@ document.addEventListener("DOMContentLoaded", async () => {
             })
         });
         const taskId = String(taskInit.task_id || "");
+        window.__lastWhisperDrupalTaskId = taskId;
         if (taskId.length === 0) {
             throw new Error("Transcription task init response did not include task_id.");
         }
 
         setVideoSourceStatus("Uploading audio to transcription service...");
         setTranscriptionStageStatus("upload_audio");
-        const uploadUrl = new URL("/api/framesmith/transcription/upload", resolvedBaseUrl);
-        uploadUrl.searchParams.set("task_id", taskId);
-        const formData = new FormData();
-        formData.append("file", whisperAudio.blob, `${taskId}.wav`);
-        formData.append("task_id", taskId);
-        const uploadResult = await fetchJsonOrThrow(uploadUrl.toString(), {
-            method: "POST",
-            credentials: "include",
-            body: formData
+        const uploadResult = await uploadWhisperAudioBlobInChunks({
+            resolvedBaseUrl,
+            taskId,
+            blob: whisperAudio.blob,
+            filename: `${taskId}.wav`
         });
 
         const provisionResult = uploadResult?.launch || null;
