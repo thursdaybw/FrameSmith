@@ -1,5 +1,3 @@
-import { emitDinfBox } from "../box-emitters/dinfBox.js";
-import { emitDrefBox } from "../box-emitters/drefBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import {
     extractBoxByPathFromMp4,
@@ -11,6 +9,7 @@ import {
     assertEqualHex
 } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 /**
  * DINF — Structural Correctness (Phase A)
@@ -29,51 +28,45 @@ import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
  *   - required child wiring
  *   - correct ordering
  */
-export async function testDinf_Structure() {
-
-    console.log("=== testDinf_Structure ===");
+export function testDinf_Structure() {
 
     // ---------------------------------------------------------
-    // 1. Minimal valid child: dref
+    // 1. Emit DINF via registry (NO serialization)
     // ---------------------------------------------------------
-    const dref = {
-        type: "dref",
-        body: []
-    };
+    const node =
+        EmitterRegistry.assemble(
+            "moov/trak/mdia/minf/dinf",
+            {}
+        );
 
     // ---------------------------------------------------------
-    // 2. Build DINF
+    // 2. Box identity
     // ---------------------------------------------------------
-    const node = emitDinfBox({ dref });
-    const dinf = serializeBoxTree(node);
+    assertEqual("dinf.type", node.type, "dinf");
 
     // ---------------------------------------------------------
-    // 3. Structural assertions
+    // 3. DINF has no body
     // ---------------------------------------------------------
-
-    const extractedDref = extractChildBoxFromContainer(dinf, "dref");
-
-    assertExists("dref", extractedDref);
-
-    // ---------------------------------------------------------
-    // 4. Ordering and containment
-    // ---------------------------------------------------------
-    const childTypes = node.children.map(c => c.type);
-
     assertEqual(
-        "dinf.childCount",
-        childTypes.length,
+        "dinf.body.length",
+        node.body ? node.body.length : 0,
+        0
+    );
+
+    // ---------------------------------------------------------
+    // 4. Child boxes
+    // ---------------------------------------------------------
+    assertEqual(
+        "dinf.children.length",
+        node.children.length,
         1
     );
 
-    assertEqual(
-        "dinf.childOrder",
-        childTypes[0],
-        "dref"
-    );
+    const dref = node.children[0];
 
-    console.log("PASS: DINF structural correctness");
+    assertEqual("dinf.dref.type", dref.type, "dref");
 }
+
 
 /**
  * DINF — Locked Layout Equivalence (ffmpeg)
@@ -95,44 +88,35 @@ export async function testDinf_Structure() {
  */
 export async function testDinf_LockedLayoutEquivalence_ffmpeg() {
 
-    console.log("=== testDinf_LockedLayoutEquivalence_ffmpeg ===");
-
     // ---------------------------------------------------------
-    // 1. Load golden MP4
+    // Load golden MP4
     // ---------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Read golden truth DINF
+    // Read golden truth DINF
     // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         mp4,
-        "moov/trak/mdia/minf/dinf",
-        {
-            trackType: "video"
-        }
+        "moov/trak[0]/mdia/minf/dinf",
     );
 
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput();
+    const refFields = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
 
     // ---------------------------------------------------------
-    // 3. Rebuild DINF from golden truth only
-    // ---------------------------------------------------------
+    // Rebuild DINF from golden truth only
+    // --------------------------------------------------------
     const outBytes = serializeBoxTree(
-        emitDinfBox(params)
+        EmitterRegistry.assemble(
+            "moov/trak/mdia/minf/dinf",
+            params
+        )
     );
 
     // ---------------------------------------------------------
-    // 4. Re-read rebuilt DINF
-    // ---------------------------------------------------------
-    const outFields = getGoldenTruthBox
-        .fromBox(outBytes, "moov/trak/mdia/minf/dinf")
-        .readFields();
-
-    // ---------------------------------------------------------
-    // 5. Byte-for-byte equivalence
+    // Byte-for-byte equivalence
     // ---------------------------------------------------------
     const refRaw = refFields.raw;
 
@@ -150,5 +134,5 @@ export async function testDinf_LockedLayoutEquivalence_ffmpeg() {
         );
     }
 
-    console.log("PASS: DINF locked-layout equivalence with ffmpeg");
 }
+

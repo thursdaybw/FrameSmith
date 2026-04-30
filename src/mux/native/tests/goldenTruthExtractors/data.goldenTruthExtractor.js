@@ -2,7 +2,7 @@ import { readUint32 } from "../../bytes/mp4ByteReader.js";
 
 function readDataFieldsFromBoxBytes(box) {
     if (!(box instanceof Uint8Array)) {
-        throw new Error("data.readFields: expected Uint8Array");
+        throw new Error("data.readBoxReport: expected Uint8Array");
     }
 
     return {
@@ -34,6 +34,6 @@ function getDataEmitterInputFromBoxBytes(box) {
 }
 
 export function registerDataGoldenTruthExtractor(register) {
-    register.readFields(readDataFieldsFromBoxBytes);
-    register.getBuilderInput(getDataEmitterInputFromBoxBytes);
+    register.readBoxReport(readDataFieldsFromBoxBytes);
+    register.getEmitterInput(getDataEmitterInputFromBoxBytes);
 }

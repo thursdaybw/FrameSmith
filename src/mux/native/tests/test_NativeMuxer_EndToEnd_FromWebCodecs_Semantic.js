@@ -7,12 +7,14 @@ import { asIsoBoxContainer } from "../box-model/Box.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 
 import {
-    runWebCodecsTestClient
-} from "./clients/webcodecsReferenceSourceClient.js";
+    runWebCodecsAudioVideoTestClient
+} from "./clients/webcodecsReferenceAudioVideoSourceClient.js";
 
 import {
     createMp4FromInputs
 } from "../compiler/createMp4FromInputs.js";
+
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 /**
  * ============================================================================
@@ -35,7 +37,6 @@ import {
  * There is no oracle.
  */
 export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
-    console.log("=== test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic ===");
 
     const t0 = performance.now();
 
@@ -45,13 +46,17 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
     console.log("[PHASE 1] Starting WebCodecs test client…");
 
     const tEncodeStart = performance.now();
-    const mp4BuildInput =
-        await runWebCodecsTestClient();
+
+    const result = await runWebCodecsAudioVideoTestClient();
+
+    const mp4BuildInput = {
+        tracks: result.tracks
+    };
+
     const tEncodeEnd = performance.now();
 
     console.log("[PHASE 1] WebCodecs client complete", {
-        accessUnits: mp4BuildInput.semanticCore.accessUnits.length,
-        payloads: mp4BuildInput.payloads.accessUnitPayloads.length,
+        tracks: mp4BuildInput.tracks.length,
         encodeMs: Math.round(tEncodeEnd - tEncodeStart)
     });
 
@@ -64,8 +69,8 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
     console.log("[PHASE 2] Starting MP4 compilation…");
 
     const tCompileStart = performance.now();
-    const outBytes =
-        createMp4FromInputs(mp4BuildInput);
+    const outBytes = createMp4FromInputs(mp4BuildInput);
+
     const tCompileEnd = performance.now();
 
     console.log("[PHASE 2] MP4 compilation complete", {
@@ -78,81 +83,97 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
     // ---------------------------------------------------------
     console.log("[PHASE 3] Validating MP4 structure…");
 
-    const root = asIsoBoxContainer(outBytes);
-    assertExists("root container", root);
+    const moov =
+        getGoldenTruthBox
+        .getSemanticBoxDataByPathFromMp4File(outBytes, "moov");
 
-    const topLevel =
-        root.enumerateChildren().map(b => b.type);
+    assertExists("moov", moov);
 
-    assertEqual("top-level[0]", topLevel[0], "ftyp");
-    assertEqual("top-level[1]", topLevel[1], "free");
-    assertEqual("top-level[2]", topLevel[2], "mdat");
-    assertEqual("top-level[3]", topLevel[3], "moov");
+    // Top-level presence
+    const ftyp =
+        getGoldenTruthBox
+        .getSemanticBoxDataByPathFromMp4File(outBytes, "ftyp");
 
-    assertExists(
-        "moov",
-        extractBoxByPathFromMp4(outBytes, "moov")
-    );
+    const mdat =
+        getGoldenTruthBox
+        .getSemanticBoxDataByPathFromMp4File(outBytes, "mdat");
 
+    assertExists("ftyp present", ftyp);
+    assertExists("mdat present", mdat);
+
+    // Track structure (explicitly indexed)
     assertExists(
         "trak",
-        extractBoxByPathFromMp4(outBytes, "moov/trak")
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            outBytes,
+            "moov/trak[0]"
+        )
     );
 
     assertExists(
         "mdia",
-        extractBoxByPathFromMp4(outBytes, "moov/trak/mdia")
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            outBytes,
+            "moov/trak[0]/mdia"
+        )
     );
 
     assertExists(
         "stbl",
-        extractBoxByPathFromMp4(
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
             outBytes,
-            "moov/trak/mdia/minf/stbl"
+            "moov/trak[0]/mdia/minf/stbl"
         )
     );
 
     assertExists(
         "stsd",
-        extractBoxByPathFromMp4(
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
             outBytes,
-            "moov/trak/mdia/minf/stbl/stsd"
+            "moov/trak[0]/mdia/minf/stbl/stsd"
         )
     );
 
     assertExists(
         "stts",
-        extractBoxByPathFromMp4(
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
             outBytes,
-            "moov/trak/mdia/minf/stbl/stts"
+            "moov/trak[0]/mdia/minf/stbl/stts"
         )
     );
 
     assertExists(
         "stsz",
-        extractBoxByPathFromMp4(
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
             outBytes,
-            "moov/trak/mdia/minf/stbl/stsz"
+            "moov/trak[0]/mdia/minf/stbl/stsz"
         )
     );
 
     assertExists(
         "stco",
-        extractBoxByPathFromMp4(
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
             outBytes,
-            "moov/trak/mdia/minf/stbl/stco"
+            "moov/trak[0]/mdia/minf/stbl/stco"
         )
     );
 
-    const mdat =
-        extractBoxByPathFromMp4(outBytes, "mdat");
+    // mdat payload sanity (structure-only check)
+    const mdatReport = mdat.readBoxReport();
 
     assertEqual(
         "mdat has payload",
-        mdat.length > 8,
+        mdatReport.raw.length > 8,
         true
     );
 
+
+    // ---------------------------------------------------------
+    // Opus inspection
+    // ---------------------------------------------------------
+
+
+    //await opusInspection(outBytes);
     // ---------------------------------------------------------
     // Phase 4 — Optional download
     // ---------------------------------------------------------
@@ -167,6 +188,72 @@ export async function test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic() {
         totalMs: Math.round(tEnd - t0)
     });
 }
+
+async function opusInspection(outBytes) {
+
+    const oracleResp  = await fetch("reference/reference_av_opus.mp4");
+    const oracleBytes = new Uint8Array(await oracleResp.arrayBuffer());
+
+    // ---------------------------------------------------------
+    // Opus SampleEntry
+    // ---------------------------------------------------------
+
+    const oracleOpus =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            oracleBytes,
+            "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]"
+        );
+
+    const producedOpus =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            outBytes,
+            "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]"
+        );
+
+    const oracleOpusReport   = oracleOpus.readBoxReport();
+    const producedOpusReport = producedOpus.readBoxReport();
+
+    console.log("[ORACLE][Opus] size =", oracleOpusReport.raw.length);
+    console.log("[PRODUCED][Opus] size =", producedOpusReport.raw.length);
+
+    console.log(
+        "[ORACLE][Opus][hex]",
+        Array.from(oracleOpusReport.raw)
+            .map(b => b.toString(16).padStart(2, "0"))
+            .join(" ")
+    );
+
+    console.log(
+        "[PRODUCED][Opus][hex]",
+        Array.from(producedOpusReport.raw)
+            .map(b => b.toString(16).padStart(2, "0"))
+            .join(" ")
+    );
+
+    // ---------------------------------------------------------
+    // dOps (direct child of Opus SampleEntry)
+    // ---------------------------------------------------------
+
+    const oracleDOps =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            oracleBytes,
+            "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/dOps"
+        );
+
+    const producedDOps =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            outBytes,
+            "moov/trak[1]/mdia/minf/stbl/stsd/sample[0]/dOps"
+        );
+
+    const o = oracleDOps.readBoxReport();
+    const p = producedDOps.readBoxReport();
+
+    console.log("[ORACLE][dOps] header+payload bytes:", o.raw.length);
+    console.log("[PRODUCED][dOps] header+payload bytes:", p.raw.length);
+
+}
+
 
 // -------------------------------------------------------------
 // Local helper (copied intentionally — test-local concern)

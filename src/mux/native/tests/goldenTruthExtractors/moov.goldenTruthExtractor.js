@@ -1,96 +1,141 @@
+import { asIsoBoxContainer } from "../../box-model/Box.js";
 import { getGoldenTruthBox } from "./index.js";
 
-import { emitMvhdBox } from "../../box-emitters/mvhdBox.js";
-import { emitTrakBox } from "../../box-emitters/trakBox.js";
-import { emitUdtaBox } from "../../box-emitters/udtaBox.js";
+/**
+ * moov — Movie Box (Golden Truth Extractor)
+ * =======================================
+ *
+ * Structural container for movie metadata.
+ *
+ * Rules:
+ * - moov has no fields of its own
+ * - required child: mvhd
+ * - required children: one or more trak
+ * - optional child: udta
+ * - no policy
+ * - no inference
+ * - no mutation
+ */
 
-import { asIsoBoxContainer } from "../../box-model/Box.js";
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
 
-function readMoovBoxFieldsFromBoxBytes(boxBytes) {
+function readBoxReport(boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("moov.readBoxReport: expected Uint8Array");
+    }
+
+    const container =
+        asIsoBoxContainer(
+            boxBytes,
+            "moov"
+        );
+
+    const children = container.enumerateChildren();
+    const childrenMap = {};
+
+    for (const child of children) {
+        childrenMap[child.type] = { type: child.type };
+    }
+
     return {
-        raw: boxBytes
+        raw: boxBytes,
+
+        box: {
+            type: "moov",
+            children: childrenMap
+        },
+
+        derived: {}
     };
 }
 
-function getMoovEmitterInputFromBoxBytes(moovBoxBytes) {
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
+function getEmitterInput(boxBytes) {
 
-    const container = asIsoBoxContainer(moovBoxBytes);
-    const children  = container.enumerateChildren();
+    // ---------------------------------------------------------
+    // readBoxReport (pins canonical moov container)
+    // ---------------------------------------------------------
+    const read = readBoxReport(boxBytes);
 
-    // --------------------------------------------------
-    // mvhd (required)
-    // --------------------------------------------------
-    let mvhd;
+    /**
+     * Canonical container pin.
+     * This Uint8Array MUST be used for all child resolution.
+     */
+    const moovRaw = read.raw;
 
-    for (const child of children) {
-        if (child.type !== "mvhd") continue;
+    // ---------------------------------------------------------
+    // mvhd (required, single)
+    // ---------------------------------------------------------
+    const mvhd =
+        getGoldenTruthBox
+            .getSemanticBoxDataFromBox({
+                boxBytes: moovRaw,
+                sourceRegistryKey: "moov",
+                targetBoxPath: "moov/mvhd"
+            })
+            .getEmitterInput();
 
-        const mvhdBoxBytes = moovBoxBytes.slice(
-            child.offset,
-            child.offset + child.size
-        );
-
-        const mvhdParams = getGoldenTruthBox
-            .fromBox(mvhdBoxBytes, "moov/mvhd")
-            .getBuilderInput();
-
-        mvhd = emitMvhdBox(mvhdParams);
-        break;
-    }
-
-    if (!mvhd) {
-        throw new Error("moov truth extractor: mvhd box not found");
-    }
-
-    // --------------------------------------------------
-    // trak(s) (required)
-    // --------------------------------------------------
+    // ---------------------------------------------------------
+    // traks (required, plural, ordered)
+    // ---------------------------------------------------------
     const traks = [];
+    let index = 0;
 
-    for (const child of children) {
-        if (child.type !== "trak") continue;
+    while (true) {
+        try {
+            const truth =
+                getGoldenTruthBox
+                    .getSemanticBoxDataFromBox({
+                        boxBytes: moovRaw,
+                        sourceRegistryKey: "moov",
+                        targetBoxPath: `moov/trak[${index}]`
+                    });
 
-        const trakBoxBytes = moovBoxBytes.slice(
-            child.offset,
-            child.offset + child.size
-        );
-
-        const trakParams = getGoldenTruthBox
-            .fromBox(trakBoxBytes, "moov/trak")
-            .getBuilderInput();
-
-        traks.push(emitTrakBox(trakParams));
+            traks.push(truth.getEmitterInput());
+            index++;
+        }
+        catch {
+            break;
+        }
     }
 
     if (traks.length === 0) {
-        throw new Error("moov truth extractor: no trak boxes found");
+        throw new Error("moov.getEmitterInput: no trak boxes found");
     }
 
-    // --------------------------------------------------
-    // udta (optional)
-    // --------------------------------------------------
+    // ---------------------------------------------------------
+    // Optional udta
+    // ---------------------------------------------------------
     let udta;
 
-    for (const child of children) {
-        if (child.type !== "udta") continue;
-
-        const udtaBoxBytes = moovBoxBytes.slice(
-            child.offset,
-            child.offset + child.size
-        );
-
-        const udtaParams = getGoldenTruthBox
-            .fromBox(udtaBoxBytes, "moov/udta")
-            .getBuilderInput();
-
-        udta = emitUdtaBox(udtaParams);
-        break;
+    if (read.box.children.udta) {
+        udta =
+            getGoldenTruthBox
+                .getSemanticBoxDataFromBox({
+                    boxBytes: moovRaw,
+                    sourceRegistryKey: "moov",
+                    targetBoxPath: "moov/udta"
+                })
+                .getEmitterInput();
     }
 
-    return { mvhd, traks, udta };
+    return {
+        mvhd,
+        traks,
+        ...(udta ? { udta } : {})
+    };
 }
 
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
 export function registerMoovGoldenTruthExtractor(register) {
-    register.readFields(readMoovBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getMoovEmitterInputFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

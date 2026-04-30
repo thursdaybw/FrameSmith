@@ -64,5 +64,93 @@ export const ChunkingStrategies = {
      *
      * It does not change sample timing or ordering.
      */
-    ALL_SAMPLES_ONE_CHUNK: "all-samples-one-chunk"
+    ALL_SAMPLES_ONE_CHUNK: "all-samples-one-chunk",
+
+    /**
+     * PACKETIZED
+     * ----------
+     *
+     * Samples are grouped according to explicit packet identity.
+     *
+     * Requires:
+     * - each sample to declare a packetIndex
+     *
+     * This strategy is representational, not semantic.
+     *
+     * ** Future Contract **
+     *
+     * Introduce ONE explicit semantic authorization
+     * 
+     * At the boundary (client / adapter):
+     *
+     * ```
+     * semanticHints.packetization = {
+     *     mode: "explicit" | "derive-from-source" | "synthesize"
+     * }
+     * ```
+     * Defaults to "explicit".
+     * 
+     * Meaning of each mode
+     *
+     * explicit (default, safest)
+     * 
+     *   Client must provide:
+     * 
+     *   accessUnit.packetIndex or
+     *     semanticHints.packetRuns
+     *     Compiler throws otherwise
+     *   
+     *   This is what I have now.
+     *   This is correct for oracle input.
+     * 
+     * derive-from-source
+     * 
+     *   Allowed ONLY when source provides a topology signal
+     *   For oracle MP4:
+     *     derive from STSC
+     *   For WebCodecs:
+     *     ❌ not allowed (no signal)
+     *
+     *   This is still non-guessing.
+     * 
+     * synthesize (UX escape hatch)
+     * 
+     *   Compiler is explicitly authorized to invent packetization
+     * 
+     *   Rule used:
+     *   ```
+     *     one accessUnit == one packet
+     *   ```
+     *   This is not default
+     *   This is opt-in
+     *   This is how “just give me MP4” works
+     *   This keeps the lie honest.
+     *
+     * “Users aren’t MP4 experts”
+     *   They don’t have to be.
+     * 
+     *   This high-level API can do:
+     *   ```
+     *   createMp4FromWebCodecs({
+     *       packetization: "auto"
+     *   })
+     *   ``` 
+     *   Which maps internally to:
+     *   ``` 
+     *   semanticHints.packetization = { mode: "synthesize" }
+     *   ``` 
+     *   The low-level compiler stays pure.
+     */
+    PACKETIZED: "packetized",
+
+    /**
+     * This is for support byte for byte oracle comparison with 
+     * reference_av_opus.mp4 in tests
+     */
+    FFMPEG_OPUS_PACKET_GROUPED: "ffmpeg-opus-packet-grouped",
+
+    // declared but not yet implemented
+    FIXED_SAMPLES_PER_CHUNK: "fixed-samples-per-chunk",
+    GOP_ALIGNED: "gop-aligned",
+    FIXED_DURATION_CHUNKS: "fixed-duration-chunks",
 };

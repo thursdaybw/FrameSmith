@@ -115,7 +115,7 @@
  * - MP4 registry: https://mp4ra.org/registered-types/boxes
  * - mp4box.js reference implementation
  */
-export function emitStcoBox({ chunkOffsets }) {
+function emitStcoBox({ chunkOffsets }) {
     // ---------------------------------------------------------
     // Contract validation
     // ---------------------------------------------------------
@@ -206,4 +206,11 @@ export function emitStcoBox({ chunkOffsets }) {
             { array: "int", values: offsets }
         ]
     };
+}
+
+export function registerStcoEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stco",
+        emitStcoBox
+    );
 }

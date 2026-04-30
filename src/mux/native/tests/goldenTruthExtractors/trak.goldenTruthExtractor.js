@@ -1,53 +1,103 @@
-import { extractChildBoxFromContainer } from "../reference/BoxExtractor.js";
+import { asIsoBoxContainer } from "../../box-model/Box.js";
 import { getGoldenTruthBox } from "./index.js";
 
-import { emitTkhdBox } from "../../box-emitters/tkhdBox.js";
-import { emitEdtsBox } from "../../box-emitters/edtsBox.js";
-import { emitMdiaBox } from "../../box-emitters/mdiaBox.js";
+/**
+ * trak — Track Box (Golden Truth Extractor)
+ * ========================================
+ *
+ * Structural container for a single track.
+ *
+ * Rules:
+ * - trak has no fields of its own
+ * - required children: tkhd, mdia
+ * - optional child: edts
+ * - no policy
+ * - no inference
+ * - no mutation
+ */
 
-function readTrakBoxFieldsFromBoxBytes(box) {
-    if (!(box instanceof Uint8Array)) {
-        throw new Error("trak.readFields: expected Uint8Array");
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
+
+function readBoxReport(boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("trak.readBoxReport: expected Uint8Array");
+    }
+
+    const container =
+        asIsoBoxContainer(
+            boxBytes,
+            "moov/trak"
+        );
+
+    const children = container.enumerateChildren();
+    const childrenMap = {};
+
+    for (const child of children) {
+        childrenMap[child.type] = { type: child.type };
     }
 
     return {
-        raw: box
+        raw: boxBytes,
+
+        box: {
+            type: "trak",
+            children: childrenMap
+        },
+
+        derived: {}
     };
 }
 
-function getTrakEmitterInputFromBoxBytes(box) {
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
+function getEmitterInput(boxBytes) {
 
-    function emitChild(name, emitter) {
-        const childBytes = extractChildBoxFromContainer(box, name);
-        if (!childBytes) {
-            throw new Error(`TRAK missing required child '${name}'`);
-        }
+    const read = readBoxReport(boxBytes);
+    const raw  = read.raw;
 
-        const params = getGoldenTruthBox
-            .fromBox(
-                childBytes,
-                `moov/trak/${name}`
-            )
-            .getBuilderInput();
+    const input = {
+        tkhd:
+            getGoldenTruthBox
+                .getSemanticBoxDataFromBox({
+                    boxBytes: raw,
+                    sourceRegistryKey: "moov/trak",
+                    targetBoxPath: "moov/trak/tkhd"
+                })
+                .getEmitterInput(),
 
-        return emitter(params);
-    }
-
-    const children = {
-        tkhd: emitChild("tkhd", emitTkhdBox),
-        mdia: emitChild("mdia", emitMdiaBox)
+        mdia:
+            getGoldenTruthBox
+                .getSemanticBoxDataFromBox({
+                    boxBytes: raw,
+                    sourceRegistryKey: "moov/trak",
+                    targetBoxPath: "moov/trak/mdia"
+                })
+                .getEmitterInput()
     };
 
-    // edts is optional
-    const edtsBytes = extractChildBoxFromContainer(box, "edts");
-    if (edtsBytes) {
-        children.edts = emitChild("edts", emitEdtsBox);
+    // Optional child: edts
+    if (read.box.children.edts) {
+        input.edts =
+            getGoldenTruthBox
+                .getSemanticBoxDataFromBox({
+                    boxBytes: raw,
+                    sourceRegistryKey: "moov/trak",
+                    targetBoxPath: "moov/trak/edts"
+                })
+                .getEmitterInput();
     }
 
-    return children;
+    return input;
 }
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerTrakGoldenTruthExtractor(register) {
-    register.readFields(readTrakBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getTrakEmitterInputFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

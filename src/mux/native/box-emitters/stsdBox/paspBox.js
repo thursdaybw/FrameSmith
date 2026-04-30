@@ -33,7 +33,7 @@
  * - no version
  * - no flags
  */
-export function emitPaspBox({ hSpacing = 1, vSpacing = 1 } = {}) {
+function emitPaspBox({ hSpacing = 1, vSpacing = 1 } = {}) {
 
     // ---------------------------------------------------------------------
     // Defensive validation — Category B (shape + sanity only)
@@ -79,4 +79,11 @@ export function emitPaspBox({ hSpacing = 1, vSpacing = 1 } = {}) {
             { int: vSpacing }
         ]
     };
+}
+
+export function registerPaspEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsd|avc1/pasp",
+        emitPaspBox
+    );
 }

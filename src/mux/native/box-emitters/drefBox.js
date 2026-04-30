@@ -96,7 +96,7 @@ import { writeUint32, writeString } from "../binary/Writer.js";
  * - MP4RA box registry
  * - ffmpeg / mp4box.js reference output
  */
-export function emitDrefBox() {
+function emitDrefBox() {
 
     /**
      * `url ` — Data Entry URL Box
@@ -166,3 +166,9 @@ export function emitDrefBox() {
     };
 }
 
+export function registerDrefEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/dinf/dref",
+        emitDrefBox
+    );
+}

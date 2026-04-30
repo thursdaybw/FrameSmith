@@ -1,41 +1,46 @@
 import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import { readBoxHeaderFromBytes } from "../../box-schema/boxLayoutReaders.js";
+import { getPayloadOffsetForPath } from "../../box-schema/boxSchemas.js";
+import { readStructTableFromOffset } from "../../box-schema/boxLayoutReaders.js";
 
-function readFields(box) {
-    const entryCount = readUint32(box, 12);
-    const entries = [];
-    let offset = 16;
-
-    for (let i = 0; i < entryCount; i++) {
-        entries.push({
-            sampleCount: readUint32(box, offset),
-            sampleDelta: readUint32(box, offset + 4)
-        });
-        offset += 8;
+function readBoxReport(box) {
+    if (!(box instanceof Uint8Array)) {
+        throw new Error("stts.readBoxReport: expected Uint8Array");
     }
 
+    const path = "moov/trak/mdia/minf/stbl/stts";
+
+    const header = readBoxHeaderFromBytes(box, path);
+    const payloadOffset = getPayloadOffsetForPath(path);
+
+    const entryCount = readUint32(box, payloadOffset);
+
+    const entries = readStructTableFromOffset({
+        box,
+        payloadOffset,
+        count: entryCount,
+        fieldNames: ["sampleCount", "sampleDelta"]
+    });
+
     return {
-        entryCount,
-        entries,
-        raw: box
+        raw: box,
+        box: {
+            type: "stts",
+            header,
+            fields: {
+                entryCount,
+                entries
+            }
+        },
+        derived: {}
     };
 }
 
-function getBuilderInput(box) {
-    const parsed = readFields(box);
+function getEmitterInput(box) {
+    const parsed = readBoxReport(box);
 
-    /**
-     * Builder input for STTS must reflect the true
-     * run-length encoded structure of the table.
-     *
-     * Even constant-frame-rate video is represented
-     * as a single-entry STTS table.
-     *
-     * Variable-duration video produces multiple entries.
-     *
-     * The emitter accepts this shape directly.
-     */
     return {
-        entries: parsed.entries.map(entry => ({
+        entries: parsed.box.fields.entries.map(entry => ({
             sampleCount: entry.sampleCount,
             sampleDelta: entry.sampleDelta
         }))
@@ -43,6 +48,6 @@ function getBuilderInput(box) {
 }
 
 export function registerSttsGoldenTruthExtractor(register) {
-    register.readFields(readFields);
-    register.getBuilderInput(getBuilderInput);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

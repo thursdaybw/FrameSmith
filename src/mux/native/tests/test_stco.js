@@ -1,9 +1,10 @@
-import { emitStcoBox } from "../box-emitters/stcoBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 import { assertEqual, assertEqualHex } from "./assertions.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readFourCC } from "../box-schema/boxLayoutReaders.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 /**
  * NOTE ON CONFORMANCE (Phase C)
@@ -29,98 +30,109 @@ import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
 export async function testStco_Structure() {
 
-    console.log("=== testStco_Structure ===");
-
     // ---------------------------------------------------------
     // TEST 1: empty offsets list
     // ---------------------------------------------------------
-    let node = emitStcoBox({ chunkOffsets: [] })
-    let stco = serializeBoxTree(node);
+    let node =
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stco",
+            { chunkOffsets: [] }
+        );
 
-    let size1 = readUint32(stco, 0);
-    if (size1 !== 16) {
-        throw new Error(`FAIL: stco size for zero entries must be 16 bytes, got ${size1}`);
-    }
+    assertEqual("stco.type (empty)", node.type, "stco");
+    assertEqual("stco.version (empty)", node.version, 0);
+    assertEqual("stco.flags (empty)", node.flags, 0);
 
-    let type1 = String.fromCharCode(...stco.slice(4, 8));
-    if (type1 !== "stco") {
-        throw new Error("FAIL: stco type incorrect for empty case");
-    }
+    assertEqual(
+        "stco.entry_count (empty)",
+        node.body[0].int,
+        0
+    );
 
-    let count1 = readUint32(stco, 12);
-    if (count1 !== 0) {
-        throw new Error("FAIL: empty stco must have entry_count = 0");
-    }
+    assertEqual(
+        "stco.body.length (empty)",
+        node.body.length,
+        2
+    );
 
     // ---------------------------------------------------------
     // TEST 2: single offset
     // ---------------------------------------------------------
-    const offsets = [1000];
-    node = emitStcoBox({ chunkOffsets: offsets })
-    stco = serializeBoxTree(node);
+    node =
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stco",
+            { chunkOffsets: [1000] }
+        );
 
-
-    let size2 = readUint32(stco, 0);
-    if (size2 !== 20) {
-        throw new Error(`FAIL: stco size for one entry must be 20 bytes, got ${size2}`);
-    }
-
-    let count2 = readUint32(stco, 12);
-    if (count2 !== 1) {
-        throw new Error("FAIL: stco entry_count incorrect for single offset");
-    }
-
-    let offset2 = readUint32(stco, 16);
-    if (offset2 !== 1000) {
-        throw new Error("FAIL: stco stored offset incorrect for single entry");
-    }
+    assertEqual(
+        "stco.entry_count (single)",
+        node.body[0].int,
+        1
+    );
+    assertEqual(
+        "stco.offset[0] (single)",
+        node.body[1].values[0],
+        1000
+    );
 
     // ---------------------------------------------------------
     // TEST 3: multiple offsets
     // ---------------------------------------------------------
     const offsetsMulti = [8, 512, 4096];
-    node = emitStcoBox({ chunkOffsets: offsetsMulti })
-    stco = serializeBoxTree(node);
 
-    let count3 = readUint32(stco, 12);
-    if (count3 !== 3) {
-        throw new Error("FAIL: stco entry_count incorrect for multiple offsets");
-    }
+    node =
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stco",
+            { chunkOffsets: offsetsMulti }
+        );
 
-    let o0 = readUint32(stco, 16);
-    let o1 = readUint32(stco, 20);
-    let o2 = readUint32(stco, 24);
+    assertEqual(
+        "stco.entry_count (multiple)",
+        node.body[0].int,
+        3
+    );
 
-    if (o0 !== 8 || o1 !== 512 || o2 !== 4096) {
-        throw new Error("FAIL: stco offset entries incorrect");
+    for (let i = 0; i < offsetsMulti.length; i++) {
+        assertEqual(
+            `stco.offset[${i}]`,
+            node.body[1].values[i],
+            offsetsMulti[i]
+        );
     }
 
     // ---------------------------------------------------------
-    // TEST 4: input must not mutate post-box
+    // TEST 4: input immutability
     // ---------------------------------------------------------
     const mutableOffsets = [12, 24, 36];
-    node = emitStcoBox({ chunkOffsets: mutableOffsets})
-    stco = serializeBoxTree(node);
+
+    node =
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stco",
+            { chunkOffsets: mutableOffsets }
+        );
 
     mutableOffsets[0] = 999;
 
-    let preserved = readUint32(stco, 16);
-    if (preserved !== 12) {
-        throw new Error("FAIL: stco must not depend on mutated input");
-    }
+    assertEqual(
+        "stco.immutability",
+        node.body[1].values[0],
+        12
+    );
 
     // ---------------------------------------------------------
-    // TEST 5: big-endian correctness
+    // TEST 5: integer integrity
     // ---------------------------------------------------------
-    node = emitStcoBox({ chunkOffsets: [0x01020304] })
-    stco = serializeBoxTree(node);
+    node =
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stco",
+            { chunkOffsets: [0x01020304] }
+        );
 
-    let parsed = readUint32(stco, 16);
-    if (parsed !== 0x01020304) {
-        throw new Error("FAIL: stco big-endian encoding incorrect");
-    }
-
-    console.log("PASS: STCO structural correctness");
+    assertEqual(
+        "stco.integer_integrity",
+        node.body[1].values[0],
+        0x01020304
+    );
 }
 
 /**
@@ -194,22 +206,18 @@ export async function testStco_Structure() {
  * ------------------------------------------------------------
  *
  * This test was retained after refactoring the parser layer to
- * enforce strict boundaries between:
- *
- *   - semantic parsing
- *   - reference inspection
- *   - structural serialization
- *
- * STCO was identified as a necessary exception during early
- * bring-up, and this test documents that exception explicitly
- * to prevent architectural drift.
- */
+* enforce strict boundaries between:
+*
+*   - semantic parsing
+*   - reference inspection
+*   - structural serialization
+*
+* STCO was identified as a necessary exception during early
+* bring-up, and this test documents that exception explicitly
+* to prevent architectural drift.
+*/
 
 export async function testStco_LockedLayoutEquivalence_ffmpeg() {
-
-    console.log(
-        "=== testStco_LockedLayoutEquivalence_ffmpeg ==="
-    );
 
     // ---------------------------------------------------------
     // 1. Load golden MP4
@@ -218,22 +226,28 @@ export async function testStco_LockedLayoutEquivalence_ffmpeg() {
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Parse reference STCO via registry
+    // 2. Extract golden truth via registry
     // ---------------------------------------------------------
-    const refParsed = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl/stco",
-        { trackType: "video" }
-    );
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]/mdia/minf/stbl/stco"
+        );
 
-    const refFields = refParsed.readFields();
-    const params    = refParsed.getBuilderInput();
+    const refReport = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
+
+    // Authoritative reference bytes
+    const refBytes = refReport.raw;
 
     // ---------------------------------------------------------
     // 3. Rebuild STCO from semantic params
     // ---------------------------------------------------------
     const outBytes = serializeBoxTree(
-        emitStcoBox(params)
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stco",
+            params
+        )
     );
 
     // ---------------------------------------------------------
@@ -255,8 +269,8 @@ export async function testStco_LockedLayoutEquivalence_ffmpeg() {
     );
 
     const flags =
-        (outBytes[9] << 16) |
-        (outBytes[10] << 8) |
+        (outBytes[9]  << 16) |
+        (outBytes[10] << 8)  |
         outBytes[11];
 
     assertEqual(
@@ -266,20 +280,22 @@ export async function testStco_LockedLayoutEquivalence_ffmpeg() {
     );
 
     // entry_count
+    const refOffsets = refReport.box.fields.chunkOffsets;
+
     assertEqual(
         "stco.entry_count",
         readUint32(outBytes, 12),
-        refFields.entryCount
+        refOffsets.length
     );
 
     // chunk offsets
     let offset = 16;
 
-    for (let i = 0; i < refFields.entryCount; i++) {
+    for (let i = 0; i < refOffsets.length; i++) {
         assertEqual(
             `stco.chunk_offset[${i}]`,
             readUint32(outBytes, offset),
-            refFields.offsets[i]
+            refOffsets[i]
         );
         offset += 4;
     }
@@ -287,17 +303,6 @@ export async function testStco_LockedLayoutEquivalence_ffmpeg() {
     // ---------------------------------------------------------
     // 5. Byte-for-byte locked-layout equivalence
     // ---------------------------------------------------------
-    const refBytes = extractBoxByPathFromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl/stco"
-    );
-
-    assertEqual(
-        "stco.size",
-        outBytes.length,
-        refBytes.length
-    );
-
     for (let i = 0; i < refBytes.length; i++) {
         assertEqualHex(
             `stco.byte[${i}]`,
@@ -306,8 +311,9 @@ export async function testStco_LockedLayoutEquivalence_ffmpeg() {
         );
     }
 
-    console.log(
-        "PASS: STCO locked-layout equivalence with ffmpeg"
+    assertEqual(
+        "stco.size",
+        outBytes.length,
+        refBytes.length
     );
 }
-

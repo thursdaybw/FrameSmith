@@ -115,7 +115,7 @@
  * - MP4RA box registry
  * - mp4box.js reference implementation
  */
-export function emitMdiaBox(children) {
+function emitMdiaBox(children) {
 
     // ---------------------------------------------------------
     // Contract validation
@@ -217,4 +217,11 @@ export function emitMdiaBox(children) {
             minf
         ]
     };
+}
+
+export function registerMdiaEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia",
+        emitMdiaBox
+    );
 }

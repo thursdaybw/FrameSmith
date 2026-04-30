@@ -1,60 +1,59 @@
-import { readUint32, readFourCC } from "../../bytes/mp4ByteReader.js";
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import { readFourCC } from "../../box-schema/boxLayoutReaders.js";
 
 /**
- * FREE — Free Space Box (Golden Truth Extractor)
- * =============================================
+ * FREE — Free Space Box
+ * ====================
  *
- * Framesmith supports exactly ONE canonical form:
+ * readBoxReport contract:
+ * - raw      → exact bytes
+ * - box      → schema-shaped structural facts
+ * - derived  → none
  *
- *   - size = 8
- *   - type = "free"
- *   - no payload
- *
- * This extractor:
- *   - validates that invariant against a real MP4
- *   - provides zero builder input (emitFreeBox takes no params)
- *
- * Any deviation is rejected explicitly.
+ * FREE has:
+ * - no version / flags
+ * - no defined fields
+ * - optional payload (ignored structurally)
  */
 
-function readFreeBoxFieldsFromBoxBytes(box) {
-    if (!(box instanceof Uint8Array)) {
-        throw new Error("free.readFields: expected Uint8Array");
+// ---------------------------------------------------------------------------
+// Structural read
+// ---------------------------------------------------------------------------
+
+function readFreeBoxReport(boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("free.readBoxReport: expected Uint8Array");
     }
 
-    const size = readUint32(box, 0);
-    const type = readFourCC(box, 4);
-
-    if (type !== "free") {
-        throw new Error(`free: expected type 'free', got '${type}'`);
-    }
-
-    if (size !== 8) {
-        throw new Error(
-            `free: Framesmith only supports minimal 8-byte free box, got size ${size}`
-        );
-    }
-
-    if (box.length !== 8) {
-        throw new Error(
-            `free: box length mismatch (expected 8, got ${box.length})`
-        );
-    }
+    // We do NOT parse payload.
+    // FREE is structurally opaque and policy-ignored.
 
     return {
-        raw: box
+        raw: boxBytes,
+
+        box: {
+            type: "free",
+            fields: {}
+        },
+
+        derived: {}
     };
 }
 
-function getFreeBuildParamsFromBoxBytes(box) {
-    // Validation already performed
-    readFreeBoxFieldsFromBoxBytes(box);
+// ---------------------------------------------------------------------------
+// Builder input
+// ---------------------------------------------------------------------------
 
-    // emitFreeBox takes no parameters
+function getFreeBuilderInputFromBoxReport(_readResult) {
+    // FREE has no semantic or structural inputs
     return {};
 }
 
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
 export function registerFreeGoldenTruthExtractor(register) {
-    register.readFields(readFreeBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getFreeBuildParamsFromBoxBytes);
+    register.readBoxReport(readFreeBoxReport);
+    register.getEmitterInput(getFreeBuilderInputFromBoxReport);
 }

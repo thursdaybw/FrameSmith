@@ -1,38 +1,92 @@
-import { readUint32, readFourCC } from "../../bytes/mp4ByteReader.js";
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import { readFourCC } from "../../box-schema/boxLayoutReaders.js";
 
-function readFtypBoxFieldsFromBoxBytes(box) {
-    const size = readUint32(box, 0);
-    const type = readFourCC(box, 4);
+/**
+ * ftyp — File Type Box (Golden Truth Extractor)
+ * ============================================
+ *
+ * Structural terminal extractor for the File Type Box.
+ *
+ * Rules:
+ * - ftyp is a terminal box
+ * - no children
+ * - compatible_brands are FLAT, POSITIONAL fields
+ * - no policy
+ * - no inference
+ * - no mutation
+ */
 
-    const majorBrand = readFourCC(box, 8);
-    const minorVersion = readUint32(box, 12);
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
 
-    const compatibleBrands = [];
-    for (let offset = 16; offset + 4 <= size; offset += 4) {
-        compatibleBrands.push(readFourCC(box, offset));
+function readBoxReport(boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("ftyp.readBoxReport: expected Uint8Array");
+    }
+
+    if (readFourCC(boxBytes, 4) !== "ftyp") {
+        throw new Error(
+            "ftyp.readBoxReport: expected ftyp box bytes"
+        );
+    }
+
+    const majorBrand   = readFourCC(boxBytes, 8);
+    const minorVersion = readUint32(boxBytes, 12);
+
+    const fields = {
+        majorBrand,
+        minorVersion
+    };
+
+    let index = 0;
+    for (let offset = 16; offset < boxBytes.length; offset += 4) {
+        fields[`compatibleBrand${index}`] =
+            readFourCC(boxBytes, offset);
+        index++;
     }
 
     return {
-        size,
-        type,
-        majorBrand,
-        minorVersion,
-        compatibleBrands,
-        raw: box
+        raw: boxBytes,
+
+        box: {
+            type: "ftyp",
+            fields
+        },
+
+        derived: {}
     };
 }
 
-function getFtypBuildParamsFromBoxBytes(box) {
-    const parsed = readFtypBoxFieldsFromBoxBytes(box);
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
+
+function getEmitterInput(boxBytes) {
+
+    const read = readBoxReport(boxBytes);
+    const fields = read.box.fields;
+
+    const compatibleBrands = [];
+    let i = 0;
+
+    while (`compatibleBrand${i}` in fields) {
+        compatibleBrands.push(fields[`compatibleBrand${i}`]);
+        i++;
+    }
 
     return {
-        majorBrand: parsed.majorBrand,
-        minorVersion: parsed.minorVersion,
-        compatibleBrands: parsed.compatibleBrands.slice()
+        majorBrand:    fields.majorBrand,
+        minorVersion: fields.minorVersion,
+        compatibleBrands
     };
 }
 
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
 export function registerFtypGoldenTruthExtractor(register) {
-    register.readFields(readFtypBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getFtypBuildParamsFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

@@ -128,7 +128,7 @@
  * - MP4RA box registry
  * - mp4box.js reference implementation
  */
-export function emitTrakBox(children) {
+function emitTrakBox(children) {
 
     // ---------------------------------------------------------
     // Contract validation
@@ -180,4 +180,11 @@ export function emitTrakBox(children) {
         type: "trak",
         children: orderedChildren
     };
+}
+
+export function registerTrakEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak",
+        emitTrakBox
+    );
 }

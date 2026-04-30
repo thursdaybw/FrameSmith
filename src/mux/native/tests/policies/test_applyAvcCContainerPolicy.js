@@ -24,7 +24,8 @@
  */
 
 import {
-    applyAvcCContainerPolicy
+    applyAvcCContainerPolicySemantic,
+    applyAvcCContainerPolicyContainerComplete,
 } from "../../policies/applyAvcCContainerPolicy.js";
 
 import {
@@ -86,15 +87,12 @@ const SEMANTIC_BASELINE_AVCC = new Uint8Array([
 
 export function test_applyAvcCContainerPolicy() {
 
-    console.log("=== test_applyAvcCContainerPolicy ===");
-
     // ---------------------------------------------------------
     // Case 1 — Semantic High Profile → Container-complete
     // ---------------------------------------------------------
 
-    const completed = applyAvcCContainerPolicy({
+    const completed = applyAvcCContainerPolicySemantic({
         avcC: SEMANTIC_HIGH_PROFILE_AVCC,
-        avcCCompleteness: "semantic",
         profileIndication: 100
     });
 
@@ -107,10 +105,8 @@ export function test_applyAvcCContainerPolicy() {
     // ---------------------------------------------------------
     // Case 2 — Container-complete High Profile → unchanged
     // ---------------------------------------------------------
-    const preserved = applyAvcCContainerPolicy({
-        avcC: CONTAINER_COMPLETE_HIGH_PROFILE_AVCC,
-        avcCCompleteness: "container-complete",
-        profileIndication: 100 // optional here, but fine to pass
+    const preserved = applyAvcCContainerPolicyContainerComplete({
+        avcC: CONTAINER_COMPLETE_HIGH_PROFILE_AVCC
     });
 
     assertArrayEqual(
@@ -122,9 +118,8 @@ export function test_applyAvcCContainerPolicy() {
     // ---------------------------------------------------------
     // Case 3 — Baseline Profile → unchanged
     // ---------------------------------------------------------
-    const baseline = applyAvcCContainerPolicy({
+    const baseline = applyAvcCContainerPolicySemantic({
         avcC: SEMANTIC_BASELINE_AVCC,
-        avcCCompleteness: "semantic",
         profileIndication: 66
     });
 
@@ -134,7 +129,4 @@ export function test_applyAvcCContainerPolicy() {
         Array.from(SEMANTIC_BASELINE_AVCC)
     );
 
-    console.log(
-        "PASS: applyAvcCContainerPolicy behaves correctly"
-    );
 }

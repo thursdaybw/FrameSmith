@@ -85,52 +85,82 @@ const TKHD_FLAG_BITS = {
     inPreview:  0x000004, // deprecated, intentionally unused
 };
 
-export function emitTkhdBox({
+function emitTkhdBox({
     width,
     height,
     widthFraction,
     heightFraction,
     duration,
-    trackId
+    trackId,
+    alternateGroup = 0,
+    volume = 0
 }) {
 
     if (!Number.isInteger(width) || width < 0) {
         throw new Error(
-            "emitTkhdBox: width must be a non-negative integer"
+            `emitTkhdBox: width must be a non-negative integer, ` +
+            `received ${width} (${typeof width})`
         );
     }
 
     if (!Number.isInteger(height) || height < 0) {
         throw new Error(
-            "emitTkhdBox: height must be a non-negative integer"
+            `emitTkhdBox: height must be a non-negative integer, ` +
+            `received ${height} (${typeof height})`
         );
     }
 
-    if (!Number.isInteger(widthFraction) ||
+    if (
+        !Number.isInteger(widthFraction) ||
         widthFraction < 0 ||
-        widthFraction > 0xFFFF) {
+        widthFraction > 0xFFFF
+    ) {
         throw new Error(
-            "emitTkhdBox: widthFraction must be an integer between 0 and 65535"
+            `emitTkhdBox: widthFraction must be an integer between 0 and 65535, ` +
+            `received ${widthFraction} (${typeof widthFraction})`
         );
     }
 
-    if (!Number.isInteger(heightFraction) ||
+    if (
+        !Number.isInteger(heightFraction) ||
         heightFraction < 0 ||
-        heightFraction > 0xFFFF) {
+        heightFraction > 0xFFFF
+    ) {
         throw new Error(
-            "emitTkhdBox: heightFraction must be an integer between 0 and 65535"
+            `emitTkhdBox: heightFraction must be an integer between 0 and 65535, ` +
+            `received ${heightFraction} (${typeof heightFraction})`
         );
     }
 
     if (!Number.isInteger(duration) || duration < 0) {
         throw new Error(
-            "emitTkhdBox: duration must be a non-negative integer"
+            `emitTkhdBox: duration must be a non-negative integer, ` +
+            `received ${duration} (${typeof duration})`
         );
     }
 
     if (!Number.isInteger(trackId) || trackId <= 0) {
         throw new Error(
-            "emitTkhdBox: trackId must be a positive integer"
+            `emitTkhdBox: trackId must be a positive integer, ` +
+            `received ${trackId} (${typeof trackId})`
+        );
+    }
+
+    if (!Number.isInteger(alternateGroup) || alternateGroup < 0) {
+        throw new Error(
+            `emitTkhdBox: alternateGroup must be a non-negative integer, ` +
+            `received ${alternateGroup} (${typeof alternateGroup})`
+        );
+    }
+
+    if (
+        !Number.isInteger(volume) ||
+        volume < 0 ||
+        volume > 0xFFFF
+    ) {
+        throw new Error(
+            `emitTkhdBox: volume must be a 16-bit fixed-point value (0–65535), ` +
+            `received ${volume} (${typeof volume})`
         );
     }
 
@@ -287,20 +317,16 @@ export function emitTkhdBox({
              * alternate_group (int16)
              * -----------------------
              * Used for alternate tracks (e.g. language variants).
-             *
-             * Not used in Framesmith.
-             * Set to 0.
              */
-            { short: 0 },
+            { short: alternateGroup },
 
             /**
              * volume (int16, 8.8 fixed-point)
              * -------------------------------
              * Audio-only field.
-             *
              * For video tracks, this must be 0.
              */
-            { short: 0 },
+            { short: volume },
 
             /**
              * reserved (uint16)
@@ -355,4 +381,11 @@ export function emitTkhdBox({
             { int: heightFixed }
         ]
     };
+}
+
+export function registerTkhdEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/tkhd",
+        emitTkhdBox
+    );
 }

@@ -58,7 +58,7 @@
  * - ISO/IEC 14496-12 — Edit List Box (elst)
  * - MP4 Registry: https://mp4ra.org/registered-types/boxes/elst
  */
-export function emitElstBox(params) {
+function emitElstBox(params) {
 
     // ---------------------------------------------------------
     // Contract validation
@@ -157,4 +157,11 @@ export function emitElstBox(params) {
         flags,
         body
     };
+}
+
+export function registerElstEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/edts/elst",
+        emitElstBox
+    );
 }

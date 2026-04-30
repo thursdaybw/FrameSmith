@@ -1,0 +1,67 @@
+{
+  "generator": {
+    "tool": "normalize_webm_mkvinfo_oracle.mjs",
+    "source": "mkvinfo -a -v --ui-language en_US"
+  },
+  "format": {
+    "filename": null,
+    "formatName": "matroska,webm",
+    "formatLongName": "Matroska / WebM",
+    "durationSeconds": 2.008,
+    "sizeBytes": 119443,
+    "bitRate": null,
+    "timestampScaleNs": 1000000
+  },
+  "streamSummary": [
+    {
+      "index": 0,
+      "trackNumber": 1,
+      "codecType": "video",
+      "codecId": "V_VP9",
+      "codecName": "vp9",
+      "codecTagString": null,
+      "timeBase": "1/1000",
+      "width": 128,
+      "height": 128,
+      "sampleRate": null,
+      "channels": null
+    },
+    {
+      "index": 1,
+      "trackNumber": 2,
+      "codecType": "audio",
+      "codecId": "A_OPUS",
+      "codecName": "opus",
+      "codecTagString": null,
+      "timeBase": "1/1000",
+      "width": null,
+      "height": null,
+      "sampleRate": 48000,
+      "channels": 2
+    }
+  ],
+  "packetSummary": [
+    {
+      "streamIndex": 0,
+      "trackNumber": 1,
+      "packetCount": 60,
+      "keyframeCount": 2,
+      "firstPts": 0,
+      "lastPts": 1967,
+      "minDuration": 33,
+      "maxDuration": 34,
+      "nonMonotonicPtsCount": 0
+    },
+    {
+      "streamIndex": 1,
+      "trackNumber": 2,
+      "packetCount": 101,
+      "keyframeCount": 101,
+      "firstPts": 0,
+      "lastPts": 2001,
+      "minDuration": 20,
+      "maxDuration": 21,
+      "nonMonotonicPtsCount": 0
+    }
+  ]
+}

@@ -18,14 +18,12 @@
  *
  * ISO/IEC 14496-12 — SampleGroupDescriptionBox
  */
-export function emitSgpdBox({
+function emitSgpdBox({
     groupingType,
     defaultLength,
     descriptions
 }) {
-    // -------------------------------------------------------------
-    // Defensive validation (structure only)
-    // -------------------------------------------------------------
+
     if (
         typeof groupingType !== "string" ||
         groupingType.length !== 4
@@ -67,28 +65,64 @@ export function emitSgpdBox({
         }
     }
 
-    // -------------------------------------------------------------
-    // Emit FullBox
-    // -------------------------------------------------------------
+    const bodyLength =
+        defaultLength === 0
+        ? 3 + descriptions.length * 2
+        : 3 + descriptions.length;
+
+    const body = new Array(bodyLength);
+
+
+    // grouping_type (FourCC encoded as uint32)
+    const groupingTypeUint32 =
+        (groupingType.charCodeAt(0) << 24) |
+        (groupingType.charCodeAt(1) << 16) |
+        (groupingType.charCodeAt(2) << 8)  |
+        groupingType.charCodeAt(3);
+
+    body[0] = { int: groupingTypeUint32 >>> 0 };
+
+    // default_length
+    body[1] = { int: defaultLength };
+
+    // entry_count
+    body[2] = { int: descriptions.length };
+
+    let cursor = 3;
+
+    for (const desc of descriptions) {
+
+        // Per-entry length is written ONLY when defaultLength === 0
+        if (defaultLength === 0) {
+            body[cursor++] = {
+                int: desc.length
+            };
+        }
+
+        body[cursor++] = {
+            array: "byte",
+            values: Array.from(desc)
+        };
+    }
+
     return {
         type: "sgpd",
         version: 1,
         flags: 0,
-
-        body: [
-            // grouping_type (4cc)
-            { type: groupingType },
-
-            // default_length
-            { int: defaultLength },
-
-            // entry_count
-            { int: descriptions.length },
-
-            // description records (opaque)
-            ...descriptions.map(desc => ({
-                array: desc
-            }))
-        ]
+        body
     };
+}
+
+export function registerSgpdFixedEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/sgpd|fixed",
+        emitSgpdBox
+    );
+}
+
+export function registerSgpdVariableEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/sgpd|variable",
+        emitSgpdBox
+    );
 }

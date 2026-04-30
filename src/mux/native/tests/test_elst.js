@@ -1,4 +1,3 @@
-import { emitElstBox } from "../box-emitters/elstBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import {
     extractBoxByPathFromMp4
@@ -10,10 +9,9 @@ import {
     assertExists
 } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 export async function testElst_Structure() {
-
-    console.log("=== testElst_Structure ===");
 
     const entries = [
         {
@@ -24,11 +22,16 @@ export async function testElst_Structure() {
         }
     ];
 
-    const node = emitElstBox({
-        version: 0,
-        flags: 0,
-        entries
-    });
+    const node =
+        EmitterRegistry.emit(
+            //"moov/trak/edts/elst|v0",
+            "moov/trak/edts/elst",
+            {
+                version: 0,
+                flags: 0,
+                entries
+            }
+        );
 
     // ---------------------------------------------------------
     // Box identity
@@ -51,8 +54,6 @@ export async function testElst_Structure() {
     assertEqual("mediaTime", node.body[2].int, 0);
     assertEqual("mediaRateInteger", node.body[3].short, 1);
     assertEqual("mediaRateFraction", node.body[4].short, 0);
-
-    console.log("PASS: ELST structural correctness");
 }
 
 /**
@@ -68,39 +69,29 @@ export async function testElst_Structure() {
  *   - raw byte passthrough
  *   - container cheating
  */
-export async function testElst_LockedLayoutEquivalence_ffmpeg() {
 
-    console.log("=== testElst_LockedLayoutEquivalence_ffmpeg ===");
+export async function testElst_LockedLayoutEquivalence_ffmpeg() {
 
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const refElst = extractBoxByPathFromMp4(
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         mp4,
-        "moov/trak/edts/elst",
-        {
-            trackType: "video"
-        }
+        "moov/trak[0]/edts/elst",
     );
+
+    const refElst = truth.readBoxReport().raw;
 
     assertExists("reference elst", refElst);
 
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/edts/elst",
-        {
-            trackType: "video"
-        }
-    );
-
-    const input = truth.getBuilderInput();
+    const input = truth.getEmitterInput();
 
     const out = serializeBoxTree(
-        emitElstBox(input)
+        EmitterRegistry.emit(
+            "moov/trak/edts/elst",
+            input
+        )
     );
-
-    // child-level equivalence does not apply (elst has no children)
-    // so this is flat byte-for-byte
 
     for (let i = 0; i < refElst.length; i++) {
         assertEqualHex(
@@ -115,6 +106,42 @@ export async function testElst_LockedLayoutEquivalence_ffmpeg() {
         out.length,
         refElst.length
     );
+}
 
-    console.log("PASS: ELST matches ffmpeg byte-for-byte");
+export async function testElst_LockedLayoutEquivalence_ffmpeg_Audio() {
+
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+        mp4,
+        "moov/trak[1]/edts/elst",
+    );
+
+    const refElst = truth.readBoxReport().raw;
+
+    assertExists("reference elst", refElst);
+
+    const input = truth.getEmitterInput();
+
+    const out = serializeBoxTree(
+        EmitterRegistry.emit(
+            "moov/trak/edts/elst",
+            input
+        )
+    );
+
+    for (let i = 0; i < refElst.length; i++) {
+        assertEqualHex(
+            `elst.byte[${i}]`,
+            out[i],
+            refElst[i]
+        );
+    }
+
+    assertEqual(
+        "elst.size",
+        out.length,
+        refElst.length
+    );
 }

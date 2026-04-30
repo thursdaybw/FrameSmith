@@ -1,76 +1,105 @@
-import { readUint32, readUint16 } from "../../bytes/mp4ByteReader.js";
-
 /**
- * MDHD Parser
- * ===========
+ * MDHD — Media Header Box (version 0)
  *
- * Test-only parser for the Media Header Box (mdhd).
- *
- * Responsibilities:
- * - read structural truth from isolated mdhd box bytes
- * - extract semantic parameters required to rebuild the box
- *
- * This parser:
- * - performs NO traversal
- * - performs NO policy decisions
- * - does NOT build boxes
+ * Contract:
+ * ---------
+ * - readBoxReport() exposes LOSSLESS on-disk structure
+ * - No inference
+ * - No normalization
+ * - getEmitterInput derives ONLY from readBoxReport()
  */
 
-/**
- * readMdhdBoxFieldsFromBoxBytes
- * -----------------------------
- *
- * Answers:
- *   "What does this mdhd box contain?"
- */
-function readMdhdBoxFieldsFromBoxBytes(box) {
+import {
+    readUint32,
+    readUint16,
+    readUint64
+} from "../../bytes/mp4ByteReader.js";
+
+import {
+    readBoxHeaderFromBytes
+} from "../../box-schema/boxLayoutReaders.js";
+
+import {
+    getPayloadOffsetForPath
+} from "../../box-schema/boxSchemas.js";
+
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
+
+function readBoxReport(box) {
     if (!(box instanceof Uint8Array)) {
-        throw new Error("mdhd.readFields: expected Uint8Array");
+        throw new Error("mdhd.readBoxReport: expected Uint8Array");
     }
 
-    const version = box[8];
-    const flags =
-        (box[9]  << 16) |
-        (box[10] << 8)  |
-        box[11];
+    const path = "moov/trak/mdia/mdhd";
+
+    const header = readBoxHeaderFromBytes(box, path);
+    const payloadOffset = getPayloadOffsetForPath(path);
+    const version = Number(header?.version ?? 0);
+
+    let creationTime;
+    let modificationTime;
+    let timescale;
+    let duration;
+    let language;
+    let predefined;
+
+    if (version === 1) {
+        creationTime = readUint64(box, payloadOffset);
+        modificationTime = readUint64(box, payloadOffset + 8);
+        timescale = readUint32(box, payloadOffset + 16);
+        duration = readUint64(box, payloadOffset + 20);
+        language = readUint16(box, payloadOffset + 28);
+        predefined = readUint16(box, payloadOffset + 30);
+    } else {
+        creationTime = readUint32(box, payloadOffset);
+        modificationTime = readUint32(box, payloadOffset + 4);
+        timescale = readUint32(box, payloadOffset + 8);
+        duration = readUint32(box, payloadOffset + 12);
+        language = readUint16(box, payloadOffset + 16);
+        predefined = readUint16(box, payloadOffset + 18);
+    }
 
     return {
-        type: "mdhd",
+        raw: box,
 
-        version,
-        flags,
+        box: {
+            type: "mdhd",
+            header,
 
-        timescale: readUint32(box, 20),
-        duration:  readUint32(box, 24),
-        language:  readUint16(box, 28),
+            fields: {
+                creationTime,
+                modificationTime,
+                timescale,
+                duration,
+                language,
+                predefined
+            }
+        },
 
-        raw: box
+        derived: {}
     };
 }
 
-/**
- * getMdhdBuildParamsFromBoxBytes
- * ------------------------------
- *
- * Answers:
- *   "What semantic intent is required to rebuild this mdhd box?"
- */
-function getMdhdBuildParamsFromBoxBytes(box) {
-    const fields = readMdhdBoxFieldsFromBoxBytes(box);
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
+
+function getEmitterInput(box) {
+    const read = readBoxReport(box);
 
     return {
-        timescale: fields.timescale,
-        duration:  fields.duration
+        timescale: read.box.fields.timescale,
+        duration:  read.box.fields.duration
     };
 }
 
-/**
- * registerMdhdParser
- * ------------------
- *
- * The ONLY public export.
- */
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
 export function registerMdhdGoldenTruthExtractor(register) {
-    register.readFields(readMdhdBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getMdhdBuildParamsFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

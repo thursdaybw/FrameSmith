@@ -1,142 +1,72 @@
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
-import { readUint32, readUint16, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32, readUint16 } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { GoldenTruthRegistry } from "./goldenTruthExtractors/GoldenTruthRegistry.js";
 
-export async function testMvhd_Structure() {
-    console.log("=== mvhd Granular structural tests ===");
+export function testMvhd_Structure() {
 
     const timescale   = 90000;
     const duration    = 90000 * 12;
     const nextTrackId = 2;
 
-    const mvhd = serializeBoxTree(
-        emitMvhdBox({ timescale, duration, nextTrackId })
-    );
+    // ---------------------------------------------------------
+    // Emit MVHD node (no serialization)
+    // ---------------------------------------------------------
+
+    const node =
+        EmitterRegistry.emit(
+            "moov/mvhd",
+            { timescale, duration, nextTrackId }
+        );
 
     // ---------------------------------------------------------
-    // FIELD 1: size
+    // Box identity
     // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.size",
-        readUint32(mvhd, 0),
-        mvhd.length
-    );
+
+    assertEqual("mvhd.type", node.type, "mvhd");
 
     // ---------------------------------------------------------
-    // FIELD 2: type
+    // FullBox header
     // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.type",
-        readFourCC(mvhd, 4),
-        "mvhd"
-    );
+
+    assertEqual("mvhd.version", node.version, 0);
+    assertEqual("mvhd.flags", node.flags, 0);
 
     // ---------------------------------------------------------
-    // FIELD 3: version
+    // Body fields (schema order)
     // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.version",
-        mvhd[8],
-        0
-    );
 
-    // ---------------------------------------------------------
-    // FIELD 4: flags
-    // ---------------------------------------------------------
-    const flags =
-        (mvhd[9] << 16) |
-        (mvhd[10] << 8) |
-        mvhd[11];
+    let cursor = 0;
+    const body = node.body;
 
-    assertEqual(
-        "mvhd.flags",
-        flags,
-        0
-    );
+    // creation_time
+    assertEqual("mvhd.creation_time", body[cursor++].int, 0);
 
-    // ---------------------------------------------------------
-    // FIELD 5: creation_time
-    // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.creation_time",
-        readUint32(mvhd, 12),
-        0
-    );
+    // modification_time
+    assertEqual("mvhd.modification_time", body[cursor++].int, 0);
 
-    // ---------------------------------------------------------
-    // FIELD 6: modification_time
-    // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.modification_time",
-        readUint32(mvhd, 16),
-        0
-    );
+    // timescale
+    assertEqual("mvhd.timescale", body[cursor++].int, timescale);
 
-    // ---------------------------------------------------------
-    // FIELD 7: timescale
-    // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.timescale",
-        readUint32(mvhd, 20),
-        timescale
-    );
+    // duration
+    assertEqual("mvhd.duration", body[cursor++].int, duration);
 
-    // ---------------------------------------------------------
-    // FIELD 8: duration
-    // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.duration",
-        readUint32(mvhd, 24),
-        duration
-    );
+    // rate (16.16)
+    assertEqual("mvhd.rate", body[cursor++].int, 0x00010000);
 
-    // ---------------------------------------------------------
-    // FIELD 9: rate (16.16)
-    // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.rate",
-        readUint32(mvhd, 28),
-        0x00010000
-    );
+    // volume (8.8)
+    assertEqual("mvhd.volume", body[cursor++].short, 0x0100);
 
-    // ---------------------------------------------------------
-    // FIELD 10: volume (8.8)
-    // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.volume",
-        readUint16(mvhd, 32),
-        0x0100
-    );
+    // reserved (uint16)
+    assertEqual("mvhd.reserved.short", body[cursor++].short, 0);
 
-    // ---------------------------------------------------------
-    // FIELD 11: reserved (uint16)
-    // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.reserved.short",
-        readUint16(mvhd, 34),
-        0
-    );
+    // reserved (uint32 × 2)
+    assertEqual("mvhd.reserved[0]", body[cursor++].int, 0);
+    assertEqual("mvhd.reserved[1]", body[cursor++].int, 0);
 
-    // ---------------------------------------------------------
-    // FIELD 12: reserved (uint32 × 2)
-    // ---------------------------------------------------------
-    assertEqual(
-        "mvhd.reserved[0]",
-        readUint32(mvhd, 36),
-        0
-    );
-
-    assertEqual(
-        "mvhd.reserved[1]",
-        readUint32(mvhd, 40),
-        0
-    );
-
-    // ---------------------------------------------------------
-    // FIELD 13: matrix
-    // ---------------------------------------------------------
+    // matrix (uint32 × 9)
     const expectedMatrix = [
         0x00010000, 0, 0,
         0, 0x00010000, 0,
@@ -146,82 +76,101 @@ export async function testMvhd_Structure() {
     for (let i = 0; i < 9; i++) {
         assertEqual(
             `mvhd.matrix[${i}]`,
-            readUint32(mvhd, 44 + i * 4),
+            body[cursor++].int,
             expectedMatrix[i]
         );
     }
 
-    // ---------------------------------------------------------
-    // FIELD 14: pre_defined (uint32 × 6)
-    // ---------------------------------------------------------
+    // pre_defined (uint32 × 6)
     for (let i = 0; i < 6; i++) {
         assertEqual(
             `mvhd.pre_defined[${i}]`,
-            readUint32(mvhd, 80 + i * 4),
+            body[cursor++].int,
             0
         );
     }
 
-    // ---------------------------------------------------------
-    // FIELD 15: next_track_ID
-    // ---------------------------------------------------------
+    // next_track_ID
     assertEqual(
         "mvhd.next_track_ID",
-        readUint32(mvhd, 104),
+        body[cursor++].int,
         nextTrackId
     );
-
-    console.log("PASS: mvhd granular structural tests");
 }
 
 export async function testMvhd_LockedLayoutEquivalence_ffmpeg() {
-    console.log("=== testMvhd_LockedLayoutEquivalence_ffmpeg (golden MP4) ===");
 
     // -------------------------------------------------------------
-    // 1. Load golden MP4
+    // Load golden MP4 (video only)
     // -------------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // -------------------------------------------------------------
-    // 2. Read reference MVHD via parser registry
+    // Read reference MVHD via golden truth extractor
     // -------------------------------------------------------------
-    const ref = getGoldenTruthBox.fromMp4(
+    const ref = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         mp4,
         "moov/mvhd"
     );
 
-    const refFields = ref.readFields();
-    const params    = ref.getBuilderInput();
+    const refFields = ref.readBoxReport();
+    const params    = ref.getEmitterInput();
 
     // -------------------------------------------------------------
-    // 3. Rebuild MVHD via Framesmith
+    // Rebuild MVHD via Framesmith
     // -------------------------------------------------------------
     const outBytes = serializeBoxTree(
-        emitMvhdBox(params)
+        EmitterRegistry.emit("moov/mvhd", params)
     );
 
     // -------------------------------------------------------------
-    // 4. Read rebuilt MVHD via same parser
+    // Read rebuilt MVHD via same extractor
     // -------------------------------------------------------------
-    const outFields = getGoldenTruthBox.fromBox(
-        outBytes,
-        "moov/mvhd"
-    ).readFields();
+    const outFields = GoldenTruthRegistry
+        .getExtractor("moov/mvhd")
+        .readBoxReport(outBytes);
 
     // -------------------------------------------------------------
-    // 5. Field-level equivalence (semantic gate)
+    // Field-level equivalence (semantic gate)
     // -------------------------------------------------------------
-    assertEqual("mvhd.version",     outFields.version,     refFields.version);
-    assertEqual("mvhd.flags",       outFields.flags,       refFields.flags);
-    assertEqual("mvhd.timescale",   outFields.timescale,   refFields.timescale);
-    assertEqual("mvhd.duration",    outFields.duration,    refFields.duration);
-    assertEqual("mvhd.nextTrackId", outFields.nextTrackId, refFields.nextTrackId);
-    assertEqual("mvhd.volume",      outFields.volume,      refFields.volume);
-    assertEqual("mvhd.rate",        outFields.rate,        refFields.rate);
+    assertEqual("mvhd.version",
+        outFields.box.version,
+        refFields.box.version
+    );
+
+    assertEqual("mvhd.flags",
+        outFields.box.flags,
+        refFields.box.flags
+    );
+
+    assertEqual("mvhd.timescale",
+        outFields.box.timescale,
+        refFields.box.timescale
+    );
+
+    assertEqual("mvhd.duration",
+        outFields.box.duration,
+        refFields.box.duration
+    );
+
+    assertEqual("mvhd.nextTrackId",
+        outFields.box.nextTrackId,
+        refFields.box.nextTrackId
+    );
+
+    assertEqual("mvhd.volume",
+        outFields.box.volume,
+        refFields.box.volume
+    );
+
+    assertEqual("mvhd.rate",
+        outFields.box.rate,
+        refFields.box.rate
+    );
 
     // -------------------------------------------------------------
-    // 6. Byte-for-byte equivalence
+    // Byte-for-byte equivalence
     // -------------------------------------------------------------
     const refRaw = refFields.raw;
 
@@ -238,6 +187,94 @@ export async function testMvhd_LockedLayoutEquivalence_ffmpeg() {
             refRaw[i]
         );
     }
+}
 
-    console.log("PASS: mvhd matches golden MP4 byte-for-byte");
+export async function testMvhd_LockedLayoutEquivalence_ffmpeg_Audio() {
+
+    // -------------------------------------------------------------
+    // Load golden MP4 (audio + video)
+    // -------------------------------------------------------------
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // -------------------------------------------------------------
+    // Read reference MVHD via golden truth extractor
+    // -------------------------------------------------------------
+    const ref = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+        mp4,
+        "moov/mvhd"
+    );
+
+    const refFields = ref.readBoxReport();
+    const params    = ref.getEmitterInput();
+
+    // -------------------------------------------------------------
+    // Rebuild MVHD via Framesmith
+    // -------------------------------------------------------------
+    const outBytes = serializeBoxTree(
+        EmitterRegistry.emit("moov/mvhd", params)
+    );
+
+    // -------------------------------------------------------------
+    // Read rebuilt MVHD via same extractor
+    // -------------------------------------------------------------
+    const outFields = GoldenTruthRegistry
+        .getExtractor("moov/mvhd")
+        .readBoxReport(outBytes);
+
+    // Field-level equivalence (semantic gate)
+    // -------------------------------------------------------------
+    assertEqual("mvhd.version",
+        outFields.box.version,
+        refFields.box.version
+    );
+
+    assertEqual("mvhd.flags",
+        outFields.box.flags,
+        refFields.box.flags
+    );
+
+    assertEqual("mvhd.timescale",
+        outFields.box.timescale,
+        refFields.box.timescale
+    );
+
+    assertEqual("mvhd.duration",
+        outFields.box.duration,
+        refFields.box.duration
+    );
+
+    assertEqual("mvhd.nextTrackId",
+        outFields.box.nextTrackId,
+        refFields.box.nextTrackId
+    );
+
+    assertEqual("mvhd.volume",
+        outFields.box.volume,
+        refFields.box.volume
+    );
+
+    assertEqual("mvhd.rate",
+        outFields.box.rate,
+        refFields.box.rate
+    );
+
+    // -------------------------------------------------------------
+    // Byte-for-byte equivalence
+    // -------------------------------------------------------------
+    const refRaw = refFields.raw;
+
+    assertEqual(
+        "mvhd.size",
+        outBytes.length,
+        refRaw.length
+    );
+
+    for (let i = 0; i < refRaw.length; i++) {
+        assertEqual(
+            `mvhd.byte[${i}]`,
+            outBytes[i],
+            refRaw[i]
+        );
+    }
 }

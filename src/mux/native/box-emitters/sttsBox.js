@@ -51,7 +51,7 @@
  *      each sample has duration sampleDelta
  *      expressed in media timescale units.”
  */
-export function emitSttsBox({ entries }) {
+function emitSttsBox({ entries }) {
 
     // ---------------------------------------------------------------------
     // Defensive validation — Category B (shape + sanity only)
@@ -152,4 +152,11 @@ export function emitSttsBox({ entries }) {
         flags: 0,
         body
     };
+}
+
+export function registerSttsEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stts",
+        emitSttsBox
+    );
 }

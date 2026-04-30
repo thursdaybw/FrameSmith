@@ -1,5 +1,3 @@
-import { emitEdtsBox } from "../box-emitters/edtsBox.js";
-import { emitElstBox } from "../box-emitters/elstBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import {
     extractBoxByPathFromMp4,
@@ -16,121 +14,284 @@ import { asIsoBoxContainer } from "../box-model/Box.js";
 import { readUint32, readInt32 } from "../bytes/mp4ByteReader.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
 
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+
+/**
+ * EDTS — Structural Correctness (Phase A)
+ * --------------------------------------
+ *
+ * Validates the structural intent of the Edit Box.
+ *
+ * This test asserts:
+ * - EDTS is a container
+ * - required children are present
+ * - canonical child ordering
+ *
+ * No serialization.
+ * No byte comparison.
+ */
 export async function testEdts_Structure() {
 
-    console.log("=== testEdts_Structure ===");
+    // ---------------------------------------------------------
+    // 1. Minimal semantic intent
+    // ---------------------------------------------------------
+    const intent = {
+        elst: {
+            version: 0,
+            flags: 0,
+            entries: [
+                {
+                    editDuration: 1000,
+                    mediaTime: 0,
+                    mediaRateInteger: 1,
+                    mediaRateFraction: 0
+                }
+            ]
+        }
+    };
 
     // ---------------------------------------------------------
-    // 1. Build EDTS with an explicit child
+    // 2. Assemble EDTS via registry
     // ---------------------------------------------------------
-    const elst = { type: "elst", body: [] };
-
-    const node = emitEdtsBox({
-        elst
-    });
-
-    const edts = serializeBoxTree(node);
+    const node =
+        EmitterRegistry.assemble(
+            "moov/trak/edts",
+            intent
+        );
 
     // ---------------------------------------------------------
-    // 2. Structural assertions
+    // 3. Structural assertions
     // ---------------------------------------------------------
-    const foundElst = extractChildBoxFromContainer(edts, "elst");
-    assertExists("elst", foundElst);
+    assertExists("edts node", node);
+    assertExists("edts.children", node.children);
 
-    // ---------------------------------------------------------
-    // 3. Ordering assertion
-    // ---------------------------------------------------------
     const childTypes = node.children.map(c => c.type);
+
+    assertEqual(
+        "edts.childCount",
+        childTypes.length,
+        1
+    );
 
     assertEqual(
         "edts.childOrder",
         childTypes.join(","),
         "elst"
     );
-
-    console.log("PASS: EDTS structural correctness");
 }
 
 export async function testEdts_LockedLayoutEquivalence_ffmpeg() {
 
-    console.log("=== testEdts_LockedLayoutEquivalence_ffmpeg ===");
-
-    // ---------------------------------------------------------
-    // 1. Load golden MP4
-    // ---------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const goldenMp4 = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Extract reference EDTS
+    // Reference EDTS
     // ---------------------------------------------------------
-    const refEdts = extractBoxByPathFromMp4(
-        goldenMp4,
-        "moov/trak/edts",
-        {
-            trackType: "video"
-        }
-    );
+    const refEdts =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/edts"
+            )
+            .readBoxReport()
+            .raw;
 
     assertExists("reference edts", refEdts);
 
     // ---------------------------------------------------------
-    // 3. Read golden truth EDTS
+    // Rebuild via registry
     // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        goldenMp4,
-        "moov/trak/edts",
-        {
-            trackType: "video"
-        }
+    const params =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/edts"
+            )
+            .getEmitterInput();
+
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.assemble(
+                "moov/trak/edts",
+                params
+            )
+        );
+
+    // ---------------------------------------------------------
+    // Container comparison (ISO only)
+    // ---------------------------------------------------------
+    const refContainer =
+        asIsoBoxContainer(
+            refEdts,
+            "moov/trak/edts"
+        );
+
+    const outContainer =
+        asIsoBoxContainer(
+            out,
+            "moov/trak/edts"
+        );
+
+    const refChildren = refContainer.enumerateChildren();
+    const outChildren = outContainer.enumerateChildren();
+
+    assertEqual(
+        "edts.childCount",
+        outChildren.length,
+        refChildren.length
     );
 
-    const params = truth.getBuilderInput();
-
     // ---------------------------------------------------------
-    // 4. Rebuild EDTS exclusively from golden truth
+    // Child-by-child equivalence
     // ---------------------------------------------------------
-    const outEdts = serializeBoxTree(
-        emitEdtsBox(params)
-    );
+    for (let i = 0; i < refChildren.length; i++) {
 
-    // ---------------------------------------------------------
-    // 5. Child-by-child byte equivalence
-    // ---------------------------------------------------------
-    const refContainer = asIsoBoxContainer(refEdts);
-    const outContainer = asIsoBoxContainer(outEdts);
+        const refChild = refChildren[i];
+        const outChild = outChildren[i];
 
-    const refMeta = refContainer.enumerateChildren();
+        assertEqual(
+            `edts.child[${i}].type`,
+            outChild.type,
+            refChild.type
+        );
 
-    for (const { type } of refMeta) {
-        const refChild = extractChildBoxFromContainer(refEdts, type);
-        const outChild = extractChildBoxFromContainer(outEdts, type);
+        const refBytes =
+            refEdts.slice(
+                refChild.offset,
+                refChild.offset + refChild.size
+            );
 
-        for (let i = 0; i < refChild.length; i++) {
+        const outBytes =
+            out.slice(
+                outChild.offset,
+                outChild.offset + outChild.size
+            );
+
+        for (let j = 0; j < refBytes.length; j++) {
             assertEqualHex(
-                `edts.${type}.byte[${i}]`,
-                outChild[i],
-                refChild[i]
+                `edts.${refChild.type}.byte[${j}]`,
+                outBytes[j],
+                refBytes[j]
             );
         }
 
         assertEqual(
-            `edts.${type}.size`,
-            outChild.length,
-            refChild.length
+            `edts.${refChild.type}.size`,
+            outBytes.length,
+            refBytes.length
         );
     }
 
     // ---------------------------------------------------------
-    // 6. Full EDTS byte equivalence (safety net)
+    // Full box safety net
     // ---------------------------------------------------------
     for (let i = 0; i < refEdts.length; i++) {
         assertEqualHex(
             `edts.byte[${i}]`,
-            outEdts[i],
+            out[i],
             refEdts[i]
         );
     }
-
-    console.log("PASS: EDTS locked-layout equivalence with ffmpeg");
 }
+
+export async function testEdts_LockedLayoutEquivalence_ffmpeg_Audio() {
+
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    const refEdts =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[1]/edts"
+            )
+            .readBoxReport()
+            .raw;
+
+    assertExists("reference edts", refEdts);
+
+    const params =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[1]/edts"
+            )
+            .getEmitterInput();
+
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.assemble(
+                "moov/trak/edts",
+                params
+            )
+        );
+
+    const refContainer =
+        asIsoBoxContainer(
+            refEdts,
+            "moov/trak/edts"
+        );
+
+    const outContainer =
+        asIsoBoxContainer(
+            out,
+            "moov/trak/edts"
+        );
+
+    const refChildren = refContainer.enumerateChildren();
+    const outChildren = outContainer.enumerateChildren();
+
+    assertEqual(
+        "edts.childCount",
+        outChildren.length,
+        refChildren.length
+    );
+
+    for (let i = 0; i < refChildren.length; i++) {
+
+        const refChild = refChildren[i];
+        const outChild = outChildren[i];
+
+        assertEqual(
+            `edts.child[${i}].type`,
+            outChild.type,
+            refChild.type
+        );
+
+        const refBytes =
+            refEdts.slice(
+                refChild.offset,
+                refChild.offset + refChild.size
+            );
+
+        const outBytes =
+            out.slice(
+                outChild.offset,
+                outChild.offset + outChild.size
+            );
+
+        for (let j = 0; j < refBytes.length; j++) {
+            assertEqualHex(
+                `edts.${refChild.type}.byte[${j}]`,
+                outBytes[j],
+                refBytes[j]
+            );
+        }
+
+        assertEqual(
+            `edts.${refChild.type}.size`,
+            outBytes.length,
+            refBytes.length
+        );
+    }
+
+    for (let i = 0; i < refEdts.length; i++) {
+        assertEqualHex(
+            `edts.byte[${i}]`,
+            out[i],
+            refEdts[i]
+        );
+    }
+}
+

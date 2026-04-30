@@ -46,7 +46,7 @@
  * Requirements are discovered by tests against
  * real-world MP4s (e.g. ffmpeg output).
  */
-export function emitEdtsBox(children) {
+function emitEdtsBox(children) {
 
     // ---------------------------------------------------------
     // Contract validation
@@ -93,4 +93,11 @@ export function emitEdtsBox(children) {
          */
         children: childNodes
     };
+}
+
+export function registerEdtsEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/edts",
+        emitEdtsBox
+    );
 }

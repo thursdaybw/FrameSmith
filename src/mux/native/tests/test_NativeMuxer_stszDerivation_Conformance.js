@@ -1,68 +1,91 @@
-import { adaptStszSizesFromPayloads } from "../adapters/adaptStszSizesFromPayloads.js";
-import { emitStszBox } from "../box-emitters/stszBox.js";
+import { deriveStszIntentFromPayloads } from "../derivers/deriveStszIntentFromPayloads.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
-import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
-import { assertEqualHex, assertEqual } from "./assertions.js";
-import { extractAccessUnitPayloadsFromMp4 } from "../tests/reference/extractAccessUnitPayloadsFromMp4.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { runGoldenMp4AVTestClient } from "./clients/goldenMp4AVSourceClient.js";
+import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { GoldenTruthRegistry } from "./goldenTruthExtractors/GoldenTruthRegistry.js";
+import {
+    assertEqual,
+    assertExists,
+    assertEqualHex,
+    assertObjectEqual
+} from "./assertions.js";
 
 export async function testNativeMuxer_DeriveStsz_Conformance_ffmpeg() {
 
-    console.log(
-        "=== testNativeMuxer_StszAdapter_Conformance_ffmpeg ==="
-    );
+    const fixtures = [
+        "reference/reference_av.mp4",       // mp4a
+        "reference/reference_av_opus.mp4"   // opus
+    ];
 
-    // ---------------------------------------------------------
-    // Load golden MP4
-    // ---------------------------------------------------------
-    const resp = await fetch("reference/reference_visual.mp4");
-    const mp4  = new Uint8Array(await resp.arrayBuffer());
+    for (const fixture of fixtures) {
 
-    // ---------------------------------------------------------
-    // Extract semantic samples (oracle)
-    // ---------------------------------------------------------
-    const accessUnits =
-        extractSemanticAccessUnitsFromMp4({ mp4Bytes: mp4 });
+        // ---------------------------------------------------------
+        // 1. Load oracle MP4
+        // ---------------------------------------------------------
+        const resp = await fetch(fixture);
+        const mp4Bytes = new Uint8Array(await resp.arrayBuffer());
 
-    const accessUnitPayloads =
-        extractAccessUnitPayloadsFromMp4({ mp4Bytes: mp4 });
+        // ---------------------------------------------------------
+        // 2. Run golden client
+        // ---------------------------------------------------------
+        const { tracks } = await runGoldenMp4AVTestClient({ mp4Bytes });
 
-    // ---------------------------------------------------------
-    // Derive → emit
-    // ---------------------------------------------------------
-    const params =
-        adaptStszSizesFromPayloads({
-            accessUnits,
-            accessUnitPayloads
-        });
+        // audio track = index 1 in both fixtures
+        const track = tracks[1];
 
-    const outBytes = serializeBoxTree(
-        emitStszBox(params)
-    );
+        // ---------------------------------------------------------
+        // 3. Derive STSZ intent (function under test)
+        // ---------------------------------------------------------
+        const stszIntent = deriveStszIntentFromPayloads({
+                accessUnits: track.semanticCore.accessUnits,
+                accessUnitPayloads: track.payloads.accessUnitPayloads
+            });
 
-    // ---------------------------------------------------------
-    // Extract reference STSZ
-    // ---------------------------------------------------------
-    const refBytes = extractBoxByPathFromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl/stsz"
-    );
+        assertExists(`${fixture}: stsz intent`, stszIntent);
 
-    assertEqual(
-        "stsz.size",
-        outBytes.length,
-        refBytes.length
-    );
+        // ---------------------------------------------------------
+        // 4. Emit STSZ directly from derived intent
+        // ---------------------------------------------------------
+        const variant =
+            stszIntent.sampleSize === 0 ? "variable" : "fixed";
 
-    for (let i = 0; i < refBytes.length; i++) {
-        assertEqualHex(
-            `stsz.byte[${i}]`,
-            outBytes[i],
-            refBytes[i]
+        const outStszBytes =
+            serializeBoxTree(
+                EmitterRegistry.emit(
+                    `moov/trak/mdia/minf/stbl/stsz|${variant}`,
+                    stszIntent
+                )
+            );
+
+        // ---------------------------------------------------------
+        // 5. Extract oracle STSZ
+        // ---------------------------------------------------------
+        const oracleReport =
+            getGoldenTruthBox
+                .getSemanticBoxDataByPathFromMp4File(
+                    mp4Bytes,
+                    "moov/trak[1]/mdia/minf/stbl/stsz"
+                )
+                .readBoxReport();
+
+        const oracleBytes = oracleReport.raw;
+
+        // ---------------------------------------------------------
+        // 6. Byte-for-byte equivalence
+        // ---------------------------------------------------------
+        assertEqual(
+            `${fixture}: stsz.size`,
+            outStszBytes.length,
+            oracleBytes.length
         );
-    }
 
-    console.log(
-        "PASS: STSZ adapter + emitter reproduce ffmpeg output byte-for-byte"
-    );
+        for (let i = 0; i < oracleBytes.length; i++) {
+            assertEqualHex(
+                `${fixture}: stsz.byte[${i}]`,
+                outStszBytes[i],
+                oracleBytes[i]
+            );
+        }
+    }
 }

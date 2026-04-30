@@ -45,7 +45,7 @@
  *
  * This test suite mirrors `test_avcC.js` exactly in intent and rigor.
  */
-export function emitEsdsBox(params) {
+function emitEsdsBox(params) {
     if (!params || typeof params !== "object") {
         throw new Error("emitEsdsBox: parameter object is required");
     }
@@ -79,6 +79,17 @@ export function emitEsdsBox(params) {
     if (!(esds instanceof Uint8Array) || esds.length === 0) {
         throw new Error(
             "emitEsdsBox: esds must be a non-empty Uint8Array"
+        );
+    }
+
+    // Structural sanity only: payload must not be absurdly small
+    // NOTE:
+    // This check enforces structural plausibility only.
+    // Semantic validation (e.g. ensuring this does not have a box header)
+    // MUST occur in the assembler layer.
+    if (esds.length < 2) {
+        throw new Error(
+            "emitEsdsBox: esds payload too small to be a valid ES descriptor"
         );
     }
 
@@ -116,4 +127,11 @@ export function emitEsdsBox(params) {
             }
         ]
     };
+}
+
+export function registerEsdsEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsd|mp4a/esds",
+        emitEsdsBox
+    );
 }

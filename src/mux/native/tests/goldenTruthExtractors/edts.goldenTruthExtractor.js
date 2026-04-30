@@ -1,42 +1,56 @@
-import { extractChildBoxFromContainer } from "../reference/BoxExtractor.js";
 import { getGoldenTruthBox } from "./index.js";
 
-import { emitElstBox } from "../../box-emitters/elstBox.js";
-
-function readEdtsBoxFieldsFromBoxBytes(box) {
-    if (!(box instanceof Uint8Array)) {
-        throw new Error("edts.readFields: expected Uint8Array");
+/**
+ * edts — Edit Box (Golden Truth Extractor)
+ * ======================================
+ *
+ * Structural container for edit-related boxes.
+ *
+ * Rules:
+ * - edts has no intrinsic fields
+ * - structure is defined entirely by child boxes
+ * - traversal is delegated to GoldenTruthPathResolver
+ * - no ad-hoc container walking
+ */
+function readBoxReport(boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("edts.readBoxReport: expected Uint8Array");
     }
 
     return {
-        raw: box
+        raw: boxBytes,
+
+        box: {
+            type: "edts",
+            children: {
+                elst: { type: "elst" }
+            }
+        },
+
+        derived: {}
     };
 }
 
-function getEdtsEmitterInputFromBoxBytes(box) {
+/**
+ * Compiler intent
+ */
+function getEmitterInput(boxBytes) {
 
-    function emitChild(name, emitter) {
-        const childBytes = extractChildBoxFromContainer(box, name);
-        if (!childBytes) {
-            throw new Error(`EDTS missing required child '${name}'`);
-        }
-
-        const params = getGoldenTruthBox
-            .fromBox(
-                childBytes,
-                `moov/trak/edts/${name}`
-            )
-            .getBuilderInput();
-
-        return emitter(params);
-    }
+    const elstInput = getGoldenTruthBox.getSemanticBoxDataFromBox({
+        boxBytes,
+        sourceRegistryKey: "moov/trak/edts",
+        targetBoxPath: "moov/trak/edts/elst"
+    }).getEmitterInput();
 
     return {
-        elst: emitChild("elst", emitElstBox)
+        elst: elstInput,
     };
 }
 
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 export function registerEdtsGoldenTruthExtractor(register) {
-    register.readFields(readEdtsBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getEdtsEmitterInputFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

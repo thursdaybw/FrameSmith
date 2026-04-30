@@ -61,25 +61,29 @@ export function applyBtrtContainerPolicy({ btrt }) {
     // ---------------------------------------------------------
     if (btrt === null || typeof btrt !== "object") {
         throw new Error(
-            "applyBtrtContainerPolicy: btrt must be an object when supplied"
+            "applyBtrtContainerPolicy: btrt must be an object when supplied" +
+            `received ${btrt}`
         );
     }
 
     if (!Number.isInteger(btrt.bufferSizeDB)) {
         throw new Error(
-            "applyBtrtContainerPolicy: btrt.bufferSizeDB must be an integer"
+            "applyBtrtContainerPolicy: btrt.bufferSizeDB must be an integer" +
+            `received ${btrt.bufferSizeDB}`
         );
     }
 
     if (!Number.isInteger(btrt.maxBitrate)) {
         throw new Error(
-            "applyBtrtContainerPolicy: btrt.maxBitrate must be an integer"
+            "applyBtrtContainerPolicy: btrt.maxBitrate must be an integer" +
+            `received ${btrt.maxBitrate}`
         );
     }
 
     if (!Number.isInteger(btrt.avgBitrate)) {
         throw new Error(
-            "applyBtrtContainerPolicy: btrt.avgBitrate must be an integer"
+            "applyBtrtContainerPolicy: btrt.avgBitrate must be an integer" +
+            `received ${btrt.avgBitrate}`
         );
     }
 

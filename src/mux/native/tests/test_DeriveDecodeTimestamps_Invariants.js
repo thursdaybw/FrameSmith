@@ -1,23 +1,9 @@
-import { extractSemanticAccessUnitsFromMp4 } from "./reference/extractSemanticAccessUnitsFromMp4.js";
-
-import { deriveDecodeTimestampsInPlace }
-    from "../derivers/deriveDecodeTimestampsInPlace.js";
-
-import { DecodeOrderStrategies }
-    from "../derivers/strategies/decodeOrderStrategies.js";
-
-import { assertEqual, assertExists }
-    from "./assertions.js";
-
-import { addAccessUnitDurationsInPlace }
-    from "../normalization/access-units/addAccessUnitDurations.js";
+import { deriveDecodeTimestampsInPlace } from "../derivers/deriveDecodeTimestampsInPlace.js";
+import { DecodeOrderStrategies } from "../derivers/strategies/decodeOrderStrategies.js";
+import { assertEqual, assertExists } from "./assertions.js";
+import { addAccessUnitDurationsInPlace } from "../normalization/access-units/addAccessUnitDurations.js";
 
 export async function test_DeriveDecodeTimestamps_Invariants() {
-
-    console.log(
-        "=== test_DeriveDecodeTimestamps_Invariants " +
-        "(DECODE_ORDER_EQUALS_SAMPLE_ORDER) ==="
-    );
 
     const accessUnits = [
         { pts: 1024 },
@@ -30,9 +16,7 @@ export async function test_DeriveDecodeTimestamps_Invariants() {
     // ---------------------------------------------------------
     // Normalization prerequisite — durations
     // ---------------------------------------------------------
-    addAccessUnitDurationsInPlace({
-        accessUnits
-    });
+    addAccessUnitDurationsInPlace({ accessUnits });
 
     // ---------------------------------------------------------
     // Derive DTS using selected strategy
@@ -102,23 +86,3 @@ export async function test_DeriveDecodeTimestamps_Invariants() {
     );
 }
 
-export async function inspect_GoldenMp4_PtsDtsOrder() {
-
-    const resp = await fetch("reference/reference_visual.mp4");
-    const mp4  = new Uint8Array(await resp.arrayBuffer());
-
-    const accessUnits = extractSemanticAccessUnitsFromMp4({
-        mp4Bytes: mp4
-    });
-
-    console.log("PTS / DTS / offset");
-
-    accessUnits.forEach((s, i) => {
-        console.log({
-            i,
-            pts: s.pts,
-            dts: s.dts,
-            offset: s.pts - s.dts
-        });
-    });
-}

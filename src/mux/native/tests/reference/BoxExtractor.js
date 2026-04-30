@@ -1,5 +1,7 @@
 import { asIsoBoxContainer } from "../../box-model/Box.js";
-import { readFourCC } from "../../bytes/mp4ByteReader.js";
+import { allowsIsoChildTraversal } from "../../box-schema/boxSchemas.js";
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import { readFourCC } from "../../box-schema/boxLayoutReaders.js";
 
 /**
  * BoxExtractor
@@ -7,7 +9,7 @@ import { readFourCC } from "../../bytes/mp4ByteReader.js";
  *
  * Purpose
  * -------
- * Test-only utilities for *structural extraction* of MP4 boxes and
+ * Utilities for *structural extraction* of MP4 boxes and
  * box-like constructs.
  *
  * This module exists to support:
@@ -83,156 +85,29 @@ import { readFourCC } from "../../bytes/mp4ByteReader.js";
  * must justify its existence by structural necessity.
  */
 
+/*
+TRANSITIONAL MODULE NOTICE
+
+This module currently mixes:
+- ISO BMFF box traversal
+- SampleEntry traversal
+- Singular and plural access patterns
+
+The traversal API is, though this itself is
+under scrutiny. There are better patterns for this
+- findBoxesByPathFromMp4
+
+even findBoxesByPathFromMp4 bypasses a lot of checks
+in the exractor
+All singular extractors are transitional and will be removed.
+
+This file is intentionally noisy to prevent silent architectural rot.
+*/
+
 
 // ------------------------------------------------------------
 // Private low-level readers (STRUCTURAL intent)
 // ------------------------------------------------------------
-
-/**
- * Reads a big-endian unsigned 32-bit integer from a byte buffer.
- *
- * This is a low-level structural helper used only for:
- * - MP4 box size fields
- * - table entry sizes
- *
- * No bounds checking is performed.
- * Callers must ensure the offset is valid.
- */
-function readUint32(buffer, offset) {
-    return (
-        (buffer[offset]     << 24) |
-        (buffer[offset + 1] << 16) |
-        (buffer[offset + 2] << 8)  |
-        buffer[offset + 3]
-    ) >>> 0;
-}
-
-// ------------------------------------------------------------
-// Core traversal helpers (PRIVATE)
-// ------------------------------------------------------------
-
-/**
- * Scans child boxes inside a SampleEntry payload.
- *
- * IMPORTANT:
- * ----------
- * This function is NOT a general MP4 container traversal helper.
- *
- * SampleEntry boxes (e.g. avc1, mp4a) embed child boxes after a
- * fixed-format, codec-defined preamble.
- *
- * This violates the assumptions of the container box model and
- * therefore MUST NOT use asIsoBoxContainer.
- *
- * Enforcement:
- * ------------
- * - This function validates that the input is a SampleEntry
- * - It is not exported
- * - It is used only by extractChildBoxFromSampleEntry
- *
- * If you think you need this function elsewhere, you are
- * probably violating the architecture.
- */
-function scanVisualSampleEntryChildBoxes(sampleEntryBox, startOffset, fourcc) {
-    // Structural guard only: ensures child scan is possible
-    if (sampleEntryBox.length < startOffset + 8) {
-        throw new Error(
-            "scanVisualSampleEntryChildBoxes: invalid VisualSampleEntry layout"
-        );
-    }
-
-    let offset = startOffset;
-
-    while (offset + 8 <= sampleEntryBox.length) {
-        const size = readUint32(sampleEntryBox, offset);
-        const childType = readFourCC(sampleEntryBox, offset + 4);
-
-        if (childType === fourcc) {
-            return sampleEntryBox.slice(offset, offset + size);
-        }
-
-        if (size < 8) break;
-        offset += size;
-    }
-
-    throw new Error(`FAIL: child box '${fourcc}' not found`);
-}
-
-
-function extractChildBoxFromSampleEntry(sampleEntryBox, fourcc) {
-    const sampleEntryType = readFourCC(sampleEntryBox, 4);
-
-    if (sampleEntryType !== "avc1") {
-        throw new Error(
-            `Unsupported SampleEntry type '${sampleEntryType}'`
-        );
-    }
-
-    const childrenOffset = 8 + 78;
-    return scanVisualSampleEntryChildBoxes(sampleEntryBox, childrenOffset, fourcc);
-}
-
-/**
- * Extracts a specific SampleEntry from an stsd box.
- *
- * stsd is NOT a generic container:
- * - it contains a count-prefixed table
- * - entries are not child boxes in the normal sense
- *
- * This function intentionally does not use asIsoBoxContainer.
- */
-export function extractSampleEntry(stsdBox, fourcc) {
-
-    console.warn(
-        "extractSampleEntry needs to be moved to a utility module"
-    );
-
-    console.log(
-        "[esds][extractSampleEntry] looking for:",
-        fourcc
-    );
-
-    // stsd layout:
-    // size (4)
-    // type (4)
-    // version (1)
-    // flags (3)
-    // entry_count (4)
-
-    let offset = 16;
-
-    const entryCount =
-        (stsdBox[12] << 24) |
-        (stsdBox[13] << 16) |
-        (stsdBox[14] << 8)  |
-        stsdBox[15];
-
-    for (let i = 0; i < entryCount; i++) {
-        const size = readUint32(stsdBox, offset);
-        const type = readFourCC(stsdBox, offset + 4);
-
-        console.log(
-            `[esds][stsd] entry ${i}:`,
-            type,
-            "size:",
-            size
-        );
-
-        if (type === fourcc) {
-            console.log(
-                "[esds][stsd] FOUND sample entry:",
-                type
-            );
-            return stsdBox.slice(offset, offset + size);
-        }
-
-        offset += size;
-    }
-
-    throw new Error(
-        `FAIL: sample entry '${fourcc}' not found in stsd`
-    );
-}
 
 // ------------------------------------------------------------
 // Public API
@@ -254,143 +129,62 @@ export function extractSampleEntry(stsdBox, fourcc) {
  * All child discovery is delegated to the container box model.
  */
 export function extractBoxByPathFromMp4(mp4Bytes, path) {
-    if (!(mp4Bytes instanceof Uint8Array)) {
-        throw new Error("extractBoxByPathFromMp4: expected Uint8Array");
-    }
 
-    // HARD GUARD: this function expects a full MP4 file
-    const root = asIsoBoxContainer(mp4Bytes);
-    const topLevelTypes = root.enumerateChildren().map(c => c.type);
+    throw new Error(
+        "extractBoxByPathFromMp4 has been removed.\n\n" +
+        "Reason:\n" +
+        "- MP4 paths are plural by nature\n" +
+        "- This API assumes singular results\n" +
+        "- It bypasses semantic validation\n\n" +
+        "What to use instead:\n" +
+        "- For tests and semantic access:\n" +
+        "  getSemanticBoxDataByPathFromMp4File()\n" +
+        "- For raw discovery:\n" +
+        "  findBoxesByPathFromMp4()\n\n" +
+        "This change is intentional and forces explicit selection\n" +
+        "and semantic interpretation."
+    );
 
-    if (!topLevelTypes.includes("moov")) {
+    const results = findBoxesByPathFromMp4(mp4Bytes, path);
+
+    if (results.length !== 1) {
         throw new Error(
-            "extractBoxByPathFromMp4: input bytes are not a valid MP4 file.\n" +
-            "Expected a top-level 'moov' box.\n" +
-            "If you are traversing a box slice, use extractBoxByPathFromBox(...) instead."
+            "extractBoxByPathFromMp4: expected exactly one match.\n" +
+            `Found ${results.length} for path '${path}'.\n` +
+            "Use findBoxesByPathFromMp4 and select explicitly."
         );
     }
 
-    if (typeof path !== "string" || path.length === 0) {
-        throw new Error(
-            "extractBoxByPathFromMp4: path must be a non-empty string like 'moov/trak/mdia/hdlr'"
-        );
-    }
-
-    const segments = path.split("/");
-
-    if (segments.some(s => s.length === 0)) {
-        throw new Error(
-            `extractBoxByPathFromMp4: invalid path '${path}'`
-        );
-    }
-
-    let currentBytes = mp4Bytes;
-
-    for (const segment of segments) {
-
-        // GUARD: stsd is not an ISO container
-        const currentType = readFourCC(currentBytes, 4);
-        if (currentType === "stsd") {
-            throw new Error(
-                "Invalid traversal: stsd is NOT an ISO container.\n" +
-                "You cannot traverse beyond stsd using extractBoxByPathFromMp4.\n" +
-                "Use extractSampleEntryFromMp4(...) instead."
-            );
-        }
-
-        const container = asIsoBoxContainer(currentBytes);
-        const children = container.enumerateChildren();
-
-        const match = children.find(c => c.type === segment);
-
-        if (!match) {
-            return null; // or throw, depending on your contract
-        }
-
-        currentBytes = currentBytes.slice(
-            match.offset,
-            match.offset + match.size
-        );
-    }
-
-    return currentBytes;
+    return results[0];
 }
 
-/**
- * Extracts a SampleEntry from an MP4 using an explicit stsd path.
- *
- * This is the ONLY supported way to extract SampleEntry boxes.
- *
- * @param {Uint8Array} mp4Bytes
- * @param {string} stsdPath - e.g. "moov/trak/mdia/minf/stbl/stsd"
- * @param {string} fourcc   - e.g. "avc1"
- *
- * @returns {Uint8Array}
- */
-export function extractSampleEntryFromMp4(mp4Bytes, stsdPath, fourcc) {
-    const stsdBox = extractBoxByPathFromMp4(mp4Bytes, stsdPath);
+export function extractChildBoxFromContainer(containerBytes, path, fourcc) {
 
-    if (!stsdBox) {
-        throw new Error(
-            `extractSampleEntryFromMp4: stsd not found at path '${stsdPath}'`
-        );
-    }
+    throw new Error(
+        [
+            "extractChildBoxFromContainer is deprecated and must not be used.",
+            "",
+            "Reason:",
+            "- This helper bypasses the Golden Truth path resolution system.",
+            "- It performs ad-hoc container traversal outside the registry.",
+            "- This breaks the single-authority rule for MP4 structural access.",
+            "",
+            "Correct usage:",
+            "- Use getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(...)",
+            " or getGoldenTruthBox.getSemanticBoxDataByPathFromIsoBox(...)",
+            "- Address child boxes via explicit structural paths",
+            "- Let GoldenTruthPathResolver perform traversal",
+            "",
+            "Example:",
+            "  getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(mp4Bytes, 'moov/trak[0]/mdia/minf/stbl/stsd')",
+            "",
+            "If you believe this helper is still required,",
+            "that indicates a missing capability in the path resolver.",
+            "Fix the resolver, do not revive this function."
+        ].join("\n")
+    );
 
-    return extractSampleEntry(stsdBox, fourcc);
-}
-
-/**
- * Extract a nested box by path starting from a container box.
- *
- * Example:
- *   extractBoxByPathFromBox(stblBytes, ["stsd"])
- *   extractBoxByPathFromBox(metaBytes, ["hdlr"])
- *
- * Contract:
- * - boxBytes MUST be a valid MP4 box (Uint8Array)
- * - Traversal starts at this box's children
- * - Path elements refer to child box types
- */
-export function extractBoxByPathFromBox(boxBytes, path) {
-    if (!(boxBytes instanceof Uint8Array)) {
-        throw new Error(
-            "extractBoxByPathFromBox: expected Uint8Array"
-        );
-    }
-
-    if (typeof path !== "string" || path.length === 0) {
-        throw new Error(
-            "extractBoxByPathFromBox: path must be a non-empty string"
-        );
-    }
-
-    const segments = path.split("/");
-
-    let currentBytes = boxBytes;
-
-    for (const segment of segments) {
-        const container = asIsoBoxContainer(currentBytes);
-        const children  = container.enumerateChildren();
-
-        const match = children.find(c => c.type === segment);
-
-        if (!match) {
-            throw new Error(
-                `extractBoxByPathFromBox: Missing box '${segment}' in path '${path}'`
-            );
-        }
-
-        currentBytes = currentBytes.slice(
-            match.offset,
-            match.offset + match.size
-        );
-    }
-
-    return currentBytes;
-}
-
-export function extractChildBoxFromContainer(containerBytes, fourcc) {
-    const container = asIsoBoxContainer(containerBytes);
+    const container = asIsoBoxContainer(containerBytes, path);
     const child = container.enumerateChildren()
         .find(c => c.type === fourcc);
 
@@ -404,34 +198,16 @@ export function extractChildBoxFromContainer(containerBytes, fourcc) {
     );
 }
 
-
 /**
- * Finds all byte offsets where a fourcc appears in a buffer.
+ * Sample Extraction API (Metadata)
+ * --------------------------------
  *
- * This is a diagnostic utility only.
- * It does not imply structural validity.
- */
-export function findFourCC(buffer, fourcc) {
-    const codes = fourcc.split("").map(c => c.charCodeAt(0));
-    const hits = [];
-
-    for (let i = 0; i < buffer.length - 3; i++) {
-        if (
-            buffer[i]     === codes[0] &&
-            buffer[i + 1] === codes[1] &&
-            buffer[i + 2] === codes[2] &&
-            buffer[i + 3] === codes[3]
-        ) {
-            hits.push(i);
-        }
-    }
-
-    return hits;
-}
-
-/**
  * extractIlstItemByKeyFromMp4
  * ==========================
+ *
+ * This function handles ILST traversal, which is NOT compatible with
+ * the ISO container model and therefore does not belong to the MP4
+ * Box Extraction API.
  *
  * Test-only structural extractor for individual ILST item boxes.
  *
@@ -580,120 +356,105 @@ export function extractChildBoxFromIlstItem(itemBytes, fourcc) {
 }
 
 /**
- * DEPRECATED: extractChildBoxFromSampleEntry
- * -----------------------------------------
+ * findBoxesByPathFromMp4
+ * =====================
  *
- * This function no longer exists as a public API.
+ * Structural discovery utility for plural MP4 paths.
  *
- * SampleEntry traversal is now:
- *   - owned by parsers
- *   - handled via getParsedBox
- *   - or routed through extractSampleEntryFromMp4
+ * This function exists solely to discover *how many* boxes exist at a given
+ * structural path when cardinality is unknown or unbounded.
  *
- * This export exists ONLY to prevent test harness
- * load failures during parser migration.
+ * WHAT IT DOES:
+ * - Walks the MP4 structure
+ * - Locates all boxes matching the given path expression
+ * - Returns their raw structural box representations
  *
- * Any call to this function is a bug.
+ * WHAT IT DOES NOT DO:
+ * - Does NOT interpret semantics
+ * - Does NOT validate against schemas
+ * - Does NOT generate emitter intent
+ * - Does NOT extract authoritative box data
+ *
+ * IMPORTANT:
+ * - MP4 paths are plural by nature
+ * - Discovery and interpretation are separate concerns
+ *
+ * AUTHORITY:
+ * - Structural only
+ * - Non-authoritative
+ *
+ * For semantic access or raw byte extraction of a *known* box:
+ * - Use Golden Truth extractor APIs
+ *
+ * For schema-aware traversal and validation:
+ * - Use the extractor registry
+ *
+ * This function should disappear once schema-driven plural traversal
+ * is fully handled by the extractor layer.
  */
-export function __DEPRECATED_extractChildBoxFromSampleEntry() {
-    throw new Error(
-        "DEPRECATED API: extractChildBoxFromSampleEntry\n\n" +
-        "This function has been removed.\n\n" +
-        "SampleEntry traversal must NOT be done directly.\n\n" +
-        "Use one of the following instead:\n" +
-        "  - getParsedBox.fromMp4(...)\n" +
-        "  - getParsedBox.fromBox(...)\n" +
-        "  - extractSampleEntryFromMp4(...) (tests only)\n\n" +
-        "See:\n" +
-        "  src/mux/native/tests/parsers/README.md\n"
-    );
-}
-
-/**
- * DEPRECATED SHIM — extractSampleEntry
- * -----------------------------------
- *
- * This function is no longer part of the public API.
- *
- * SampleEntry extraction must now be performed via:
- *   - extractSampleEntryFromMp4(...)
- *   - or parser-owned logic via getParsedBox
- *
- * This export exists only to keep the test harness loading
- * during the parser migration.
- */
-export function __DEPRECATED_extractSampleEntry() {
-    throw new Error(
-        "DEPRECATED API: extractSampleEntry\n\n" +
-        "This function has been removed from the public API.\n\n" +
-        "Use one of:\n" +
-        "  - extractSampleEntryFromMp4(mp4Bytes, stsdPath, fourcc)\n" +
-        "  - getParsedBox.fromMp4(...)\n\n" +
-        "See src/mux/native/tests/parsers/README.md"
-    );
-}
-
-export function extractVideoStsd(mp4Bytes) {
-
-    const trakBox =
-        extractBoxByPathFromMp4(mp4Bytes, "moov/trak");
-
-    if (!trakBox) {
-        console.log("[extractVideoStsd] ABORT: no trak box");
-        return null;
+export function findBoxesByPathFromMp4(mp4Bytes, path) {
+    if (!(mp4Bytes instanceof Uint8Array)) {
+        throw new Error("findBoxesByPathFromMp4: expected Uint8Array");
     }
 
-    const hdlr =
-        extractBoxByPathFromBox(
-            trakBox,
-            "mdia/hdlr"
-        );
-
-    if (!hdlr) {
-        console.log("[extractVideoStsd] ABORT: no hdlr");
-        return null;
+    if (typeof path !== "string" || path.length === 0) {
+        throw new Error("findBoxesByPathFromMp4: path must be a non-empty string");
     }
 
-    const handlerType =
-        String.fromCharCode(
-            hdlr[16],
-            hdlr[17],
-            hdlr[18],
-            hdlr[19]
-        );
+    const segments = path.split("/");
 
-    if (handlerType !== "vide") {
-        console.log("[extractVideoStsd] ABORT: not video track");
-        return null;
+    let current = [{
+        bytes: mp4Bytes,
+        registryPath: "$mp4"
+    }];
+
+    for (const segment of segments) {
+        const next = [];
+
+        for (const { bytes, registryPath } of current) {
+            const container =
+                asIsoBoxContainer(bytes, registryPath);
+
+            const children = container.enumerateChildren();
+
+
+            for (const child of children) {
+                if (child.type !== segment) {
+                    continue;
+                }
+
+                // ISO grammar enforcement happens here
+                if (!allowsIsoChildTraversal(registryPath)) {
+                    throw new Error(
+                        `Invalid traversal: '${segment}' is not a child box of '${registryPath}'`
+                    );
+                }
+
+                const childBytes =
+                    bytes.slice(
+                        child.offset,
+                        child.offset + child.size
+                    );
+
+                next.push({
+                    bytes: childBytes,
+                    registryPath:
+                    registryPath === "$mp4"
+                    ? segment
+                    : `${registryPath}/${segment}`
+                });
+            }
+
+        }
+
+
+        if (next.length === 0) {
+            return [];
+        }
+
+        current = next;
     }
 
-    const stsd =
-        extractBoxByPathFromBox(
-            trakBox,
-            "mdia/minf/stbl/stsd"
-        );
-
-    return stsd || null;
+    return current.map(n => n.bytes);
 }
 
-export function getSampleEntryHeaderSize(fourcc) {
-
-    console.warn(
-        "getSampleEntryHeaderSize needs to be moved to a utility module"
-    );
-
-    switch (fourcc) {
-        case "avc1":
-        case "hev1":
-        case "hvc1":
-            return 78;
-
-        case "mp4a":
-            return 28;
-
-        default:
-            throw new Error(
-                `Unknown SampleEntry type '${fourcc}'`
-            );
-    }
-}

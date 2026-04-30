@@ -13,12 +13,10 @@
  *   - race conditions
  */
 
-import { EncodedSampleLike } from "../types/EncodedSampleLike.js";
-
-
 export class Mp4BoxDemuxer {
-    constructor(arrayBuffer) {
+    constructor(arrayBuffer, options = {}) {
         this.arrayBuffer = arrayBuffer;
+        this.options = options;
     }
 
     getVideoTrackInfo() {
@@ -26,7 +24,36 @@ export class Mp4BoxDemuxer {
     }
 
     getAudioTrackInfo() {
-        return this.info?.audioTracks?.[0] ?? null;
+        const track = this.info?.audioTracks?.[0];
+        if (!track || !track.audio) {
+            return null;
+        }
+
+        return {
+            codec: track.codec,
+            timescale: track.timescale,
+
+            // REQUIRED FOR COMPILER ADMISSIBILITY
+            channelCount: track.audio.channel_count,
+            sampleRate: track.audio.sample_rate,
+            sampleSize: track.audio.sample_size,
+
+            // optional but useful
+            bitrate: track.bitrate,
+            samplesDuration: track.samples_duration
+        };
+    }
+
+    getAudioEsds() {
+        if (!this.audioTrackId) return null;
+
+        const trak = this.moov?.traks?.find(
+            t => t.tkhd.track_id === this.audioTrackId
+        );
+
+        return (
+            trak?.mdia?.minf?.stbl?.stsd?.entries?.[0]?.esds ?? null
+        );
     }
 
     // Convert mp4box's parsed AVCConfigurationBox into the binary
@@ -93,16 +120,107 @@ export class Mp4BoxDemuxer {
         return new Promise((resolve, reject) => {
             try {
 
-                const keepMdatData = true;
-                const mp4boxFile = MP4Box.createFile(keepMdatData);
-
+                const mp4boxFile = MP4Box.createFile();
 
                 const videoSamples = [];
                 const audioSamples = [];
+                let resolved = false;
+                let ready = false;
+                let appendComplete = false;
+                let expectedVideoSamples = null;
+                let expectedAudioSamples = 0;
+                let extractionStarted = false;
+                let noProgressTimeoutId = null;
+                const parseTimeoutMs = Number.isFinite(this.options?.parseTimeoutMs)
+                    ? Math.max(5_000, Math.floor(this.options.parseTimeoutMs))
+                    : 120_000;
+
+                const timeoutId = setTimeout(() => {
+                    settle(
+                        reject,
+                        new Error(
+                            "Mp4BoxDemuxer.parse timeout " +
+                            `(timeoutMs=${parseTimeoutMs}, ready=${ready}, appendComplete=${appendComplete}, ` +
+                            `expectedVideoSamples=${expectedVideoSamples}, expectedAudioSamples=${expectedAudioSamples}, ` +
+                            `videoSamples=${videoSamples.length}, audioSamples=${audioSamples.length})`
+                        )
+                    );
+                }, parseTimeoutMs);
+
+                const settle = (fn, value) => {
+                    if (resolved) return;
+                    resolved = true;
+                    clearTimeout(timeoutId);
+                    if (noProgressTimeoutId) {
+                        clearTimeout(noProgressTimeoutId);
+                        noProgressTimeoutId = null;
+                    }
+                    fn(value);
+                };
+
+                const maybeFinalize = () => {
+                    if (!ready || !appendComplete) return;
+                    if (typeof expectedVideoSamples !== "number") return;
+                    const videoDone = videoSamples.length >= expectedVideoSamples;
+                    const audioDone = audioSamples.length >= expectedAudioSamples;
+                    if (!videoDone || !audioDone) return;
+
+                    settle(resolve, {
+                        videoSamples,
+                        audioSamples,
+                        videoTrack: this.videoTrack,
+                        audioTrack: this.audioTrack,
+                        duration: this.info.duration,
+                        timescale: this.info.timescale
+                    });
+                };
+
+                const maybeStartExtraction = () => {
+                    if (extractionStarted) return;
+                    if (!ready) return;
+                    extractionStarted = true;
+                    mp4boxFile.start();
+
+                    // If extraction starts but no samples arrive for a while after all bytes
+                    // are appended, fail fast instead of waiting for global timeout.
+                    const armNoProgressTimeout = () => {
+                        if (!appendComplete || noProgressTimeoutId) return;
+                        noProgressTimeoutId = setTimeout(() => {
+                            if (videoSamples.length === 0 && audioSamples.length === 0) {
+                                settle(
+                                    reject,
+                                    new Error(
+                                        "Mp4BoxDemuxer.parse no sample progress " +
+                                        `(ready=${ready}, appendComplete=${appendComplete}, ` +
+                                        `expectedVideoSamples=${expectedVideoSamples}, expectedAudioSamples=${expectedAudioSamples})`
+                                    )
+                                );
+                            }
+                        }, 8000);
+                    };
+                    armNoProgressTimeout();
+                    maybeFinalize();
+                };
+
+                const maybeArmNoProgressTimeout = () => {
+                    if (!extractionStarted || !appendComplete || noProgressTimeoutId) return;
+                    noProgressTimeoutId = setTimeout(() => {
+                        if (videoSamples.length === 0 && audioSamples.length === 0) {
+                            settle(
+                                reject,
+                                new Error(
+                                    "Mp4BoxDemuxer.parse no sample progress " +
+                                    `(ready=${ready}, appendComplete=${appendComplete}, ` +
+                                    `expectedVideoSamples=${expectedVideoSamples}, expectedAudioSamples=${expectedAudioSamples})`
+                                )
+                            );
+                        }
+                    }, 8000);
+                };
 
                 mp4boxFile.onError = (e) => {
                     console.error("mp4box error:", e);
-                    reject(new Error("mp4box error: " + e));
+                    settle(reject, new Error("mp4box error: " + e));
                 };
 
                 mp4boxFile.onSegment = (id, user, buffer, sampleNum) => {
@@ -123,7 +241,7 @@ export class Mp4BoxDemuxer {
                     const audioTrack = info.audioTracks[0];
 
                     if (!videoTrack) {
-                        reject(new Error("No video track found"));
+                        settle(reject, new Error("No video track found"));
                         return;
                     }
 
@@ -140,51 +258,64 @@ export class Mp4BoxDemuxer {
                     this._avcC = trak?.mdia?.minf?.stbl?.stsd?.entries?.[0]?.avcC || null;
 
                     // 4. Enable extraction
+                    expectedVideoSamples = videoTrack.nb_samples;
+                    expectedAudioSamples = audioTrack?.nb_samples ?? 0;
                     mp4boxFile.setExtractionOptions(this.videoTrackId, null, {
-                        nbSamples: videoTrack.nb_samples
+                        nbSamples: Math.min(250, Math.max(1, videoTrack.nb_samples))
                     });
 
                     if (this.audioTrackId) {
                         mp4boxFile.setExtractionOptions(this.audioTrackId, null, {
-                            nbSamples: audioTrack.nb_samples
+                            nbSamples: Math.min(250, Math.max(1, audioTrack.nb_samples))
                         });
                     }
+
+                    ready = true;
+                    maybeStartExtraction();
+                    maybeFinalize();
 
                 };
 
                 mp4boxFile.onSamples = (trackId, _user, samples) => {
 
                     for (const s of samples) {
-                        const encoded = new EncodedSampleLike({
+                        const timestampUs = this.toMicro(s.cts, s.timescale);
+                        const durationUs = this.toMicro(s.duration, s.timescale);
+                        const dtsUs = this.toMicro(
+                            typeof s.dts === "number" ? s.dts : s.cts,
+                            s.timescale
+                        );
+
+                        const encoded = {
                             type: s.is_sync ? "key" : "delta",
-                            timestamp: this.toNano(s.cts, s.timescale),
-                            duration: this.toNano(s.duration, s.timescale),
-
-                            // Not sure which is appropriate, toNano or toMicro
-                            // timestamp: this.toMicro(s.cts, s.timescale),
-                            // duration: this.toMicro(s.duration, s.timescale),
+                            timestamp: timestampUs,
+                            duration: durationUs,
+                            cts: timestampUs,
+                            dts: dtsUs,
                             data: new Uint8Array(s.data),
+                            raw: s // preserve mp4box timing/source fields for callers
+                        };
 
-                            raw: s  // ← KEEP ORIGINAL SAMPLE. REQUIRED FOR avcC.
-                        });
+                        if (
+                            trackId === this.audioTrackId &&
+                            audioSamples.length === 0
+                        ) {
+                            console.log("AUDIO FIRST SAMPLE (µs)", {
+                                ts: encoded.timestamp,
+                                dur: encoded.duration,
+                                rawDuration: s.duration,
+                                timescale: s.timescale
+                            });
+                        }
+
                         if (trackId === this.videoTrackId) {
                             videoSamples.push(encoded);
                         } else if (trackId === this.audioTrackId) {
                             audioSamples.push(encoded);
                         }
                     }
-                };
 
-                const finalize = () => {
-
-                    resolve({
-                        videoSamples,
-                        audioSamples,
-                        videoTrack: this.videoTrack,
-                        audioTrack: this.audioTrack,
-                        duration: this.info.duration,
-                        timescale: this.info.timescale
-                    });
+                    maybeFinalize();
                 };
 
                 const file = this.arrayBuffer;
@@ -193,12 +324,13 @@ export class Mp4BoxDemuxer {
 
                 const feedChunk = () => {
                     if (offset >= file.byteLength) {
-
-
-                        mp4boxFile.start();
-                        mp4boxFile.flush();
-
-                        finalize();
+                        appendComplete = true;
+                        maybeStartExtraction();
+                        maybeArmNoProgressTimeout();
+                        if (extractionStarted) {
+                            mp4boxFile.flush();
+                        }
+                        maybeFinalize();
 
                         return;
                     }
@@ -220,7 +352,7 @@ export class Mp4BoxDemuxer {
 
 
             } catch (e) {
-                reject(e);
+                settle(reject, e);
             }
         });
     }

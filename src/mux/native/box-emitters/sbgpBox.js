@@ -171,10 +171,11 @@
  *
  * Not here.
  */
-export function emitSbgpBox({
+function emitSbgpBox({
     groupingType,
     entries
 }) {
+
     // -------------------------------------------------------------
     // Defensive validation (structure only)
     // -------------------------------------------------------------
@@ -218,8 +219,14 @@ export function emitSbgpBox({
     // -------------------------------------------------------------
     const body = [];
 
-    // grouping_type (4cc)
-    body.push({ type: groupingType });
+    // grouping_type (FourCC encoded as uint32)
+    const groupingTypeUint32 =
+        (groupingType.charCodeAt(0) << 24) |
+        (groupingType.charCodeAt(1) << 16) |
+        (groupingType.charCodeAt(2) << 8)  |
+        groupingType.charCodeAt(3);
+
+    body.push({ int: groupingTypeUint32 >>> 0 });
 
     // entry_count
     body.push({ int: entries.length });
@@ -235,8 +242,15 @@ export function emitSbgpBox({
     // -------------------------------------------------------------
     return {
         type: "sbgp",
-        version: 1,
+        version: 0,
         flags: 0,
         body
     };
+}
+
+export function registerSbgpEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/sbgp",
+        emitSbgpBox
+    );
 }

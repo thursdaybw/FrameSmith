@@ -1,34 +1,54 @@
-import { readFourCC } from "../../bytes/mp4ByteReader.js";
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import { readFourCC } from "../../box-schema/boxLayoutReaders.js";
 
 /**
  * META > HDLR Golden Truth Extractor
  *
- * Emits EXACT input required by emitMetaHdlrBox.
- *
- * Contract:
- *   emitMetaHdlrBox({
- *     nameBytes: Uint8Array
- *   })
+ * Schema-aligned node report.
  */
-function readMetaHdlrFieldsFromBoxBytes(box) {
-    if (!(box instanceof Uint8Array)) {
-        throw new Error("metaHdlr.readFields: expected Uint8Array");
+function readMetaHdlrBoxReport(boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("metaHdlr.readBoxReport: expected Uint8Array");
     }
 
     return {
-        handlerType: readFourCC(box, 16),
-        raw: box
+        raw: boxBytes,
+
+        box: {
+            type: "hdlr",
+
+            header: {
+                version: boxBytes[8],
+                flags:
+                    (boxBytes[9] << 16) |
+                    (boxBytes[10] << 8) |
+                    boxBytes[11],
+            },
+
+            fields: {
+                // bytes 12..15
+                zeroPadding: readUint32(boxBytes, 12),
+
+                // bytes 16..19
+                handlerType: readFourCC(boxBytes, 16),
+
+                // bytes 20..end
+                nameBytes: Array.from(boxBytes.slice(20)),
+            },
+
+        },
+
+        derived: {}
     };
 }
 
-function getMetaHdlrBuilderInputFromBoxBytes(box) {
-    // bytes 20..end = name bytes + padding
+function getMetaHdlrEmitterInput(boxBytes) {
     return {
-        nameBytes: box.slice(20)
+        nameBytes: boxBytes.slice(20)
     };
 }
 
 export function registerMetaHdlrGoldenTruthExtractor(register) {
-    register.readFields(readMetaHdlrFieldsFromBoxBytes);
-    register.getBuilderInput(getMetaHdlrBuilderInputFromBoxBytes);
+    register.readBoxReport(readMetaHdlrBoxReport);
+    register.getEmitterInput(getMetaHdlrEmitterInput);
 }

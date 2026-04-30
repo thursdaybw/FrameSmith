@@ -117,24 +117,27 @@
  * - MP4RA box registry
  * - mp4box.js reference implementation
  */
-export function emitMinfBox(children) {
+function emitMinfBox(children) {
 
     if (typeof children !== "object" || children === null) {
         throw new Error("emitMinfBox: expected a parameter object");
     }
 
-    const { vmhd, dinf, stbl } = children;
+    const { mediaHeader, dinf, stbl } = children;
 
     // ---------------------------------------------------------
-    // VMHD validation (video-only for now)
+    // VMHD and SMHD validation (video and audio only for now)
     // ---------------------------------------------------------
-    if (typeof vmhd !== "object" || vmhd === null) {
-        throw new Error("emitMinfBox: missing or invalid 'vmhd'");
+    if (typeof mediaHeader !== "object" || mediaHeader === null) {
+        throw new Error("emitMinfBox: missing or invalid mediaHeader");
     }
 
-    if (vmhd.type !== "vmhd") {
+    if (
+        mediaHeader.type !== "vmhd" &&
+        mediaHeader.type !== "smhd"
+    ) {
         throw new Error(
-            `emitMinfBox: expected 'vmhd' media header, got '${vmhd.type}'`
+            `emitMinfBox: expected vmhd or smhd, got '${mediaHeader.type}'`
         );
     }
 
@@ -170,9 +173,16 @@ export function emitMinfBox(children) {
     return {
         type: "minf",
         children: [
-            vmhd,
+            mediaHeader,
             dinf,
             stbl
         ]
     };
+}
+
+export function registerMinfEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf",
+        emitMinfBox
+    );
 }

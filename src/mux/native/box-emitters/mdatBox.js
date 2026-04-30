@@ -14,7 +14,7 @@
  * - no policy
  * - no mutation
  */
-export function emitMdatBox({ payload }) {
+function emitMdatBox({ payload }) {
 
     if (!(payload instanceof Uint8Array)) {
         throw new Error(
@@ -28,4 +28,11 @@ export function emitMdatBox({ payload }) {
             { OpaqueBytesPassthrough: payload }
         ]
     };
+}
+
+export function registerMdatEmitter(registry) {
+    registry.registerEmitter(
+        "mdat",
+        emitMdatBox
+    );
 }

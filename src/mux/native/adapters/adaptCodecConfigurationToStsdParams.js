@@ -1,125 +1,95 @@
-export function adaptCodecConfigurationToStsdParams(codecConfiguration) {
+import {
+    applyAvcCContainerPolicySemantic,
+    applyAvcCContainerPolicyContainerComplete
+} from "../policies/applyAvcCContainerPolicy.js";
 
-    // ---------------------------------------------------------
-    // Top-level object
-    // ---------------------------------------------------------
-    if (codecConfiguration === undefined) {
+import { applyPaspContainerPolicy } from "../policies/applyPaspContainerPolicy.js";
+
+import { applyBtrtContainerPolicy } from "../policies/applyBtrtContainerPolicy.js";
+
+import { applyCompressorNamePolicy } from "../policies/applyCompressorNamePolicy.js";
+import { getCodecContainerConfig } from "../codec-normalization/getCodecContainerConfig.js";
+
+export function adaptCodecConfigurationToStsdParams({
+    semanticCodec,
+    buildParameters,
+    buildHints
+}) {
+
+    if (!semanticCodec || typeof semanticCodec !== "object") {
         throw new Error(
-            "adaptCodecConfigurationToStsdParams: codecConfiguration is missing"
+            "adaptCodecConfigurationToStsdParams: semanticCodec is required"
         );
     }
 
-    if (codecConfiguration === null || typeof codecConfiguration !== "object") {
+    if (!buildParameters || typeof buildParameters !== "object") {
         throw new Error(
-            "adaptCodecConfigurationToStsdParams: codecConfiguration must be an object"
+            "adaptCodecConfigurationToStsdParams: buildParameters is required"
         );
     }
 
-    // ---------------------------------------------------------
-    // codec
-    // ---------------------------------------------------------
-    if (codecConfiguration.codec === undefined) {
+    if (buildHints === undefined) {
+        buildHints = {};
+    }
+
+    if (typeof buildHints !== "object") {
         throw new Error(
-            "adaptCodecConfigurationToStsdParams: codec is missing"
+            "adaptCodecConfigurationToStsdParams: buildHints must be an object"
         );
     }
 
-    if (typeof codecConfiguration.codec !== "string") {
+    const { containerBytes } = getCodecContainerConfig(semanticCodec);
+
+    const width = buildParameters.codedWidth;
+    const height = buildParameters.codedHeight;
+
+    if (!Number.isInteger(width)) {
         throw new Error(
-            `adaptCodecConfigurationToStsdParams: codec must be a string (got ${typeof codecConfiguration.codec})`
+            "adaptCodecConfigurationToStsdParams: buildParameters.codedWidth must be an integer"
         );
     }
 
-    // ---------------------------------------------------------
-    // width
-    // ---------------------------------------------------------
-    if (codecConfiguration.width === undefined) {
+    if (!Number.isInteger(height)) {
         throw new Error(
-            "adaptCodecConfigurationToStsdParams: width is missing"
+            "adaptCodecConfigurationToStsdParams: buildParameters.codedHeight must be an integer"
         );
     }
 
-    if (!Number.isInteger(codecConfiguration.width)) {
-        throw new Error(
-            `adaptCodecConfigurationToStsdParams: width must be an integer (got ${codecConfiguration.width})`
-        );
-    }
+    const compressorName = applyCompressorNamePolicy({
+        compressorName: buildHints.compressorName
+    });
 
-    // ---------------------------------------------------------
-    // height
-    // ---------------------------------------------------------
-    if (codecConfiguration.height === undefined) {
-        throw new Error(
-            "adaptCodecConfigurationToStsdParams: height is missing"
-        );
-    }
+    const pasp = applyPaspContainerPolicy({
+        pasp: buildHints.pasp
+    });
 
-    if (!Number.isInteger(codecConfiguration.height)) {
-        throw new Error(
-            `adaptCodecConfigurationToStsdParams: height must be an integer (got ${codecConfiguration.height})`
-        );
-    }
+    const btrt = applyBtrtContainerPolicy({
+        btrt: buildHints?.btrt
+    });
 
-    // ---------------------------------------------------------
-    // compressorName
-    // ---------------------------------------------------------
-    if (codecConfiguration.compressorName === undefined) {
-        throw new Error(
-            "adaptCodecConfigurationToStsdParams: compressorName is missing"
-        );
-    }
+    let avcCOut;
 
-    if (typeof codecConfiguration.compressorName !== "string") {
-        throw new Error(
-            "adaptCodecConfigurationToStsdParams: compressorName must be a string"
-        );
-    }
+    const completeness = semanticCodec?.config?.completeness;
 
-    // ---------------------------------------------------------
-    // avcC (opaque semantic fact)
-    // ---------------------------------------------------------
-    if (codecConfiguration.avcC === undefined) {
-        throw new Error(
-            "adaptCodecConfigurationToStsdParams: avcC is missing"
-        );
-    }
+    if (completeness === "semantic") {
+        avcCOut = applyAvcCContainerPolicySemantic({
+            avcC: containerBytes,
+            profileIndication: containerBytes[1]
+        });
 
-    if (!(codecConfiguration.avcC instanceof Uint8Array)) {
-        throw new Error(
-            "adaptCodecConfigurationToStsdParams: avcC must be a Uint8Array"
-        );
-    }
-
-    // ---------------------------------------------------------
-    // codec → MP4 sample entry mapping
-    // ---------------------------------------------------------
-    let sampleEntryType;
-
-    if (codecConfiguration.codec.startsWith("avc1")) {
-        sampleEntryType = "avc1";
     } else {
-        throw new Error(
-            [
-                "adaptCodecConfigurationToStsdParams: unsupported codec",
-                "",
-                `Received: ${codecConfiguration.codec}`,
-                "",
-                "Expected an RFC 6381 codec string compatible with MP4 emission.",
-                "Currently supported:",
-                "  - avc1 (H.264)"
-            ].join("\n")
-        );
+        avcCOut = applyAvcCContainerPolicyContainerComplete({
+            avcC: containerBytes
+        });
     }
 
-    // ---------------------------------------------------------
-    // Emit-ready params (container-facing)
-    // ---------------------------------------------------------
     return {
-        codec: sampleEntryType,
-        width: codecConfiguration.width,
-        height: codecConfiguration.height,
-        compressorName: codecConfiguration.compressorName,
-        avcC: new Uint8Array(codecConfiguration.avcC)
+        codec: "avc1",
+        width,
+        height,
+        compressorName,
+        pasp,
+        btrt,
+        avcC: avcCOut,
     };
-
 }

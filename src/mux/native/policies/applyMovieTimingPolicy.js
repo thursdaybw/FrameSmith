@@ -29,43 +29,36 @@
  *
  * It must never be inferred or hidden in emitters.
  */
-
 export function applyMovieTimingPolicy({
-    trackDuration,
-    trackTimescale,
+    movieDurationSeconds,
     trackId,
     movieTimescale
 }) {
-
-    if (!Number.isInteger(trackDuration) || trackDuration < 0) {
+    if (
+        typeof movieDurationSeconds !== "number" ||
+        !Number.isFinite(movieDurationSeconds) ||
+        movieDurationSeconds < 0
+    ) {
         throw new Error(
-            "applyMovieTimingPolicy: trackDuration must be a non-negative integer"
+            "applyMovieTimingPolicy: movieDurationSeconds must be a non-negative finite number, " +
+            `received ${movieDurationSeconds} (${typeof movieDurationSeconds})`
         );
     }
 
-    if (!Number.isInteger(trackTimescale) || trackTimescale <= 0) {
-        throw new Error(
-            "applyMovieTimingPolicy: trackTimescale must be a positive integer"
-        );
-    }
+    const resolvedMovieTimescale = Number.isInteger(movieTimescale) && movieTimescale > 0
+            ? movieTimescale
+            : 1000;
 
     if (!Number.isInteger(trackId) || trackId <= 0) {
         throw new Error(
-            "applyMovieTimingPolicy: trackId must be a positive integer"
+            "applyMovieTimingPolicy: trackId must be a positive integer, " +
+            `received ${trackId} (${typeof trackId})`
         );
     }
 
-    const MOVIE_TIMESCALE =
-        Number.isInteger(movieTimescale) && movieTimescale > 0
-        ? movieTimescale
-        : trackTimescale;
-
-    const duration =
-        trackDuration * MOVIE_TIMESCALE / trackTimescale;
-
     return {
-        timescale: MOVIE_TIMESCALE,
-        duration,
+        timescale: resolvedMovieTimescale,
+        duration: Math.round(movieDurationSeconds * resolvedMovieTimescale),
         nextTrackId: trackId + 1
     };
 }

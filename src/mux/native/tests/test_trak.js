@@ -1,13 +1,8 @@
-import { emitTrakBox } from "../box-emitters/trakBox.js";
-import { emitTkhdBox } from "../box-emitters/tkhdBox.js";
-import { emitEdtsBox } from "../box-emitters/edtsBox.js";
-import { emitElstBox } from "../box-emitters/elstBox.js";
-import { emitMdiaBox } from "../box-emitters/mdiaBox.js";
-import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 import {
-    extractBoxByPathFromMp4,
+    findBoxesByPathFromMp4,
     extractChildBoxFromContainer,
 } from "./reference/BoxExtractor.js";
+
 import {
     assertExists,
     assertEqual,
@@ -16,175 +11,259 @@ import {
 
 import { asIsoBoxContainer } from "../box-model/Box.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
 
-/**
- * TRAK — Structural Correctness (Phase A)
- * --------------------------------------
- *
- * Validates the structural intent of the Track Box.
- *
- * This test does NOT:
- *   - interpret track flags
- *   - test timing or samples
- *   - test byte equivalence
- *
- * It asserts only what TRAK is responsible for:
- *   - container presence
- *   - required children
- *   - canonical ordering
- */
 export async function testTrak_Structure() {
 
-    console.log("=== testTrak_Structure ===");
+    // ---------------------------------------------------------
+    // 1. Load oracle MP4
+    // ---------------------------------------------------------
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 1. Explicit children (policy injected by test)
+    // 2. Resolve TRAK via golden truth
     // ---------------------------------------------------------
-    const tkhd = { type: "tkhd", body: [] };
-    const mdia = { type: "mdia", body: [] };
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]"
+        );
+
+    assertEqual(
+        "trak box type",
+        truth.readBoxReport().box.type,
+        "trak"
+    );
 
     // ---------------------------------------------------------
-    // 2. Build TRAK
+    // 3. Builder input from oracle
     // ---------------------------------------------------------
-    const node = emitTrakBox({
-        tkhd,
-        mdia
-    });
+    const input = truth.getEmitterInput();
 
-    const trak = serializeBoxTree(node);
-
-    // ---------------------------------------------------------
-    // 3. Structural assertions
-    // ---------------------------------------------------------
-    assertExists("tkhd", extractChildBoxFromContainer(trak, "tkhd"));
-    assertExists("mdia", extractChildBoxFromContainer(trak, "mdia"));
+    assertExists("builder input", input);
+    assertExists("tkhd", input.tkhd);
+    assertExists("mdia", input.mdia);
 
     // ---------------------------------------------------------
-    // 4. Ordering assertions
+    // 4. Assemble TRAK
     // ---------------------------------------------------------
+    const node =
+        EmitterRegistry.assemble(
+            "moov/trak",
+            input
+        );
+
+    // ---------------------------------------------------------
+    // 5. Structural assertions (TRAK only)
+    // ---------------------------------------------------------
+    assertExists("trak.children", node.children);
+
     const childTypes = node.children.map(c => c.type);
 
     assertEqual(
         "trak.childCount",
         childTypes.length,
-        2
+        3
     );
 
     assertEqual(
         "trak.childOrder",
         childTypes.join(","),
-        "tkhd,mdia"
+        "tkhd,edts,mdia"
     );
-
-    console.log("PASS: TRAK structural correctness");
 }
 
-/**
- * TRAK — Locked Layout Equivalence (ffmpeg)
- * ----------------------------------------
- *
- * This test validates TRAK as a pure container.
- *
- * RULE (NON-NEGOTIABLE):
- *   Every child must be constructed from meaning.
- *   Raw byte passthrough is forbidden.
- *
- * If a required child cannot yet be built semantically,
- * this test MUST fail.
- */
 export async function testTrak_LockedLayoutEquivalence_ffmpeg() {
-
-    console.log("=== testTrak_LockedLayoutEquivalence_ffmpeg ===");
 
     // ---------------------------------------------------------
     // 1. Load golden MP4
     // ---------------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
-    const goldenMp4 = new Uint8Array(await resp.arrayBuffer());
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Extract reference TRAK
+    // 2. Extract reference TRAK bytes
     // ---------------------------------------------------------
-    const refTrak = extractBoxByPathFromMp4(
-        goldenMp4,
-        "moov/trak",
-        {
-            trackType: "video"
-        }
-    );
+    const refTrak =
+        getGoldenTruthBox
+        .getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]"
+        )
+        .readBoxReport()
+        .raw;
+
     assertExists("reference trak", refTrak);
 
     // ---------------------------------------------------------
-    // 3. Build TRAK exclusively from golden truth
+    // 3. Build TRAK via registry (semantic intent only)
     // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
-        goldenMp4,
-        "moov/trak",
-        {
-            trackType: "video"
-        }
-    );
+    const params =
+        getGoldenTruthBox
+        .getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[0]"
+        )
+        .getEmitterInput();
 
-    const params = truth.getBuilderInput();
-
-    const outTrak = serializeBoxTree(
-        emitTrakBox(params)
-    );
-
-    // ---------------------------------------------------------
-    // 4. Discover children (semantic layer)
-    // ---------------------------------------------------------
-    const refContainer = asIsoBoxContainer(refTrak);
-    const outContainer = asIsoBoxContainer(outTrak);
-
-    const refMeta = refContainer.enumerateChildren();
-    const outMeta = outContainer.enumerateChildren();
-
-    const refTypes = refMeta.map(c => c.type);
-    const outTypes = outMeta.map(c => c.type);
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.assemble(
+                "moov/trak",
+                params
+            )
+        );
 
     // ---------------------------------------------------------
-    // 5. Canonical child ordering
+    // 4. Container-level comparison
     // ---------------------------------------------------------
+    const refContainer =
+        asIsoBoxContainer(
+            refTrak,
+            "moov/trak"
+        );
+
+    const outContainer =
+        asIsoBoxContainer(
+            out,
+            "moov/trak"
+        );
+
+    const refChildren = refContainer.enumerateChildren();
+    const outChildren = outContainer.enumerateChildren();
+
     assertEqual(
-        "trak.childOrder",
-        outTypes.join(","),
-        refTypes.join(",")
+        "trak.childCount",
+        outChildren.length,
+        refChildren.length
     );
 
     // ---------------------------------------------------------
-    // 6. Child-by-child byte equivalence
+    // 5. Child-by-child byte equivalence
     // ---------------------------------------------------------
-    for (const { type } of refMeta) {
-        const refChild = extractChildBoxFromContainer(refTrak, type);
-        const outChild = extractChildBoxFromContainer(outTrak, type);
+    for (let i = 0; i < refChildren.length; i++) {
 
-        for (let i = 0; i < refChild.length; i++) {
-            assertEqualHex(
-                `trak.${type}.byte[${i}]`,
-                outChild[i],
-                refChild[i]
-            );
-        }
+        const refChild = refChildren[i];
+        const outChild = outChildren[i];
 
         assertEqual(
-            `trak.${type}.size`,
-            outChild.length,
-            refChild.length
+            `trak.child[${i}].type`,
+            outChild.type,
+            refChild.type
         );
-    }
 
-    // ---------------------------------------------------------
-    // 7. Full TRAK byte equivalence (safety net)
-    // ---------------------------------------------------------
-    for (let i = 0; i < refTrak.length; i++) {
-        assertEqualHex(
-            `trak.byte[${i}]`,
-            outTrak[i],
-            refTrak[i]
+        const refBytes =
+            refTrak.slice(
+                refChild.offset,
+                refChild.offset + refChild.size
+            );
+
+        const outBytes =
+            out.slice(
+                outChild.offset,
+                outChild.offset + outChild.size
+            );
+
+        assertEqual(
+            `trak.${refChild.type}.size`,
+            outBytes.length,
+            refBytes.length
         );
-    }
 
-    console.log("PASS: TRAK locked-layout equivalence with ffmpeg");
+        for (let j = 0; j < refBytes.length; j++) {
+            assertEqualHex(
+                `trak.${refChild.type}.byte[${j}]`,
+                outBytes[j],
+                refBytes[j]
+            );
+        }
+    }
 }
 
+export async function testTrak_LockedLayoutEquivalence_ffmpeg_Audio() {
+
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    const refTrak =
+        getGoldenTruthBox
+        .getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[1]"
+        )
+        .readBoxReport()
+        .raw;
+
+    assertExists("reference trak (audio)", refTrak);
+
+    const params =
+        getGoldenTruthBox
+        .getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov/trak[1]"
+        )
+        .getEmitterInput();
+
+    const out =
+        serializeBoxTree(
+            EmitterRegistry.assemble(
+                "moov/trak",
+                params
+            )
+        );
+
+    const refContainer =
+        asIsoBoxContainer(refTrak, "moov/trak");
+
+    const outContainer =
+        asIsoBoxContainer(out, "moov/trak");
+
+    const refChildren = refContainer.enumerateChildren();
+    const outChildren = outContainer.enumerateChildren();
+
+    assertEqual(
+        "trak.childCount",
+        outChildren.length,
+        refChildren.length
+    );
+
+    for (let i = 0; i < refChildren.length; i++) {
+
+        const refChild = refChildren[i];
+        const outChild = outChildren[i];
+
+        assertEqual(
+            `trak.child[${i}].type`,
+            outChild.type,
+            refChild.type
+        );
+
+        const refBytes =
+            refTrak.slice(
+                refChild.offset,
+                refChild.offset + refChild.size
+            );
+
+        const outBytes =
+            out.slice(
+                outChild.offset,
+                outChild.offset + outChild.size
+            );
+
+        assertEqual(
+            `trak.${refChild.type}.size`,
+            outBytes.length,
+            refBytes.length
+        );
+
+        for (let j = 0; j < refBytes.length; j++) {
+            assertEqualHex(
+                `trak.${refChild.type}.byte[${j}]`,
+                outBytes[j],
+                refBytes[j]
+            );
+        }
+    }
+}

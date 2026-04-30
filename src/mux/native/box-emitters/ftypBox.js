@@ -58,7 +58,7 @@
  * - MP4 Registration Authority (mp4ra.org)
  * - ffmpeg reference output
  */
-export function emitFtypBox() {
+function emitFtypBox() {
     return {
         type: "ftyp",
 
@@ -179,4 +179,11 @@ export function emitFtypBox() {
             { type: "mp41" }
         ]
     };
+}
+
+export function registerFtypEmitter(registry) {
+    registry.registerEmitter(
+        "ftyp",
+        emitFtypBox
+    );
 }

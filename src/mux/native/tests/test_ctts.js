@@ -1,12 +1,10 @@
-import { emitCttsBox } from "../box-emitters/cttsBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 export async function testCtts_Structure() {
-
-    console.log("=== testCtts_Structure ===");
 
     // ---------------------------------------------------------
     // Canonical version-0 layout
@@ -16,77 +14,59 @@ export async function testCtts_Structure() {
         { count: 5,  offset: 2 }
     ];
 
-    const node = emitCttsBox({ entries });
-    const ctts = serializeBoxTree(node);
+    const node =
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/ctts",
+            { entries }
+        );
 
     // ---------------------------------------------------------
-    // Box header
+    // Box identity
     // ---------------------------------------------------------
+    assertEqual("ctts.type", node.type, "ctts");
+    assertEqual("ctts.version", node.version, 0);
+    assertEqual("ctts.flags", node.flags, 0);
+
+    // ---------------------------------------------------------
+    // Body shape
+    // ---------------------------------------------------------
+    // entry_count + (count, offset) * N
+    const expectedBodyLength = 1 + (entries.length * 2);
+
     assertEqual(
-        "ctts.type",
-        readFourCC(ctts, 4),
-        "ctts"
+        "ctts.body.length",
+        node.body.length,
+        expectedBodyLength
     );
-
-    // ---------------------------------------------------------
-    // FullBox header
-    // ---------------------------------------------------------
-    const version = ctts[8];
-    const flags =
-        (ctts[9] << 16) |
-        (ctts[10] << 8) |
-        ctts[11];
-
-    assertEqual("ctts.version", version, 0);
-    assertEqual("ctts.flags", flags, 0);
 
     // ---------------------------------------------------------
     // Entry count
     // ---------------------------------------------------------
     assertEqual(
         "ctts.entry_count",
-        readUint32(ctts, 12),
+        node.body[0].int,
         entries.length
     );
 
     // ---------------------------------------------------------
-    // Entry payload
+    // Entry payload (flat)
     // ---------------------------------------------------------
-    let offset = 16;
+    let cursor = 1;
 
     for (let i = 0; i < entries.length; i++) {
 
         assertEqual(
             `ctts.entry[${i}].count`,
-            readUint32(ctts, offset),
+            node.body[cursor++].int,
             entries[i].count
         );
 
         assertEqual(
             `ctts.entry[${i}].offset`,
-            readUint32(ctts, offset + 4),
+            node.body[cursor++].int,
             entries[i].offset
         );
-
-        offset += 8;
     }
-
-    // ---------------------------------------------------------
-    // Size
-    // ---------------------------------------------------------
-    const expectedSize = 16 + (entries.length * 8);
-
-    assertEqual(
-        "ctts.size",
-        readUint32(ctts, 0),
-        expectedSize
-    );
-
-    assertEqual(
-        "ctts.length",
-        ctts.length,
-        expectedSize
-    );
 
     // ---------------------------------------------------------
     // Defensive immutability
@@ -95,66 +75,100 @@ export async function testCtts_Structure() {
 
     assertEqual(
         "ctts.immutability",
-        readUint32(ctts, 16),
+        node.body[1].int,
         10
     );
-
-    console.log("PASS: ctts structural correctness");
 }
 
 export async function testCtts_LockedLayoutEquivalence_ffmpeg() {
 
-    console.log(
-        "=== testCtts_LockedLayoutEquivalence_ffmpeg (golden MP4) ==="
-    );
-
-    // ---------------------------------------------------------
-    // 1. Load golden MP4
-    // ---------------------------------------------------------
-    const resp = await fetch("reference/reference_visual.mp4");
-    const mp4  = new Uint8Array(await resp.arrayBuffer());
-
-    // ---------------------------------------------------------
-    // 2. Parse reference CTTS via parser registry
-    // ---------------------------------------------------------
-    const parsed = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl/ctts",
+    const fixtures = [
         {
-            trackType: "video"
+            label: "reference_visual",
+            path: "reference/reference_visual.mp4",
+            trackIndices: [0]
+        },
+        {
+            label: "reference_av",
+            path: "reference/reference_av.mp4",
+            trackIndices: [0, 1]
+        },
+        {
+            label: "reference_av_opus",
+            path: "reference/reference_av_opus.mp4",
+            trackIndices: [0, 1]
         }
-    );
+    ];
 
-    const refFields = parsed.readFields();
-    const buildParams = parsed.getBuilderInput();
+    for (const fixture of fixtures) {
 
-    // ---------------------------------------------------------
-    // 3. Rebuild CTTS via Framesmith
-    // ---------------------------------------------------------
-    const outCtts = serializeBoxTree(
-        emitCttsBox(buildParams)
-    );
+        // ---------------------------------------------------------
+        // 1. Load oracle MP4
+        // ---------------------------------------------------------
+        const resp = await fetch(fixture.path);
+        const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    // ---------------------------------------------------------
-    // 4. Byte-for-byte equivalence
-    // ---------------------------------------------------------
-    const refRaw = refFields.raw;
+        for (const trackIndex of fixture.trackIndices) {
 
-    assertEqual(
-        "ctts.size",
-        outCtts.length,
-        refRaw.length
-    );
+            const cttsPath =
+                `moov/trak[${trackIndex}]/mdia/minf/stbl/ctts`;
 
-    for (let i = 0; i < refRaw.length; i++) {
-        assertEqual(
-            `ctts.byte[${i}]`,
-            outCtts[i],
-            refRaw[i]
-        );
+            const parsed =
+                getGoldenTruthBox
+                .getSemanticBoxDataByPathFromMp4File(
+                    mp4,
+                    cttsPath
+                );
+
+            if (parsed && parsed.found === false) {
+                console.log(
+                    `[CTTS] ${fixture.label} track ${trackIndex}: ABSENT`
+                );
+                continue;
+            }
+
+            // ---------------------------------------------------------
+            // 2. Diagnostic log
+            // ---------------------------------------------------------
+            console.log(
+                `[CTTS] ${fixture.label} track ${trackIndex}: PRESENT`
+            );
+
+            // ---------------------------------------------------------
+            // 3. Parse oracle CTTS
+            // ---------------------------------------------------------
+            const refReport = parsed.readBoxReport();
+            const buildParams = parsed.getEmitterInput();
+
+            // ---------------------------------------------------------
+            // 4. Re-emit CTTS
+            // ---------------------------------------------------------
+            const outCtts =
+                serializeBoxTree(
+                    EmitterRegistry.emit(
+                        "moov/trak/mdia/minf/stbl/ctts",
+                        buildParams
+                    )
+                );
+
+            const refRaw = refReport.raw;
+
+            // ---------------------------------------------------------
+            // 5. Byte-for-byte equivalence
+            // ---------------------------------------------------------
+            assertEqual(
+                `[${fixture.label} t${trackIndex}] ctts.size`,
+                outCtts.length,
+                refRaw.length
+            );
+
+            for (let i = 0; i < refRaw.length; i++) {
+                assertEqual(
+                    `[${fixture.label} t${trackIndex}] ctts.byte[${i}]`,
+                    outCtts[i],
+                    refRaw[i]
+                );
+            }
+        }
     }
-
-    console.log(
-        "PASS: ctts parser rebuilds ffmpeg output byte-for-byte"
-    );
 }

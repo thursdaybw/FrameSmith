@@ -29,7 +29,7 @@
  * ISO/IEC 14496-12 — BitRateBox
  * MP4RA registry: https://mp4ra.org/registered-types/boxes
  */
-export function emitBtrtBox({
+function emitBtrtBox({
     bufferSizeDB,
     maxBitrate,
     avgBitrate
@@ -61,4 +61,21 @@ export function emitBtrtBox({
             { int: avgBitrate   }
         ]
     };
+}
+
+export function registerBtrtEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsd|avc1/btrt",
+        emitBtrtBox
+    );
+
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsd|mp4a/btrt",
+        emitBtrtBox
+    );
+
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsd|Opus/btrt",
+        emitBtrtBox
+    );
 }

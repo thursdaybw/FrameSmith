@@ -3,8 +3,9 @@ import { asIsoBoxContainer } from "../box-model/Box.js";
 
 import {
     readUint32,
-    readFourCC
 } from "../bytes/mp4ByteReader.js";
+
+import { readFourCC } from "../box-schema/boxLayoutReaders.js";
 
 import {
     assertEqual,
@@ -14,19 +15,18 @@ import {
 
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
 
-import { emitMoovBox } from "../box-emitters/moovBox.js";
-import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
-import { emitTrakBox } from "../box-emitters/trakBox.js";
-import { emitUdtaBox } from "../box-emitters/udtaBox.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { GoldenTruthRegistry } from "./goldenTruthExtractors/GoldenTruthRegistry.js";
 
 /**
  * =========================================================
  * MOOV — Structural Correctness (Phase A)
  * =========================================================
  *
- * This test validates that emitMoovBox():
- *   - emits a valid MP4 container
+ * This test validates that assembleMoov():
+ *   - produces a MOOV container node
  *   - declares the correct children
  *   - preserves child ordering
  *
@@ -35,56 +35,87 @@ import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
  *   - offsets
  *   - byte-level equivalence
  */
-export function testMoov_Structure() {
+export async function testMoov_Structure() {
 
-    console.log("=== testMoov_Structure ===");
+    // ---------------------------------------------------------
+    // 1. Load oracle MP4
+    // ---------------------------------------------------------
+    const resp = await fetch("reference/reference_visual.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const mvhd = emitMvhdBox({
-        timescale: 1000,
-        duration: 0,
-        nextTrackId: 1
-    });
+    // ---------------------------------------------------------
+    // 2. Resolve MOOV via golden truth
+    // ---------------------------------------------------------
+    const truth =
+        getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+            mp4,
+            "moov"
+        );
 
-    const tkhd = { type: "tkhd", body: [] };
-    const mdia = { type: "mdia", body: [] };
+    assertEqual(
+        "moov box type",
+        truth.readBoxReport().box.type,
+        "moov"
+    );
 
-    const trak = emitTrakBox({
-        tkhd,
-        mdia
-    });
+    // ---------------------------------------------------------
+    // 3. Builder input from oracle
+    // ---------------------------------------------------------
+    const input = truth.getEmitterInput();
 
-    const udta = emitUdtaBox({
-        children: []
-    });
+    assertExists("builder input", input);
+    assertExists("mvhd", input.mvhd);
+    assertExists("traks", input.traks);
 
-    const node = emitMoovBox({
-        mvhd,
-        traks: [trak],
-        udta
-    });
+    // ---------------------------------------------------------
+    // 4. Assemble MOOV
+    // ---------------------------------------------------------
+    const node =
+        EmitterRegistry.assemble(
+            "moov",
+            input
+        );
 
-    const bytes = serializeBoxTree(node);
+    // ---------------------------------------------------------
+    // 5. Structural assertions (MOOV only)
+    // ---------------------------------------------------------
+    assertEqual("moov.type", node.type, "moov");
 
-    // -----------------------------------------------------
-    // Box header
-    // -----------------------------------------------------
-    assertEqual("moov.type", readFourCC(bytes, 4), "moov");
+    assertExists("moov.children", node.children);
 
-    // -----------------------------------------------------
-    // Child discovery (structure only)
-    // -----------------------------------------------------
-    const container = asIsoBoxContainer(bytes);
-    const children  = container.enumerateChildren();
+    const childTypes = node.children.map(c => c.type);
 
-    assertEqual("moov.child.count", children.length, 3);
+    assertEqual(
+        "moov.childCount",
+        childTypes.length,
+        input.traks.length + 1 + (input.udta ? 1 : 0)
+    );
 
-    assertEqual("moov.child[0].type", children[0].type, "mvhd");
-    assertEqual("moov.child[1].type", children[1].type, "trak");
-    assertEqual("moov.child[2].type", children[2].type, "udta");
+    // mvhd must be first
+    assertEqual(
+        "moov.child[0]",
+        childTypes[0],
+        "mvhd"
+    );
 
-    console.log("PASS: MOOV structural correctness");
+    // trak(s) must follow
+    for (let i = 0; i < input.traks.length; i++) {
+        assertEqual(
+            `moov.trak[${i}]`,
+            childTypes[1 + i],
+            "trak"
+        );
+    }
+
+    // udta, if present, must be last
+    if (input.udta) {
+        assertEqual(
+            "moov.udta",
+            childTypes[childTypes.length - 1],
+            "udta"
+        );
+    }
 }
-
 
 /**
  * =========================================================
@@ -104,43 +135,70 @@ export function testMoov_Structure() {
  */
 export async function testMoov_LockedLayoutEquivalence_ffmpeg() {
 
-    console.log("=== testMoov_LockedLayoutEquivalence_ffmpeg ===");
-
+    // -----------------------------------------------------
+    // 1. Load golden MP4
+    // -----------------------------------------------------
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // -----------------------------------------------------
-    // Reference extraction (ASSERTION SOURCE ONLY)
+    // 2. Reference MOOV (full MP4 traversal)
     // -----------------------------------------------------
-    const refMoov = extractBoxByPathFromMp4(mp4, "moov");
-    assertExists("reference moov", refMoov);
+    const refBox = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(mp4, "moov");
+
+    const refFields = refBox.readBoxReport();
+
+    const refMoovBytes = refFields.raw;
+    assertExists("reference moov raw", refMoovBytes);
 
     // -----------------------------------------------------
-    // Rebuild MOOV strictly from golden truth
+    // 3. Build MOOV from semantic intent
     // -----------------------------------------------------
-    const moovInput = getGoldenTruthBox
-        .fromMp4(mp4, "moov")
-        .getBuilderInput();
+    const moovInput = refBox.getEmitterInput();
 
-    const out = serializeBoxTree(
-        emitMoovBox(moovInput)
+    const outMoovBytes = serializeBoxTree(
+        EmitterRegistry.assemble(
+            "moov",
+            moovInput
+        )
+    );
+
+    assertExists("output moov raw", outMoovBytes);
+
+    // -----------------------------------------------------
+    // 4. Output MOOV (box-rooted traversal)
+    // -----------------------------------------------------
+    const outFields = GoldenTruthRegistry.getExtractor("moov").readBoxReport(outMoovBytes);
+
+    // -----------------------------------------------------
+    // 5. Header sanity
+    // -----------------------------------------------------
+    assertEqual(
+        "moov.type",
+        readFourCC(outMoovBytes, 4),
+        "moov"
     );
 
     // -----------------------------------------------------
-    // Header fields (explicit, labelled)
+    // 6. Child discovery (type + offset)
     // -----------------------------------------------------
-    assertEqual("moov.type", readFourCC(out, 4), "moov");
-
-    // -----------------------------------------------------
-    // Child discovery (TYPE + OFFSET ONLY)
-    // -----------------------------------------------------
-    const refContainer = asIsoBoxContainer(refMoov);
-    const outContainer = asIsoBoxContainer(out);
+    const refContainer = asIsoBoxContainer(
+        refMoovBytes,
+        "moov"
+    );
+    const outContainer = asIsoBoxContainer(
+        outMoovBytes,
+        "moov"
+    );
 
     const refChildren = refContainer.enumerateChildren();
     const outChildren = outContainer.enumerateChildren();
 
-    assertEqual("moov.child.count", outChildren.length, refChildren.length);
+    assertEqual(
+        "moov.child.count",
+        outChildren.length,
+        refChildren.length
+    );
 
     for (let i = 0; i < refChildren.length; i++) {
 
@@ -158,16 +216,16 @@ export async function testMoov_LockedLayoutEquivalence_ffmpeg() {
     }
 
     // -----------------------------------------------------
-    // Child byte-for-byte equivalence (isolated)
+    // 7. Child byte-for-byte equivalence
     // -----------------------------------------------------
     for (let i = 0; i < refChildren.length; i++) {
 
-        const refChild = refMoov.slice(
+        const refChild = refMoovBytes.slice(
             refChildren[i].offset,
             refChildren[i].offset + refChildren[i].size
         );
 
-        const outChild = out.slice(
+        const outChild = outMoovBytes.slice(
             outChildren[i].offset,
             outChildren[i].offset + outChildren[i].size
         );
@@ -188,30 +246,168 @@ export async function testMoov_LockedLayoutEquivalence_ffmpeg() {
     }
 
     // -----------------------------------------------------
-    // Derived fields (LAST)
+    // 8. Derived fields
     // -----------------------------------------------------
     assertEqual(
         "moov.size.field",
-        readUint32(out, 0),
-        readUint32(refMoov, 0)
+        readUint32(outMoovBytes, 0),
+        readUint32(refMoovBytes, 0)
     );
 
     assertEqual(
         "moov.total.length",
-        out.length,
-        refMoov.length
+        outMoovBytes.length,
+        refMoovBytes.length
     );
 
     // -----------------------------------------------------
-    // FINAL SAFETY NET — full box comparison
+    // 9. Final full-box equivalence
     // -----------------------------------------------------
-    for (let i = 0; i < refMoov.length; i++) {
+    for (let i = 0; i < refMoovBytes.length; i++) {
         assertEqualHex(
             `moov.byte[${i}]`,
-            out[i],
-            refMoov[i]
+            outMoovBytes[i],
+            refMoovBytes[i]
+        );
+    }
+}
+
+export async function testMoov_LockedLayoutEquivalence_ffmpeg_Audio() {
+
+    // -----------------------------------------------------
+    // 1. Load golden MP4 (audio + video)
+    // -----------------------------------------------------
+    const resp = await fetch("reference/reference_av.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // -----------------------------------------------------
+    // 2. Reference MOOV (full MP4 traversal)
+    // -----------------------------------------------------
+    const refBox = getGoldenTruthBox
+        .getSemanticBoxDataByPathFromMp4File(mp4, "moov");
+
+    const refFields = refBox.readBoxReport();
+
+    const refMoovBytes = refFields.raw;
+    assertExists("reference moov raw (audio)", refMoovBytes);
+
+    // -----------------------------------------------------
+    // 3. Build MOOV from semantic intent
+    // -----------------------------------------------------
+    const moovInput = refBox.getEmitterInput();
+
+    const outMoovBytes = serializeBoxTree(
+        EmitterRegistry.assemble(
+            "moov",
+            moovInput
+        )
+    );
+
+    assertExists("output moov raw (audio)", outMoovBytes);
+
+    // -----------------------------------------------------
+    // 4. Output MOOV (box-rooted traversal)
+    // -----------------------------------------------------
+    const outFields = GoldenTruthRegistry.getExtractor("moov").readBoxReport(outMoovBytes);
+
+    // -----------------------------------------------------
+    // 5. Header sanity
+    // -----------------------------------------------------
+    assertEqual(
+        "moov.type",
+        readFourCC(outMoovBytes, 4),
+        "moov"
+    );
+
+    // -----------------------------------------------------
+    // 6. Child discovery (type + offset)
+    // -----------------------------------------------------
+    const refContainer = asIsoBoxContainer(
+        refMoovBytes,
+        "moov"
+    );
+    const outContainer = asIsoBoxContainer(
+        outMoovBytes,
+        "moov"
+    );
+
+    const refChildren = refContainer.enumerateChildren();
+    const outChildren = outContainer.enumerateChildren();
+
+    assertEqual(
+        "moov.child.count",
+        outChildren.length,
+        refChildren.length
+    );
+
+    for (let i = 0; i < refChildren.length; i++) {
+
+        assertEqual(
+            `moov.child[${i}].type`,
+            outChildren[i].type,
+            refChildren[i].type
+        );
+
+        assertEqual(
+            `moov.child[${i}].offset`,
+            outChildren[i].offset,
+            refChildren[i].offset
         );
     }
 
-    console.log("PASS: MOOV locked-layout equivalence with ffmpeg");
+    // -----------------------------------------------------
+    // 7. Child byte-for-byte equivalence
+    // -----------------------------------------------------
+    for (let i = 0; i < refChildren.length; i++) {
+
+        const refChild = refMoovBytes.slice(
+            refChildren[i].offset,
+            refChildren[i].offset + refChildren[i].size
+        );
+
+        const outChild = outMoovBytes.slice(
+            outChildren[i].offset,
+            outChildren[i].offset + outChildren[i].size
+        );
+
+        assertEqual(
+            `moov.child[${i}].size`,
+            outChild.length,
+            refChild.length
+        );
+
+        for (let b = 0; b < refChild.length; b++) {
+            assertEqualHex(
+                `moov.child[${i}].byte[${b}]`,
+                outChild[b],
+                refChild[b]
+            );
+        }
+    }
+
+    // -----------------------------------------------------
+    // 8. Derived fields
+    // -----------------------------------------------------
+    assertEqual(
+        "moov.size.field",
+        readUint32(outMoovBytes, 0),
+        readUint32(refMoovBytes, 0)
+    );
+
+    assertEqual(
+        "moov.total.length",
+        outMoovBytes.length,
+        refMoovBytes.length
+    );
+
+    // -----------------------------------------------------
+    // 9. Final full-box equivalence
+    // -----------------------------------------------------
+    for (let i = 0; i < refMoovBytes.length; i++) {
+        assertEqualHex(
+            `moov.byte[${i}]`,
+            outMoovBytes[i],
+            refMoovBytes[i]
+        );
+    }
 }

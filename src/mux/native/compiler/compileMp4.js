@@ -1,70 +1,39 @@
 import { normalizeAccessUnitsInPlace } from "../normalization/access-units/index.js";
-import { deriveStructuralStateInPlace } from "./deriveStructuralStateInPlace.js";
-
-import { applyAvcCContainerPolicy }
-    from "../policies/applyAvcCContainerPolicy.js";
-
-import { applyBtrtContainerPolicy }
-    from "../policies/applyBtrtContainerPolicy.js";
-
-import { applyTrackHandlerPolicy }
-    from "../policies/applyTrackHandlerPolicy.js";
-
-import { applyMovieTimingPolicy }
-    from "../policies/applyMovieTimingPolicy.js";
-
-import { applyEditListPolicy }
-    from "../policies/applyEditListPolicy.js";
-
-import { applyTrackHeaderPolicy }
-    from "../policies/applyTrackHeaderPolicy.js";
-
-import { applyCompressorNamePolicy }
-    from "../policies/applyCompressorNamePolicy.js";
-
-import { applyUdtaPolicy }
-    from "../policies/applyUdtaPolicy.js";
-
-import { adaptSttsFromSamples } from "../adapters/adaptSttsFromSamples.js";
-
-import { adaptStszSizesFromPayloads } from "../adapters/adaptStszSizesFromPayloads.js";
-
-import { adaptCttsFromSamples } from "../adapters/adaptCttsFromSamples.js";
-
-import { adaptStscEntriesToEmitterParams } from "../adapters/adaptStscEntriesToEmitterParams.js";
-
+import { deriveStructuralStateInPlace } from "../derivers/deriveStructuralStateInPlace.js";
+import { deriveSemanticTrackFamily } from "../derivers/deriveSemanticTrackFamily.js";
+import {
+    applyAvcCContainerPolicySemantic,
+    applyAvcCContainerPolicyContainerComplete,
+} from "../policies/applyAvcCContainerPolicy.js";
+import { applyBtrtContainerPolicy } from "../policies/applyBtrtContainerPolicy.js";
+import { applyPaspContainerPolicy } from "../policies/applyPaspContainerPolicy.js";
+import { applyTrackHandlerPolicy } from "../policies/applyTrackHandlerPolicy.js";
+import { applyTrackHeaderPolicy } from "../policies/applyTrackHeaderPolicy.js";
 import { adaptCodecConfigurationToStsdParams } from "../adapters/adaptCodecConfigurationToStsdParams.js";
-
-import { assembleMdatPayloadFromChunks } from "../assembleMdatPayloadFromChunks.js";
-
-import { emitStcoBox } from "../box-emitters/stcoBox.js";
-
-import { emitStsdBox } from "../box-emitters/stsdBox.js";
-import { emitFtypBox } from "../box-emitters/ftypBox.js";
-import { emitMoovBox } from "../box-emitters/moovBox.js";
-import { emitMvhdBox } from "../box-emitters/mvhdBox.js";
-import { emitTrakBox } from "../box-emitters/trakBox.js";
-import { emitMdiaBox } from "../box-emitters/mdiaBox.js";
-import { emitMinfBox } from "../box-emitters/minfBox.js";
-import { emitStblBox } from "../box-emitters/stblBox.js";
-import { emitVmhdBox } from "../box-emitters/vmhdBox.js";
-import { emitDinfBox } from "../box-emitters/dinfBox.js";
-import { emitDrefBox } from "../box-emitters/drefBox.js";
-import { emitMdhdBox } from "../box-emitters/mdhdBox.js";
-import { emitHdlrBox } from "../box-emitters/hdlrBox.js";
-import { emitTkhdBox } from "../box-emitters/tkhdBox.js";
-import { emitSttsBox } from "../box-emitters/sttsBox.js";
-import { emitCttsBox } from "../box-emitters/cttsBox.js";
-import { emitStscBox } from "../box-emitters/stscBox.js";
-import { emitStszBox } from "../box-emitters/stszBox.js";
-import { emitUdtaBox } from "../box-emitters/udtaBox.js";
-import { emitStssBox } from "../box-emitters/stssBox.js";
-import { emitEdtsBox } from "../box-emitters/edtsBox.js";
-import { emitElstBox } from "../box-emitters/elstBox.js";
-
+import { adaptAudioCodecConfigurationToStsdParams } from "../adapters/adaptAudioCodecConfigurationToStsdParams.js";
+import { adaptStcoIntentFromOffsets } from "../adapters/adaptStcoIntentFromOffsets.js";
+import { buildMdatPayloadAndChunkLayout } from "../mdat/buildMdatPayloadAndChunkLayout.js";
 import { resolvePhysicalLayout } from "../resolvePhysicalLayout.js";
-import { commitMoovWithResolvedLayout } from "../commit/commitMoovWithResolvedLayout.js";
 import { emitMp4FileFromResolvedParts } from "../emitMp4FileFromResolvedParts.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
+import { parseAudioSpecificConfigFromEsds } from "../codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
+import { buildStblChildIntentsWithoutOffsetsInPlace } from "../builders/buildStblChildIntentsWithoutOffsetsInPlace.js";
+import { buildMvhdIntentFromCompilerState } from "../builders/buildMvhdIntentFromCompilerState.js";
+import { buildMinfIntentFromTrack } from "../builders/buildMinfIntentFromTrack.js";
+import { buildMdiaIntentFromTrack } from "../builders/buildMdiaIntentFromTrack.js";
+import { buildTrakIntentFromTrakAndMvhd } from "../builders/buildTrakIntentFromTrakAndMvhd.js";
+import { buildUdtaIntentFromBuildHints } from "../builders/buildUdtaIntentFromBuildHints.js";
+import { buildStblIntentFromTrack } from "../builders/buildStblIntentFromTrack.js";
+import { composeMoovNode } from "../composers/composeMoovNode.js";
+import { composeFtypNode } from "../composers/composeFtypNode.js";
+import { composeFreeNode } from "../composers/composeFreeNode.js";
+import { materializePassOneTopLevelBoxes } from "../layout/materializePassOneTopLevelBoxes.js";
+import { resolveStcoOffsetsPerTrack } from "../layout/resolveStcoOffsetsPerTrack.js";
+import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
+
+import { getGoldenTruthBox } from "../tests/goldenTruthExtractors/index.js";
+
+import { validatePacketTopologyAdmissibility } from "../compiler/validateCompilerAdmissibility.js";
 
 // INTERNAL: compiler implementation detail — use createMp4FromInputs() instead
 /**
@@ -138,449 +107,400 @@ import { emitMp4FileFromResolvedParts } from "../emitMp4FileFromResolvedParts.js
  *
  * Tier 3 — Adaptation
  * -------------------
- * Shape translation from derived data into emitter-ready parameters.
- * No policy, no compatibility decisions.
- *
- * Tier 4 — Container Policies
- * ---------------------------
- * Explicit, named container-level decisions that are:
- *   - not semantic
- *   - not derivable
- *   - required for compatibility
- *
- * Tier 5 — Emission + Assembly
- * ----------------------------
- * Box emission, physical layout resolution, and final byte assembly.
- *
- * ---------------------------------------------------------------------------
- * Design Rules (Hard)
- * ---------------------------------------------------------------------------
- *
- * - No tier may reach "backward" to an earlier tier
- * - Policies must not be hidden inside adapters or emitters
- * - Emitters must be pure serializers
- * - This function defines *order*, not algorithms
- *
- * The structure here is deliberate and pedagogical.
- * Extraction into sub-functions will preserve tier boundaries.
- * 
- * compileMp4 assumes a validated Mp4BuildInput
- */
+* Shape translation from derived data into emitter-ready parameters.
+* No policy, no compatibility decisions.
+*
+* Tier 4 — Container Policies
+* ---------------------------
+* Explicit, named container-level decisions that are:
+*   - not semantic
+*   - not derivable
+*   - required for compatibility
+*
+* Tier 5 — Emission + Assembly
+* ----------------------------
+* Box emission, physical layout resolution, and final byte assembly.
+*
+    * ---------------------------------------------------------------------------
+* Design Rules (Hard)
+    * ---------------------------------------------------------------------------
+    *
+    * - No tier may reach "backward" to an earlier tier
+    * - Policies must not be hidden inside adapters or emitters
+    * - Emitters must be pure serializers
+    * - This function defines *order*, not algorithms
+    *
+    * The structure here is deliberate and pedagogical.
+    * Extraction into sub-functions will preserve tier boundaries.
+    * 
+    * compileMp4 assumes a validated Mp4BuildInput
+    */
 export function compileMp4({ mp4CompilerState }) {
 
+    // -------------------------------------------------
+    // Phase 1 — normalization + derivation
+    // -------------------------------------------------
+    prepareTracksForStructuralDerivation({ mp4CompilerState });
 
-    console.log(
-        "DEBUG compiler semanticHints:",
-        mp4CompilerState.semanticHints
-    );
+    for (const track of mp4CompilerState.tracks) {
+        deriveStructuralStateInPlace({ track });
+        buildStblChildIntentsWithoutOffsetsInPlace({ track });
+    }
 
-    /**
-     *   Tier 1 — Semantic Media Facts (Normalization)
-     *
-     * Canonicalizes Mp4BuildInput into a complete, internally consistent form
-     * required by the NativeMuxer compilation pipeline.
-     *
-     * -------------------------------------------------------------------------
-     * Purpose
-     * -------------------------------------------------------------------------
-     *
-     * Normalization exists to make downstream stages *boring*.
-     *
-     * After normalization:
-     *   - all required fields are present
-     *   - all invariants are enforced
-     *   - any value with only ONE valid outcome is made explicit
-     *
-     * Downstream code must never need to ask:
-     *   - “is this present?”
-     *   - “which value should I choose?”
-     *
-     * -------------------------------------------------------------------------
-     * What normalization IS
-     * -------------------------------------------------------------------------
-     *
-     * Normalization:
-     *   - enforces intrinsic media invariants
-     *   - fills in required values when only one valid value exists
-     *   - makes implicit facts explicit
-     *
-     * Normalization may:
-     *   - assert constraints
-     *   - copy, annotate, or reshape data
-     *   - attach deterministic, unavoidable values
-     *
-     * -------------------------------------------------------------------------
-     * What normalization is NOT
-     * -------------------------------------------------------------------------
-     *
-     * Normalization must NOT:
-     *   - choose between multiple valid outcomes
-     *   - apply container compatibility rules
-     *   - derive structural layout (chunks, tables, topology)
-     *   - encode MP4 box representation
-     *
-     * If a decision has more than one valid answer:
-     *   - it does NOT belong here
-     *   - it is either a derivation strategy or a container policy
-     *
-     * -------------------------------------------------------------------------
-     * Current invariants enforced
-     * -------------------------------------------------------------------------
-     *
-     * At the current maturity of the system:
-     *
-     *   - exactly ONE sample description per track is supported
-     *   - therefore, all samples MUST reference sampleDescriptionIndex = 1
-     *
-     * This is NOT a policy or a preference.
-     * It is the only value that can produce a valid MP4 under current constraints.
-     *
-     * If multi-sample-description tracks are ever supported,
-     * this normalization MUST be revisited.
-     *
-     */
-    normalizeAccessUnitsInPlace({
-        accessUnits: mp4CompilerState.semanticCore.accessUnits
-    });
+    // -------------------------------------------------
+    // Phase 2 — stub STBL
+    // -------------------------------------------------
+    const stblStubIntents =
+        mp4CompilerState.tracks.map(track =>
+            buildStblIntentFromTrack({ track })
+        );
 
+    // -------------------------------------------------
+    // Phase 3 — MDAT payload
+    // -------------------------------------------------
+    mp4CompilerState.mdatPayloadAndChunkLayout =
+        buildMdatPayloadAndChunkLayout({ mp4CompilerState });
 
-    // =====================================================================
-    // Tier 2 — Structural Derivation (strategy + derivation)
-    // =====================================================================
+    // -------------------------------------------------
+    // Phase 4 — MOOV stub
+    // -------------------------------------------------
+    const mvhdIntent = buildMvhdIntentFromCompilerState({ mp4CompilerState });
 
-    deriveStructuralStateInPlace(mp4CompilerState);
+    const trakStubIntents =
+        mp4CompilerState.tracks.map((track, index) => {
 
-    // =====================================================================
-    // Tier 4 — Container Policies (declared early for adapter consumption)
-    // =====================================================================
+            const minfIntent =
+                buildMinfIntentFromTrack({
+                    track: {
+                        ...track,
+                        storedIntent: { stblIntent: stblStubIntents[index] }
+                    }
+                });
 
-    const compressorNamePolicy =
-        applyCompressorNamePolicy({
-            compressorName:
-            mp4CompilerState.buildHints?.compressorName
+            const mdiaIntent =
+                buildMdiaIntentFromTrack({
+                    track: {
+                        ...track,
+                        storedIntent: { minfIntent }
+                    }
+                });
+
+            return buildTrakIntentFromTrakAndMvhd({
+                track: {
+                    ...track,
+                    storedIntent: {
+                        mdiaIntent,
+                        mdhd: mdiaIntent.mdhd
+                    }
+                },
+                mvhd: mvhdIntent
+            });
         });
 
-    // =====================================================================
-    // Tier 3 — Adaptation (semantic → emitter parameters)
-    // =====================================================================
+    const ftypNode = composeFtypNode();
+    const freeNode = composeFreeNode();
 
-    // -- Time-to-sample
-    const sttsParams = adaptSttsFromSamples({
-        samples: mp4CompilerState.semanticCore.accessUnits
-    });
+    const moovStub =
+        composeMoovNode({
+            mvhdIntent,
+            trakIntents: trakStubIntents,
+            udtaIntent:
+                buildUdtaIntentFromBuildHints({
+                    buildHints: mp4CompilerState.buildHints
+                })
+        });
 
-    // -- Sample sizes
-    const stszParams = adaptStszSizesFromPayloads({
-        accessUnits: mp4CompilerState.semanticCore.accessUnits,
-        accessUnitPayloads: mp4CompilerState.payloads.accessUnitPayloads
-    });
+    // -------------------------------------------------
+    // Phase 5 — pass-one materialization
+    // -------------------------------------------------
+    const boxesBeforeMdat =
+        materializePassOneTopLevelBoxes({
+            topLevelNodes: {
+                ftyp: ftypNode,
+                free: freeNode,
+                moov: moovStub
+            },
+            fileBoxOrder:
+                mp4CompilerState.buildParameters.fileBoxOrder
+        });
 
-    // -- Composition offsets
-    const cttsParams = adaptCttsFromSamples({
-        samples: mp4CompilerState.semanticCore.accessUnits
-    });
-
-    const hasNonZeroCompositionOffset =
-        cttsParams.entries.some(e => e.offset !== 0);
-
-    // -- Chunk mapping
-    const stscParams =
-        adaptStscEntriesToEmitterParams(mp4CompilerState.stscEntries);
-
-    // -- Codec / sample description (raw, pre-policy)
-    const rawStsdParams = adaptCodecConfigurationToStsdParams(
-        {
-            codec:          mp4CompilerState.semanticCore.codec.codec,
-            compressorName: compressorNamePolicy,
-            avcC:           mp4CompilerState.semanticCore.codec.avcC,
-            width:          mp4CompilerState.buildParameters.codedWidth,
-            height:         mp4CompilerState.buildParameters.codedHeight
-        }
-    );
-
-    // =====================================================================
-    // Tier 4 — Container Policies (explicit, named decisions)
-    // =====================================================================
-
-
-    let avcCProfileIndication;
-
-    if (mp4CompilerState.semanticCore.codec.avcCCompleteness === "semantic") {
-        avcCProfileIndication = rawStsdParams.avcC[1];
-    }
-
-    //
-    // NOTE on codec-owned configuration boxes:
-    //
-    // avcC (video) MAY be container-completed via policy
-    // esds (audio) MUST be treated as opaque
-    //
-    // esds contains a descriptor graph defined by ISO/IEC 14496-1.
-    // Any mutation would require descriptor parsing and length recomputation,
-    // which is outside container policy scope.
-    //
-    // Therefore:
-    // - avcC may pass through applyAvcCContainerPolicy
-    // - esds must be preserved byte-for-byte
-    const stsdParams = {
-        codec: rawStsdParams.codec,
-        width: rawStsdParams.width,
-        height: rawStsdParams.height,
-        compressorName: rawStsdParams.compressorName,
-
-        // Optional policy: btrt
-        // - sourced ONLY from buildHints
-        // - validated and passed through verbatim
-        // - omitted if not supplied
-        btrt: applyBtrtContainerPolicy({
-            btrt: mp4CompilerState.buildHints?.btrt
-        }),
-
-        // Mandatory policy: AVC Container compatibility (High profile extension)
-        avcC: applyAvcCContainerPolicy({
-            avcC: rawStsdParams.avcC,
-            avcCCompleteness: mp4CompilerState.semanticCore.codec.avcCCompleteness,
-            profileIndication: avcCProfileIndication
-        })
-    };
-
-    // =====================================================================
-    // Tier 5 — Emission and Assembly
-    // =====================================================================
-
-    // ---------------------------------------------------------
-    // MDAT (media payload)
-    // ---------------------------------------------------------
-    const {
-        payload: mdatPayload,
-        chunkOffsets
-    } = assembleMdatPayloadFromChunks({
-        accessUnitGroups: mp4CompilerState.chunks,
-        accessUnitPayloads: mp4CompilerState.payloads.accessUnitPayloads
-    });
-
-    // ---------------------------------------------------------
-    // Sample Table (stbl)
-    // ---------------------------------------------------------
-    const placeholderStco = emitStcoBox({
-        chunkOffsets: new Array(mp4CompilerState.chunks.length).fill(0)
-    });
-
-    const stblChildren = {
-        stsd: emitStsdBox(stsdParams),
-        stts: emitSttsBox(sttsParams),
-        stsc: emitStscBox(stscParams),
-        stsz: emitStszBox(stszParams),
-        stco: placeholderStco
-    };
-
-    if (mp4CompilerState.stssSampleNumbers.length > 0) {
-        stblChildren.stss =
-            emitStssBox({ sampleNumbers: mp4CompilerState.stssSampleNumbers });
-    }
-
-    if (hasNonZeroCompositionOffset) {
-        stblChildren.ctts = emitCttsBox(cttsParams);
-    }
-
-    const stbl = emitStblBox(stblChildren);
-
-    // ---------------------------------------------------------
-    // Media boxes (mdia / minf)
-    // ---------------------------------------------------------
-    const dinf = emitDinfBox({
-        dref: emitDrefBox()
-    });
-
-    const minf = emitMinfBox({
-        vmhd: emitVmhdBox(),
-        dinf,
-        stbl
-    });
-
-    const mdhd = emitMdhdBox({
-        timescale: mp4CompilerState.buildParameters.trackTimescale,
-        duration: mp4CompilerState.trackDuration
-    });
-
-    const hdlr = emitHdlrBox(
-        applyTrackHandlerPolicy({
-            trackType: "video"
-        })
-    );
-
-    const mdia = emitMdiaBox({
-        mdhd,
-        hdlr,
-        minf
-    });
-
-    // ---------------------------------------------------------
-    // Movie timing policy (container-level)
-    // ---------------------------------------------------------
-    const mvhdTiming = applyMovieTimingPolicy({
-        trackDuration: mp4CompilerState.trackDuration,
-        trackTimescale: mp4CompilerState.buildParameters.trackTimescale,
-        trackId: 1,
-        movieTimescale: mp4CompilerState.semanticHints?.movieTimescale
-    });
-
-    // ---------------------------------------------------------
-    // Movie Header (mvhd)
-    // ---------------------------------------------------------
-    const mvhd = emitMvhdBox(mvhdTiming);
-
-    // ---------------------------------------------------------
-    // Track Header policy (container-level)
-    // ---------------------------------------------------------
-    const tkhdPolicy = applyTrackHeaderPolicy({
-        mdhdTimescale: mp4CompilerState.buildParameters.trackTimescale,
-        mdhdDuration:  mp4CompilerState.trackDuration,
-        mvhdTimescale: mvhdTiming.timescale
-    });
-
-    const editListParams = applyEditListPolicy({
-        trackDuration: mp4CompilerState.trackDuration,
-        trackTimescale: mp4CompilerState.buildParameters.trackTimescale,
-        movieTimescale: mvhdTiming.timescale,
-        mediaStartTime: mp4CompilerState.semanticCore.accessUnits[0].pts
-    });
-
-    const edts = emitEdtsBox({
-        elst: emitElstBox(editListParams.elst)
-    });
-
-    // ---------------------------------------------------------
-    // Track and movie boxes
-    // ---------------------------------------------------------
-
-    // ---------------------------------------------------------
-    // Track Header (tkhd)
-    // ---------------------------------------------------------
-    //
-    // Track ID assignment
-    // -------------------
-    //
-    // MP4 requires each track to have a positive integer track ID.
-    // Under the current compiler constraints:
-    //
-    //   - exactly ONE track is supported
-    //   - multi-track (e.g. audio) support is not yet implemented
-    //   - no track ordering or numbering policy exists yet
-    //
-    // Therefore, the only valid and honest value is:
-    //
-    //   trackId = 1
-    //
-    // This is a CONTAINER-LEVEL decision, not a semantic media fact.
-    //
-    // When multi-track support is introduced, this value MUST be
-    // replaced by an explicit Track ID Policy that assigns stable,
-    // deterministic IDs across tracks.
-    //
-
-    // ---------------------------------------------------------
-    // Track Header policy (container-level)
-    // ---------------------------------------------------------
-    const tkhd = emitTkhdBox({
-        trackId: 1,
-        duration: tkhdPolicy.duration,
-        width: mp4CompilerState.buildParameters.codedWidth,
-        height: mp4CompilerState.buildParameters.codedHeight,
-        widthFraction: tkhdPolicy.widthFraction,
-        heightFraction: tkhdPolicy.heightFraction
-    });
-
-    const trak = emitTrakBox({
-        tkhd,
-        edts,
-        mdia
-    });
-
-    const udtaNode = applyUdtaPolicy({
-        opaqueUdta: mp4CompilerState.buildHints?.udtaBytes,
-        encoderIdentity: mp4CompilerState.buildHints?.encoderIdentity
-    });
-
-    // ---------------------------------------------------------
-    // Movie Header (mvhd)
-    // ---------------------------------------------------------
-    //
-    // nextTrackId assignment
-    // ----------------------
-    //
-    // MP4 requires mvhd.next_track_ID to indicate the next
-    // available track identifier.
-    //
-    // Under current constraints:
-    //   - exactly ONE track is supported
-    //   - that track is assigned trackId = 1
-    //
-    // Therefore, the only valid value is:
-    //
-    //   nextTrackId = 2
-    //
-    // This is a CONTAINER-LEVEL decision.
-    // When multi-track support is added, this MUST be replaced
-    // by an explicit Track ID allocation policy.
-    //
-    const moov = emitMoovBox({
-        mvhd,
-        traks: [trak],
-        udta: udtaNode 
-    });
-
-    // DEBUG: inspect moov box structure before serialization
-    console.log("=== DEBUG: moov box structure ===");
-    console.log("moov.type:", moov.type);
-    console.log(
-        "moov.children:",
-        moov.children.map(child => child.type)
-    );
-
-    const moovUdta = moov.children.find(child => child.type === "udta");
-
-    if (!moovUdta) {
-        console.log("DEBUG: moov has NO udta child");
-    } else {
-        console.log("DEBUG: moov.udta found");
-        console.log("  udta.__opaque:", moovUdta.__opaque === true);
-        console.log(
-            "  udta.children:",
-            Array.isArray(moovUdta.children)
-            ? moovUdta.children.map(c => c.type)
-            : moovUdta.children
+    const mdatStartOffset =
+        boxesBeforeMdat.reduce(
+            (sum, b) => sum + b.byteLength,
+            0
         );
+
+    // -------------------------------------------------
+    // Phase 6 — resolve STCO
+    // -------------------------------------------------
+    const perTrackStcoOffsets =
+        resolveStcoOffsetsPerTrack({
+            tracks: mp4CompilerState.tracks,
+            mdatChunkLayout:
+                mp4CompilerState.mdatPayloadAndChunkLayout.mdatChunkLayout,
+            mdatStartOffset
+        });
+
+    const stcoIntents =
+        perTrackStcoOffsets.map(chunkOffsets =>
+            adaptStcoIntentFromOffsets({ chunkOffsets })
+        );
+
+    // -------------------------------------------------
+    // Phase 7 — FINAL rebuild
+    // -------------------------------------------------
+    const finalTrakIntents =
+        mp4CompilerState.tracks.map((track, index) => {
+
+            const stblIntent =
+                buildStblIntentFromTrack({
+                    track: {
+                        ...track,
+                        storedIntent: {
+                            ...track.storedIntent,
+                            stco: stcoIntents[index]
+                        }
+                    }
+                });
+
+            const minfIntent =
+                buildMinfIntentFromTrack({
+                    track: {
+                        ...track,
+                        storedIntent: { stblIntent }
+                    }
+                });
+
+            const mdiaIntent =
+                buildMdiaIntentFromTrack({
+                    track: {
+                        ...track,
+                        storedIntent: { minfIntent }
+                    }
+                });
+
+            return buildTrakIntentFromTrakAndMvhd({
+                track: {
+                    ...track,
+                    storedIntent: {
+                        mdiaIntent,
+                        mdhd: mdiaIntent.mdhd
+                    }
+                },
+                mvhd: mvhdIntent
+            });
+        });
+
+    const finalMoovNode =
+        composeMoovNode({
+            mvhdIntent,
+            trakIntents: finalTrakIntents,
+            udtaIntent:
+                buildUdtaIntentFromBuildHints({
+                    buildHints: mp4CompilerState.buildHints
+                })
+        });
+
+    // -------------------------------------------------
+    // Phase 8 — FINAL emission
+    // -------------------------------------------------
+    const mdatNode =
+        EmitterRegistry.emit(
+            "mdat",
+            {
+                payload:
+                    mp4CompilerState.mdatPayloadAndChunkLayout.mdatPayload
+            }
+        );
+
+    const topLevelByType = {
+        ftyp: ftypNode,
+        free: freeNode,
+        moov: finalMoovNode,
+        mdat: mdatNode
+    };
+
+    const orderedTopLevelNodes =
+        mp4CompilerState.buildParameters.fileBoxOrder.map(
+            type => topLevelByType[type]
+        );
+
+    const parts =
+        orderedTopLevelNodes.map(node => serializeBoxTree(node));
+
+    const totalSize =
+        parts.reduce((sum, bytes) => sum + bytes.length, 0);
+
+    const bytes = new Uint8Array(totalSize);
+
+    let offset = 0;
+    for (const part of parts) {
+        bytes.set(part, offset);
+        offset += part.length;
     }
-    console.log("=== END DEBUG ===");
 
-    // END DEBUG
+    return bytes;
+}
 
-    const ftyp = emitFtypBox({
-        majorBrand: "isom",
-        minorVersion: 512,
-        compatibleBrands: ["isom", "iso2", "avc1", "mp41"]
-    });
+/**
+ *   Tier 1 — Semantic Media Facts (Normalization)
+ *
+ * Canonicalizes Mp4BuildInput into a complete, internally consistent form
+ * required by the NativeMuxer compilation pipeline.
+ *
+ * -------------------------------------------------------------------------
+ * Purpose
+ * -------------------------------------------------------------------------
+ *
+ * Normalization exists to make downstream stages *boring*.
+ *
+ * After normalization:
+ *   - all required fields are present
+ *   - all invariants are enforced
+ *   - any value with only ONE valid outcome is made explicit
+ *
+ * Downstream code must never need to ask:
+ *   - “is this present?”
+ *   - “which value should I choose?”
+ *
+ * -------------------------------------------------------------------------
+ * What normalization IS
+ * -------------------------------------------------------------------------
+ *
+ * Normalization:
+ *   - enforces intrinsic media invariants
+ *   - fills in required values when only one valid value exists
+ *   - makes implicit facts explicit
+ *
+ * Normalization may:
+ *   - assert constraints
+ *   - copy, annotate, or reshape data
+ *   - attach deterministic, unavoidable values
+ *
+ * -------------------------------------------------------------------------
+ * What normalization is NOT
+ * -------------------------------------------------------------------------
+ *
+ * Normalization must NOT:
+ *   - choose between multiple valid outcomes
+ *   - apply container compatibility rules
+ *   - derive structural layout (chunks, tables, topology)
+ *   - encode MP4 box representation
+ *
+ * If a decision has more than one valid answer:
+ *   - it does NOT belong here
+ *   - it is either a derivation strategy or a container policy
+ *
+ * -------------------------------------------------------------------------
+ * Current invariants enforced
+ * -------------------------------------------------------------------------
+ *
+ * At the current maturity of the system:
+ *
+ *   - exactly ONE sample description per track is supported
+ *   - therefore, all samples MUST reference sampleDescriptionIndex = 1
+ *
+ * This is NOT a policy or a preference.
+ * It is the only value that can produce a valid MP4 under current constraints.
+ *
+ * If multi-sample-description tracks are ever supported,
+ * this normalization MUST be revisited.
+ *
+ */
+export function prepareTracksForStructuralDerivation({ mp4CompilerState }) {
 
-    // ---------------------------------------------------------
-    // Physical layout + final file assembly
-    // ---------------------------------------------------------
-    const layout = resolvePhysicalLayout({
-        ftypNode: ftyp,
-        moovNode: moov,
-        mdatPayload,
-        chunkOffsets
-    });
+    if (!mp4CompilerState.buildParameters) {
+        mp4CompilerState.buildParameters = {};
+    }
 
-    const committedMoov = commitMoovWithResolvedLayout({
-        originalMoovNode: moov,
-        stcoOffsets: layout.stcoOffsets
-    });
+    if (!mp4CompilerState.buildParameters.fileBoxOrder) {
+        mp4CompilerState.buildParameters.fileBoxOrder = [ "ftyp", "free", "mdat", "moov" ];
+    }
 
-    return emitMp4FileFromResolvedParts({
-        ftypNode: ftyp,
-        committedMoovNode: committedMoov,
-        mdatPayload,
-        fileBoxOrder: layout.fileBoxOrder
-    });
+    // Initialise top-level node storage
+    mp4CompilerState.storedTopLevelNodes = {};
+
+    mp4CompilerState.highestTrackId = 0;
+    for (const track of mp4CompilerState.tracks) {
+        mp4CompilerState.highestTrackId++;
+        track.trackId = mp4CompilerState.highestTrackId;
+        if (track.semanticCore.codec.codec == "opus") {
+            mp4CompilerState.buildParameters.fileBoxOrder = [ "ftyp", "moov", "free", "mdat" ];
+        }
+    }
+
+    for (const track of mp4CompilerState.tracks) {
+        // test: testNativeMuxer_DeriveSemanticTrackFamily
+        track.semanticTrackFamily = deriveSemanticTrackFamily(track);
+    }
+
+    for (const [index, track] of mp4CompilerState.tracks.entries()) {
+        validatePacketTopologyAdmissibility(track, index);
+    }
+
+
+    for (const track of mp4CompilerState.tracks) {
+
+
+        /**
+         * Normalizes access units into a compiler-ready form.
+         *
+         * Guarantees:
+         * - each access unit has a derived `duration` (computed from PTS adjacency)
+         * - each access unit has `sampleDescriptionIndex = 1`
+         *
+         * Notes:
+         * - WebCodecs provides PTS, not duration
+         * - all outcomes here are single-valid and non-policy decisions
+         *
+         *  test: testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs
+         */
+        normalizeAccessUnitsInPlace({ accessUnits: track.semanticCore.accessUnits, codec: track.semanticCore.codec.codec });
+    }
+
+    for (const track of mp4CompilerState.tracks) {
+
+        // test: testNativeMuxer_TrackDuration_Relationships_AllFixtures
+        track.trackDuration = getSumOfAccessUnitDurations(track.semanticCore.accessUnits);
+    }
+
+    for (const track of mp4CompilerState.tracks) {
+        if (track.semanticCore.codec.codec === "opus" &&
+            track.semanticCore.codec.esds !== undefined) {
+            throw new Error("Opus must not provide esds; use dOps instead");
+        }
+    }
+
+    for (const track of mp4CompilerState.tracks) {
+        track.storedIntent = {}
+    }
+
+    mp4CompilerState.storedIntent = {};
+}
+
+export function getSumOfAccessUnitDurations(accessUnits) {
+
+        if (!accessUnits) {
+            throw new Error( "getSumOfAccessUnitDurations: accessUnits is required");
+        }
+        if (!Array.isArray(accessUnits)) {
+            throw new Error( "getSumOfAccessUnitDurations: accessUnits must be an array");
+        }
+
+        if (accessUnits.length === 0) {
+            return 0;
+        }
+
+        let totalDuration = 0;
+
+        for (const accessUnit of accessUnits) {
+
+            if (!Number.isInteger(accessUnit.duration)) {
+                throw new Error("getSumOfAccessUnitDurations: accessUnit.duration must be an integer");
+            }
+
+            totalDuration += accessUnit.duration;
+        }
+
+        return totalDuration;
 }

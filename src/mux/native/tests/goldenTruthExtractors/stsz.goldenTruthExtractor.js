@@ -1,78 +1,110 @@
 import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import {
+    readUint32ArrayFromOffset,
+    readBoxHeaderFromBytes
+} from "../../box-schema/boxLayoutReaders.js";
+import {
+    getPayloadOffsetForPath
+} from "../../box-schema/boxSchemas.js";
 
+import { PRIMITIVE_SIZES } from "../../box-schema/primitiveLayouts.js";
 /**
  * STSZ — Sample Size Box
  * ---------------------
  *
- * Declares the byte size of each encoded sample.
+ * Layout (ISO/IEC 14496-12):
  *
- * Parser responsibilities:
- * ------------------------
- * - Read variable-size sample table (sample_size == 0)
- * - Preserve declared sizes exactly
- * - Expose raw bytes for locked-layout equivalence
+ *   uint32 sample_size
+ *   uint32 sample_count
+ *   uint32[sample_count] sample_sizes
  *
- * Non-responsibilities:
- * ---------------------
+ * Contract:
+ * ---------
+ * - readBoxReport() exposes LOSSLESS on-disk structure
  * - No inference
- * - No constant-size optimization
- * - No validation across boxes
- * - No mutation
+ * - No reuse of incompatible generic readers
  */
 
-function readStszBoxFieldsFromBoxBytes(box) {
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
+
+function readBoxReport(box) {
     if (!(box instanceof Uint8Array)) {
-        throw new Error(
-            "stsz.readFields: expected Uint8Array"
-        );
+        throw new Error("stsz.readBoxReport: expected Uint8Array");
     }
 
-    const version = box[8];
+    const path = "moov/trak/mdia/minf/stbl/stsz";
 
-    if (version !== 0) {
-        throw new Error(
-            `STSZ: unsupported version ${version} (expected 0)`
-        );
-    }
+    const header = readBoxHeaderFromBytes(box, path);
+    const payloadOffset = getPayloadOffsetForPath(path);
 
-    const sampleSize  = readUint32(box, 12);
-    const sampleCount = readUint32(box, 16);
+    const UINT32 = PRIMITIVE_SIZES.uint32;
+
+    const sampleSize  = readUint32(box, payloadOffset);
+    const sampleCount = readUint32(box, payloadOffset + UINT32);
+
+    let sizes;
 
     if (sampleSize !== 0) {
-        throw new Error(
-            `STSZ: constant sample_size ${sampleSize} not supported`
-        );
+        // constant-size samples: expand deterministically
+        sizes = new Array(sampleCount).fill(sampleSize);
+    } else {
+        // variable-size samples: read table
+        sizes = readUint32ArrayFromOffset({
+            box,
+            payloadOffset: payloadOffset + UINT32,
+            count: sampleCount
+        });
     }
 
-    const sizes = [];
-    let offset = 20;
+    return {
+        raw: box,
 
-    for (let i = 0; i < sampleCount; i++) {
-        sizes.push(
-            readUint32(box, offset)
-        );
-        offset += 4;
+        box: {
+            type: "stsz",
+            header,
+            fields: {
+                sampleSize,
+                sampleCount,
+                sizes
+            }
+        },
+
+        derived: {}
+    };
+}
+
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
+function getEmitterInput(boxBytes) {
+    const read = readBoxReport(boxBytes);
+
+    const sampleSize  = read.box.fields.sampleSize;
+    const sampleCount = read.box.fields.sampleCount;
+
+    if (sampleSize === 0) {
+        // Variable-size STSZ
+        return {
+            sampleSize: 0,
+            sampleCount,
+            sizes: read.box.fields.sizes.slice()
+        };
     }
 
+    // Fixed-size STSZ
     return {
         sampleSize,
-        sampleCount,
-        sizes,
-        raw: box
+        sampleCount
     };
 }
 
-function getStszBuildParamsFromBoxBytes(box) {
-    const parsed = readStszBoxFieldsFromBoxBytes(box);
-
-    // Framesmith Phase A:
-    // Preserve exact sample sizes declared by ffmpeg
-    return {
-        sizes: parsed.sizes.slice()
-    };
-}
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerStszGoldenTruthExtractor(register) {
-    register.readFields(readStszBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getStszBuildParamsFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

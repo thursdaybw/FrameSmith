@@ -18,7 +18,7 @@
  *   type (4)   ← dynamic FourCC
  *   children…
  */
-export function emitIlstItemBox(params) {
+function emitIlstItemBox(params) {
 
     // ---------------------------------------------------------
     // Contract validation
@@ -70,4 +70,11 @@ export function emitIlstItemBox(params) {
         type,
         children: [ data ]
     };
+}
+
+export function registerIlstItemEmitter(registry) {
+    registry.registerEmitter(
+        "moov/udta/meta/ilst/{atom}",
+        emitIlstItemBox
+    );
 }

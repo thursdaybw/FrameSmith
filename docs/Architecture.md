@@ -7,6 +7,10 @@ This document describes the architectural boundaries, contracts, and
 direction of travel for the system. All source-level docblocks refer
 back to this file.
 
+Notes to include:
+“Packetised chunking requires explicit packet topology.
+If it’s not provided, the compiler will not invent it.”
+
 ---
 
 # 1. Core Principles

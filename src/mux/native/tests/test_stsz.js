@@ -1,10 +1,10 @@
-import { emitStszBox } from "../box-emitters/stszBox.js";
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
+import { readFourCC } from "../box-schema/boxLayoutReaders.js";
 import { extractBoxByPathFromMp4 } from "./reference/BoxExtractor.js";
-import { assertEqual } from "./assertions.js";
+import { assertEqual, assertEqualHex } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
-
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 /**
  * testStsz_VariableEncoding_Structure
  * --------
@@ -13,7 +13,7 @@ import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
  * This test validates:
  * - FullBox header correctness (version, flags)
  * - Variable-size encoding (sample_size = 0)
- * - Accurate sample_count
+ * - Accurate sampleCount
  * - Exact per-sample entry encoding
  * - Big-endian integer layout
  * - Total box size calculation
@@ -24,174 +24,119 @@ import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
  * to guarantee correctness for real-world video streams.
  * Constant-size optimization is deliberately omitted.
  */
-export async function testStsz_Structure() {
-    console.log("=== testStsz (granular structure) ===");
+export function testStsz_Structure() {
 
     // ------------------------------------------------------------
     // TEST 1: Empty sample list
     // ------------------------------------------------------------
-    let input = [];
-    let node  = emitStszBox({ sizes: input });
-    let stsz  = serializeBoxTree(node);
 
-    // Box header
-    assertEqual(
-        "stsz.size (empty)",
-        readUint32(stsz, 0),
-        20
-    );
+    const emptyNode = EmitterRegistry.emit( "moov/trak/mdia/minf/stbl/stsz|variable", { sampleSize: 0, sampleCount: 0, sizes: [] });
 
-    assertEqual(
-        "stsz.type",
-        readFourCC(stsz, 4),
-        "stsz"
-    );
+    assertEqual("stsz.type", emptyNode.type, "stsz");
+    assertEqual("stsz.version", emptyNode.version, 0);
+    assertEqual("stsz.flags", emptyNode.flags, 0);
 
-    // FullBox header
-    const version1 = stsz[8];
-    const flags1 =
-        (stsz[9] << 16) |
-        (stsz[10] << 8) |
-        stsz[11];
+    assertEqual("stsz.body.length (empty)", emptyNode.body.length, 3);
 
-    assertEqual("stsz.version", version1, 0);
-    assertEqual("stsz.flags", flags1, 0);
+    assertEqual("stsz.sampleSize (empty)",  emptyNode.body[0].int, 0);
+    assertEqual("stsz.sampleCount (empty)", emptyNode.body[1].int, 0);
 
-    // Payload
-    assertEqual(
-        "stsz.sample_size (empty)",
-        readUint32(stsz, 12),
-        0
-    );
-
-    assertEqual(
-        "stsz.sample_count (empty)",
-        readUint32(stsz, 16),
-        0
-    );
-
-    assertEqual(
-        "stsz.length (empty)",
-        stsz.length,
-        20
-    );
+    assertEqual( "stsz.sizes.values (empty)", emptyNode.body[2].values.length, 0);
 
     // ------------------------------------------------------------
     // TEST 2: Single sample
     // ------------------------------------------------------------
-    input = [100];
-    node  = emitStszBox({ sizes: input });
-    stsz  = serializeBoxTree(node);
 
-    const expectedSize2 = 20 + 4;
+    const singleNode = EmitterRegistry.emit( "moov/trak/mdia/minf/stbl/stsz|variable", { sampleSize: 0, sampleCount: 1, sizes: [100] });
 
-    assertEqual(
-        "stsz.size (single)",
-        readUint32(stsz, 0),
-        expectedSize2
-    );
+    assertEqual("stsz.body.length (single)", singleNode.body.length, 3);
+    assertEqual("stsz.sampleSize (single)",  singleNode.body[0].int, 0);
+    assertEqual("stsz.sampleCount (single)", singleNode.body[1].int, 1);
 
-    assertEqual(
-        "stsz.sample_size (single)",
-        readUint32(stsz, 12),
-        0
-    );
-
-    assertEqual(
-        "stsz.sample_count (single)",
-        readUint32(stsz, 16),
-        1
-    );
-
-    assertEqual(
-        "stsz.entry[0]",
-        readUint32(stsz, 20),
-        100
-    );
-
-    assertEqual(
-        "stsz.length (single)",
-        stsz.length,
-        expectedSize2
-    );
+    assertEqual( "stsz.entry[0] (single)", singleNode.body[2].values[0], 100);
 
     // ------------------------------------------------------------
     // TEST 3: Multiple samples
     // ------------------------------------------------------------
+
     const sizes = [5, 10, 15];
-    node = emitStszBox({ sizes: sizes})
-    stsz = serializeBoxTree(node);
 
-    const expectedSize3 = 20 + (4 * sizes.length);
+    const multiNode = EmitterRegistry.emit( "moov/trak/mdia/minf/stbl/stsz|variable", { sampleSize: 0, sampleCount: sizes.length, sizes });
 
-    assertEqual(
-        "stsz.size (multiple)",
-        readUint32(stsz, 0),
-        expectedSize3
-    );
-
-    assertEqual(
-        "stsz.sample_size (multiple)",
-        readUint32(stsz, 12),
-        0
-    );
-
-    assertEqual(
-        "stsz.sample_count (multiple)",
-        readUint32(stsz, 16),
-        sizes.length
-    );
+    assertEqual("stsz.sampleCount (multiple)", multiNode.body[1].int, 3);
 
     for (let i = 0; i < sizes.length; i++) {
-        assertEqual(
-            `stsz.entry[${i}]`,
-            readUint32(stsz, 20 + (i * 4)),
-            sizes[i]
-        );
+        assertEqual( `stsz.entry[${i}]`, multiNode.body[2].values[i], sizes[i]);
     }
-
-    assertEqual(
-        "stsz.length (multiple)",
-        stsz.length,
-        expectedSize3
-    );
 
     // ------------------------------------------------------------
     // TEST 4: Input immutability
     // ------------------------------------------------------------
+
     const mutable = [3, 4, 5];
-    node = emitStszBox({ sizes: mutable });
-    stsz = serializeBoxTree(node);
+
+    const immutabilityNode = EmitterRegistry.emit( "moov/trak/mdia/minf/stbl/stsz|variable", { sampleSize: 0, sampleCount: mutable.length, sizes: mutable });
 
     mutable[0] = 999;
 
-    assertEqual(
-        "stsz.immutability",
-        readUint32(stsz, 20),
-        3
-    );
+    assertEqual( "stsz.immutability", immutabilityNode.body[2].values[0], 3);
 
     // ------------------------------------------------------------
-    // TEST 5: Big-endian correctness
+    // TEST 5: Integer integrity
     // ------------------------------------------------------------
-    node = emitStszBox({ sizes: [256] });
-    stsz = serializeBoxTree(node);
 
-    assertEqual(
-        "stsz.big_endian_encoding",
-        readUint32(stsz, 20),
-        256
-    );
+    const bigNode = EmitterRegistry.emit( "moov/trak/mdia/minf/stbl/stsz|variable", { sampleSize: 0, sampleCount: 1, sizes: [256] });
 
-    console.log("PASS: stsz granular structure is correct");
+    assertEqual( "stsz.integer_integrity", bigNode.body[2].values[0], 256);
 }
 
+export function testStsz_Structure_Fixed() {
+
+    // ------------------------------------------------------------
+    // TEST 1: Zero samples (fixed form)
+    // ------------------------------------------------------------
+
+    const emptyNode = EmitterRegistry.emit( "moov/trak/mdia/minf/stbl/stsz|fixed", { sampleSize: 240, sampleCount: 0 });
+
+    assertEqual("stsz.type", emptyNode.type, "stsz");
+    assertEqual("stsz.version", emptyNode.version, 0);
+    assertEqual("stsz.flags", emptyNode.flags, 0);
+
+    assertEqual("stsz.body.length (empty)", emptyNode.body.length, 2);
+
+    assertEqual("stsz.sampleSize (empty)",  emptyNode.body[0].int, 240);
+    assertEqual("stsz.sampleCount (empty)", emptyNode.body[1].int, 0);
+
+    // ------------------------------------------------------------
+    // TEST 2: Single sample (fixed form)
+    // ------------------------------------------------------------
+
+    const singleNode = EmitterRegistry.emit( "moov/trak/mdia/minf/stbl/stsz|fixed", { sampleSize: 240, sampleCount: 1 });
+
+    assertEqual("stsz.body.length (single)", singleNode.body.length, 2);
+    assertEqual("stsz.sampleSize (single)",  singleNode.body[0].int, 240);
+    assertEqual("stsz.sampleCount (single)", singleNode.body[1].int, 1);
+
+    // ------------------------------------------------------------
+    // TEST 3: Multiple samples (fixed form)
+    // ------------------------------------------------------------
+
+    const multiNode = EmitterRegistry.emit( "moov/trak/mdia/minf/stbl/stsz|fixed", { sampleSize: 240, sampleCount: 3 });
+
+    assertEqual("stsz.sampleSize (multiple)",  multiNode.body[0].int, 240);
+    assertEqual("stsz.sampleCount (multiple)", multiNode.body[1].int, 3);
+
+    // ------------------------------------------------------------
+    // TEST 4: Integer integrity (fixed form)
+    // ------------------------------------------------------------
+
+    const bigNode = EmitterRegistry.emit( "moov/trak/mdia/minf/stbl/stsz|fixed", { sampleSize: 1024, sampleCount: 2 });
+
+    assertEqual("stsz.sampleSize (integer_integrity)", bigNode.body[0].int, 1024);
+    assertEqual("stsz.sampleCount (integer_integrity)", bigNode.body[1].int, 2);
+}
 
 export async function testStsz_LockedLayoutEquivalence_ffmpeg() {
-
-    console.log(
-        "=== testStsz_LockedLayoutEquivalence_ffmpeg (golden MP4) ==="
-    );
 
     // ---------------------------------------------------------
     // 1. Load golden MP4
@@ -200,105 +145,156 @@ export async function testStsz_LockedLayoutEquivalence_ffmpeg() {
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
     // ---------------------------------------------------------
-    // 2. Parse reference STSZ via registry
+    // 2. Extract golden truth directly (authoritative)
     // ---------------------------------------------------------
-    const refParsed = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl/stsz",
-        { trackType: "video" }
-        
-    );
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(mp4, "moov/trak[0]/mdia/minf/stbl/stsz");
 
-    const refFields = refParsed.readFields();
-    const params    = refParsed.getBuilderInput();
+    const refReport = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
+
+    const refRaw = refReport.raw;
 
     // ---------------------------------------------------------
     // 3. Rebuild STSZ from semantic params
     // ---------------------------------------------------------
-    const outBytes = serializeBoxTree(
-        emitStszBox(params)
-    );
+    let stszEmitterPath;
+
+    const refSampleSize = refReport.box.fields.sampleSize;
+
+    if (refSampleSize === 0) {
+        stszEmitterPath = "moov/trak/mdia/minf/stbl/stsz|variable";
+    } else {
+        stszEmitterPath = "moov/trak/mdia/minf/stbl/stsz|fixed";
+    }
+
+    let outParams;
+
+    if (refSampleSize === 0) {
+        outParams = { sampleSize: 0, sampleCount: params.sizes.length, sizes: params.sizes };
+    } else {
+        outParams = { sampleSize: refSampleSize, sampleCount: params.sizes.length }; }
+
+    const outBytes = serializeBoxTree(EmitterRegistry.emit( stszEmitterPath, outParams ));
 
     // ---------------------------------------------------------
     // 4. Field-level structural assertions
     // ---------------------------------------------------------
 
-    // Box header
-    assertEqual(
-        "stsz.type",
-        readFourCC(outBytes, 4),
-        "stsz"
-    );
+    // Box type
+    assertEqual("stsz.type", readFourCC(outBytes, 4), "stsz");
 
     // FullBox header
-    assertEqual(
-        "stsz.version",
-        outBytes[8],
-        0
-    );
+    assertEqual("stsz.version", outBytes[8], 0);
 
     const flags =
         (outBytes[9] << 16) |
         (outBytes[10] << 8) |
         outBytes[11];
 
-    assertEqual(
-        "stsz.flags",
-        flags,
-        0
-    );
+    assertEqual("stsz.flags", flags, 0);
 
     // sample_size (Framesmith invariant)
-    assertEqual(
-        "stsz.sample_size",
-        readUint32(outBytes, 12),
-        0
-    );
+    assertEqual("stsz.sample_size", readUint32(outBytes, 12), refSampleSize);
 
-    // sample_count
-    assertEqual(
-        "stsz.sample_count",
-        readUint32(outBytes, 16),
-        refFields.sampleCount
-    );
+    // sampleCount
+    assertEqual("stsz.sampleCount", readUint32(outBytes, 16), refReport.box.fields.sampleCount);
 
     // per-sample sizes
-    let offset = 20;
+    if (refSampleSize === 0) {
 
-    for (let i = 0; i < refFields.sampleCount; i++) {
-        assertEqual(
-            `stsz.sample_size[${i}]`,
-            readUint32(outBytes, offset),
-            refFields.sizes[i]
-        );
-        offset += 4;
+        let offset = 20;
+        const sizes = refReport.box.fields.sizes;
+
+        for (let i = 0; i < sizes.length; i++) {
+            assertEqual(`stsz.sample_size[${i}]`, readUint32(outBytes, offset), sizes[i]);
+            offset += 4;
+        }
     }
 
     // ---------------------------------------------------------
     // 5. Byte-for-byte locked-layout equivalence
     // ---------------------------------------------------------
-    const refBytes = extractBoxByPathFromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl/stsz"
-    );
+    assertEqual("stsz.size", outBytes.length, refRaw.length);
 
-    assertEqual(
-        "stsz.size",
-        outBytes.length,
-        refBytes.length
-    );
-
-    for (let i = 0; i < refBytes.length; i++) {
-        assertEqual(
-            `stsz.byte[${i}]`,
-            outBytes[i],
-            refBytes[i]
-        );
+    for (let i = 0; i < refRaw.length; i++) {
+        assertEqualHex(`stsz.byte[${i}]`, outBytes[i], refRaw[i]);
     }
-
-    console.log(
-        "PASS: stsz matches golden MP4 byte-for-byte"
-    );
 }
 
 
+export async function testStsz_LockedLayoutEquivalence_ffmpeg_opus() {
+
+    // ---------------------------------------------------------
+    // 1. Load golden MP4 (Opus)
+    // ---------------------------------------------------------
+    const resp = await fetch("reference/reference_av_opus.mp4");
+    const mp4  = new Uint8Array(await resp.arrayBuffer());
+
+    // ---------------------------------------------------------
+    // 2. Extract golden truth directly (authoritative)
+    // ---------------------------------------------------------
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
+        mp4,
+        "moov/trak[1]/mdia/minf/stbl/stsz"
+    );
+
+    const refReport = truth.readBoxReport();
+    const refRaw    = refReport.raw;
+
+    // ---------------------------------------------------------
+    // 3. Rebuild STSZ from semantic params (fixed form)
+    // ---------------------------------------------------------
+    const refSampleSize  = refReport.box.fields.sampleSize;
+    const refSampleCount = refReport.box.fields.sampleCount;
+
+    assertEqual("opus.sampleSize != 0", refSampleSize !== 0, true);
+
+    const outParams = {
+        sampleSize:  refSampleSize,
+        sampleCount: refSampleCount
+    };
+
+    const outBytes =
+        serializeBoxTree(
+            EmitterRegistry.emit(
+                "moov/trak/mdia/minf/stbl/stsz|fixed",
+                outParams
+            )
+        );
+
+    // ---------------------------------------------------------
+    // 4. Field-level structural assertions
+    // ---------------------------------------------------------
+
+    // Box type
+    assertEqual("stsz.type", readFourCC(outBytes, 4), "stsz");
+
+    // FullBox header
+    assertEqual("stsz.version", outBytes[8], 0);
+
+    const flags =
+        (outBytes[9]  << 16) |
+        (outBytes[10] << 8)  |
+        outBytes[11];
+
+    assertEqual("stsz.flags", flags, 0);
+
+    // sample_size (fixed)
+    assertEqual("stsz.sample_size", readUint32(outBytes, 12), refSampleSize);
+
+    // sampleCount
+    assertEqual(
+        "stsz.sampleCount",
+        readUint32(outBytes, 16),
+        refSampleCount
+    );
+
+    // ---------------------------------------------------------
+    // 5. Byte-for-byte locked-layout equivalence
+    // ---------------------------------------------------------
+    assertEqual("stsz.size", outBytes.length, refRaw.length);
+
+    for (let i = 0; i < refRaw.length; i++) {
+        assertEqualHex(`stsz.byte[${i}]`, outBytes[i], refRaw[i]);
+    }
+}

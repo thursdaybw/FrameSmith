@@ -519,3 +519,45 @@ This section exists to record **when NativeMuxer stopped being shaped by conveni
 
 From here on, NativeMuxer is not negotiated.
 It is compiled.
+
+---
+
+## 14. Recent Evolution Snapshot (February 14, 2026)
+
+This section records the latest architecture-relevant movement since the
+previous major update.
+
+### 14.1 `co64` moved from theory to partial implementation
+
+`co64` support progressed materially:
+
+* schema and emitter wiring were added
+* extractor/emitter agreement tests were added
+* locked-layout byte equivalence for `co64` leaf emission was proven against
+  an FFmpeg oracle
+
+This is real progress, but not full completion.
+
+### 14.2 Compiler policy remains `stco`-only
+
+The compile pipeline still resolves chunk offsets to `stco` in final output.
+`co64` is not yet selected by compiler policy.
+
+So current state is:
+
+* `co64` primitive support: yes
+* compiler-level `stco/co64` decision: not yet
+* end-to-end `co64` compile guarantee: not yet
+
+### 14.3 Test realism improved
+
+Earlier behavior could make browser runs look greener than they were for large
+`co64` oracles.
+
+Current policy is explicit:
+
+* browser marks node-only `co64` tests as `SKIP`
+* node runs the authoritative `co64` checks
+
+This preserves signal quality while still validating real FFmpeg-backed `co64`
+paths.

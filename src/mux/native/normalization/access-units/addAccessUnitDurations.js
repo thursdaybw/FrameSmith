@@ -1,25 +1,17 @@
-export function addAccessUnitDurationsInPlace({ accessUnits }) {
-
-    console.log("=== DEBUG addAccessUnitDurationsInPlace ===");
-    console.log(
-        "PTS list:",
-        accessUnits.map(u => u.pts)
-    );
+export function addAccessUnitDurationsInPlace({
+    accessUnits,
+    codec,
+}) {
 
     assertNonEmptyArray(accessUnits);
     assertPtsPresent(accessUnits);
 
-    addDurationsByPtsAdjacency(accessUnits);
-
-    console.log(
-        "Derived durations:",
-        accessUnits.map(u => u.duration)
-    );
+    addDurationsByPtsAdjacency({
+        accessUnits,
+        codec,
+    });
 
     const total = accessUnits.reduce((s, u) => s + u.duration, 0);
-    console.log("Total trackDuration (pre-deriver):", total);
-    console.log("=== END DEBUG addAccessUnitDurationsInPlace ===");
-
 }
 
 function assertNonEmptyArray(accessUnits) {
@@ -52,7 +44,10 @@ function assertPtsPresent(accessUnits) {
  *
  * Original accessUnits order is preserved.
  */
-function addDurationsByPtsAdjacency(accessUnits) {
+function addDurationsByPtsAdjacency({
+    accessUnits,
+    codec,
+}) {
 
     // ---------------------------------------------------------
     // Build PTS-ordered index map
@@ -105,6 +100,7 @@ function addDurationsByPtsAdjacency(accessUnits) {
 
         durationByIndex.set(currentIndex, duration);
     }
+
 
     // ---------------------------------------------------------
     // Apply durations back to original access units

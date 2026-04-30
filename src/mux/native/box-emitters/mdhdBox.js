@@ -40,7 +40,8 @@
  * ----------------
  * ISO/IEC 14496-12 — Media Header Box (mdhd)
  */
-export function emitMdhdBox({ timescale, duration }) {
+function emitMdhdBox({ timescale, duration }) {
+
     // ---------------------------------------------------------------------
     // Validation (fail fast, no silent coercion)
     // ---------------------------------------------------------------------
@@ -164,4 +165,11 @@ export function emitMdhdBox({ timescale, duration }) {
             { short: 0 }
         ]
     };
+}
+
+export function registerMdhdEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/mdhd",
+        emitMdhdBox
+    );
 }

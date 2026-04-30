@@ -1,4 +1,6 @@
-import { readFourCC } from "../bytes/mp4ByteReader.js";
+import { getBoxSchemaForPath } from "../box-schema/boxSchemas.js";
+import { HEADER_LAYOUTS } from "../box-schema/headerLayouts.js";
+import { PRIMITIVE_SIZES } from "../box-schema/primitiveLayouts.js";
 
 /**
  * Container Box Model
@@ -125,7 +127,7 @@ import { readFourCC } from "../bytes/mp4ByteReader.js";
  * Returns a container abstraction that knows how
  * to enumerate its children correctly.
  */
-export function asIsoBoxContainer(bytes) {
+export function asIsoBoxContainer(bytes, path) {
 
     if (!(bytes instanceof Uint8Array)) {
         throw new Error(
@@ -134,12 +136,20 @@ export function asIsoBoxContainer(bytes) {
         );
     }
 
-    if (!bytes || bytes.length < 8) {
+    if (bytes.length < 8) {
         throw new Error("asIsoBoxContainer: invalid byte buffer");
     }
 
-    // File container: no MP4 box header at start
-    if (!looksLikeBox(bytes)) {
+    if (typeof path !== "string" || path.length === 0) {
+        throw new Error(
+            "asIsoBoxContainer: path must be a non-empty string"
+        );
+    }
+
+    // ------------------------------------------------------------
+    // File-level container (explicit schema root)
+    // ------------------------------------------------------------
+    if (path === "$mp4") {
         return makeContainer({
             bytes,
             childOffset: 0,
@@ -147,28 +157,56 @@ export function asIsoBoxContainer(bytes) {
         });
     }
 
-    const type = readBoxType(bytes);
+    const schema = getBoxSchemaForPath(path);
 
-    if (isValidChildBoxAtOffset(bytes, 12)) {
-        return makeContainer({
-            bytes,
-            childOffset: 12,
-            type
-        });
+    if (schema.structuralRole !== "container") {
+        throw new Error(
+            `asIsoBoxContainer: '${path}' is not a container per schema`
+        );
     }
 
-    if (isValidChildBoxAtOffset(bytes, 8)) {
-        return makeContainer({
-            bytes,
-            childOffset: 8,
-            type
-        });
+    const headerLayout = HEADER_LAYOUTS[schema.headerLayout];
+
+    if (!headerLayout) {
+        throw new Error(
+            `asIsoBoxContainer: unknown headerLayout '${schema.headerLayout}' for '${path}'`
+        );
     }
 
-    throw new Error(
-        `asIsoBoxContainer: cannot determine child offset for box '${type}'`
-    );
+    // ------------------------------------------------------------
+    // Compute child offset (header + declared fields)
+    // ------------------------------------------------------------
+    let childOffset = headerLayout.headerSize;
+
+    if (schema.fields) {
+        for (const fieldType of Object.values(schema.fields)) {
+
+            // Variable-length / opaque fields do not contribute
+            // to static child offsets
+            if (fieldType.endsWith("[]")) {
+                break;
+            }
+
+            const size = PRIMITIVE_SIZES[fieldType];
+
+            if (!size) {
+                throw new Error(
+                    `asIsoBoxContainer: unknown fixed-size primitive '${fieldType}' in '${path}'`
+                );
+            }
+
+            childOffset += size;
+        }
+    }
+
+    return makeContainer({
+        bytes,
+        childOffset,
+        type: null
+    });
+
 }
+
 
 /**
  * Binds raw bytes to traversal behavior.
@@ -197,78 +235,6 @@ function makeContainer({ bytes, childOffset, type }) {
             return enumerateChildrenFromOffset(bytes, childOffset);
         }
     };
-}
-
-/**
- * Heuristically determines whether a byte buffer begins with
- * an MP4 box header.
- *
- * MP4 box headers encode the box type as four printable ASCII
- * characters at byte offsets 4–7.
- *
- * This function performs a *structural sanity check*, not a
- * semantic validation.
- *
- * Purpose:
- * - Distinguish a top-level MP4 file from a boxed payload
- *
- * This enables asIsoBoxContainer to treat the full file as a
- * container whose children begin at offset 0.
- */
-function looksLikeBox(bytes) {
-    if (bytes.length < 8) return false;
-
-    const type = readFourCC(bytes, 4);
-
-    // ftyp ONLY appears at file root
-    if (type === "ftyp") return false;
-
-    // printable ASCII sanity check
-    for (let i = 4; i < 8; i++) {
-        const c = bytes[i];
-        if (c < 0x20 || c > 0x7E) return false;
-    }
-
-    return true;
-}
-
-/**
- * Reads the four-character box type from an MP4 box header.
- *
- * Box type is encoded as ASCII characters at byte offsets 4–7.
- *
- * This function assumes:
- * - the caller has already established that the bytes represent a box
- *
- * No validation is performed here.
- */
-function readBoxType(bytes) {
-    return String.fromCharCode(
-        bytes[4],
-        bytes[5],
-        bytes[6],
-        bytes[7]
-    );
-}
-
-function isValidChildBoxAtOffset(bytes, offset) {
-    if (offset + 8 > bytes.length) return false;
-
-    const size =
-        (bytes[offset]     << 24) |
-        (bytes[offset + 1] << 16) |
-        (bytes[offset + 2] << 8)  |
-        bytes[offset + 3];
-
-    if (size < 8) return false;
-    if (offset + size > bytes.length) return false;
-
-    for (let i = offset + 4; i < offset + 8; i++) {
-        const c = bytes[i];
-        if (c < 0x20 || c > 0x7E) return false;
-    }
-
-    return true;
 }
 
 /**
@@ -325,3 +291,4 @@ function enumerateChildrenFromOffset(bytes, offset) {
 
     return children;
 }
+

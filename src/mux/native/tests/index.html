@@ -1,98 +1,135 @@
 <!DOCTYPE html>
 <html>
 <body>
+    <h1>tests</h1>
 <button id="run-inspection">Run Inspection Tests</button>
 <button id="run-unit">Run Unit Tests</button>
 <button id="run-boundary">Run Boundary Tests</button>
 <button id="run-integration">Run Integration Tests</button>
 <button id="run-all">Run All Tests</button>
 <script type="module">
+/*
+if (location.hostname === "localhost") {
+    const es = new EventSource("/__reload");
+    es.onmessage = () => location.reload();
+}
+*/
 
-
-// ChatGPT Phase ABC branch point: https://chatgpt.com/g/g-p-6823e412c7348191848df481eb52a88b/c/693c11b2-2a5c-8322-8a7b-58d09d3f2ac6
-// Unit tests
-import { testHdlr_Structure, testHdlr_LockedLayoutEquivalence_ffmpeg } from "./test_hdlr.js";
-import { testStsz_Structure, testStsz_LockedLayoutEquivalence_ffmpeg } from "./test_stsz.js";
+import {
+    testHdlr_Structure,
+    testHdlr_LockedLayoutEquivalence_ffmpeg,
+    testHdlr_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_hdlr.js";
+import {
+    testStsz_Structure,
+    testStsz_Structure_Fixed,
+    testStsz_LockedLayoutEquivalence_ffmpeg,
+    testStsz_LockedLayoutEquivalence_ffmpeg_opus
+} from "./test_stsz.js";
 import { testStsc_Structure, testStsc_Conformance } from "./test_stsc.js";
 import { testStts_Structure, testStts_Conformance } from "./test_stts.js";
-import { testTkhd_Structure, testTkhd_LockedLayoutEquivalence_ffmpeg } from "./test_tkhd.js";
-import { testMdhd_Structure, testMdhd_Conformance } from "./test_mdhd.js";
-import { testMvhd_Structure, testMvhd_LockedLayoutEquivalence_ffmpeg} from "./test_mvhd.js";
-import { testFtyp_Structure, testFtyp_Conformance } from "./test_ftyp.js";
+import { 
+    testTkhd_Structure, 
+    testTkhd_LockedLayoutEquivalence_ffmpeg,
+    testTkhd_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_tkhd.js";
+import {
+    testMdhd_Structure,
+    testMdhd_Conformance,
+    testMdhd_Conformance_Audio,
+} from "./test_mdhd.js";
+import { 
+    testMvhd_Structure, 
+    testMvhd_LockedLayoutEquivalence_ffmpeg,
+    testMvhd_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_mvhd.js";
+import { testFtyp_Structure, testFtyp_LockedLayoutEquivalence_ffmpeg } from "./test_ftyp.js";
 import { testVmhd_Structure, testVmhd_LockedLayoutEquivalence_ffmpeg } from "./test_vmhd.js";
 import { testDref_Structure, testDref_LockedLayoutEquivalence_ffmpeg } from "./test_dref.js";
 import { testAvcC_Structure, testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg } from "./test_avcC.js";
 import { testAvc1_Structure, testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg } from "./test_avc1.js";
 import { testBtrt_Structure, testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg } from "./test_btrt.js";
 import { testPasp_Structure, testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg } from "./test_pasp.js";
-import { testStss_Structure, testStss_LockedLayoutEquivalence_ffmpeg } from "./test_stss.js";
-import { testCtts_Structure, testCtts_LockedLayoutEquivalence_ffmpeg } from "./test_ctts.js";
 import {
-    testStsd_Structure,
-    testStsd_GoldenTruthExtractor,
-    testStsd_LockedLayoutEquivalence_ffmpeg
-} from "./test_stsd.js";
+    testStss_Structure,
+    testStss_LockedLayoutEquivalence_ffmpeg,
+    testStss_LockedLayoutEquivalence_ffmpeg_audio,
+} from "./test_stss.js";
+import { 
+    testCtts_Structure, 
+    testCtts_LockedLayoutEquivalence_ffmpeg,
+} from "./test_ctts.js";
 import { testStco_Structure, testStco_LockedLayoutEquivalence_ffmpeg } from "./test_stco.js";
+import { testCo64_Structure, testCo64_LockedLayoutEquivalence_ffmpeg } from "./test_co64.js";
 import {
     testStbl_Structure, 
-    testStbl_GoldenTruthExtractor_Structure_Audio,
     testStbl_LockedLayoutEquivalence_ffmpeg,
     testStbl_LockedLayoutEquivalence_ffmpeg_Audio,
-    testStbl_Structure_ConditionalChildren,
-    testStbl_ConditionalChildren_TODO
 } from "./test_stbl.js";
 import { testDinf_Structure, testDinf_LockedLayoutEquivalence_ffmpeg } from "./test_dinf.js";
-import { testMinf_Structure, testMinf_LockedLayoutEquivalence_ffmpeg } from "./test_minf.js";
+import {
+    testMinf_BuilderInput_Video,
+    testMinf_BuilderInput_Audio,
+    testMinf_LockedLayoutEquivalence_ffmpeg_Video,
+    testMinf_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_minf.js";
 import { testMdia_Structure, testMdia_LockedLayoutEquivalence_ffmpeg } from "./test_mdia.js";
-import { testElst_Structure, testElst_LockedLayoutEquivalence_ffmpeg } from "./test_elst.js";
-import { testEdts_Structure, testEdts_LockedLayoutEquivalence_ffmpeg } from "./test_edts.js";
-import { testTrak_Structure, testTrak_LockedLayoutEquivalence_ffmpeg } from "./test_trak.js";
+import { 
+    testElst_Structure, 
+    testElst_LockedLayoutEquivalence_ffmpeg ,
+    testElst_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_elst.js";
+
+import { 
+    testEdts_Structure, 
+    testEdts_LockedLayoutEquivalence_ffmpeg,
+    testEdts_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_edts.js";
+import { 
+    testTrak_Structure, 
+    testTrak_LockedLayoutEquivalence_ffmpeg,
+    testTrak_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_trak.js";
 import { testData_Structure, testData_LockedLayoutEquivalence_ffmpeg } from "./test_data.js";
 import { testIlstItem_Structure, testIlstItem_LockedLayoutEquivalence_ffmpeg } from "./test_ilst_item.js";
 import { testIlst_Structure, testIlst_LockedLayoutEquivalence_ffmpeg } from "./test_ilst.js";
 import { testMetaHdlr_Structure, testMetaHdlr_LockedLayoutEquivalence_ffmpeg } from "./test_meta_hdlr.js";
 import { testMeta_Structure, testMeta_LockedLayoutEquivalence_ffmpeg } from "./test_meta.js";
 import { testUdta_Structure, testUdta_LockedLayoutEquivalence_ffmpeg } from "./test_udta.js";
-import { testMoov_Structure, testMoov_LockedLayoutEquivalence_ffmpeg } from "./test_moov.js";
+import { 
+    testMoov_Structure, 
+    testMoov_LockedLayoutEquivalence_ffmpeg, 
+    testMoov_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_moov.js";
 import { testFree_Structure, testFree_LockedLayoutEquivalence_ffmpeg } from "./test_free.js";
 
 import { testSbgp_Structure, testSbgp_LockedLayoutEquivalence_ffmpeg } from "./test_sbgp.js";
-import { testSgpd_Structure, testSgpd_LockedLayoutEquivalence_ffmpeg } from "./test_sgpd.js";
+import { testSgpd_Structure_Fixed, testSgpd_Structure_Variable, testSgpd_LockedLayoutEquivalence_ffmpeg } from "./test_sgpd.js";
 
-import { testDeriveChunkModel_OneSamplePerChunk } from "./test_NativeMuxer_chunkModel.js";
+import { 
+    testDeriveChunkModel_OneSamplePerChunk,
+    testDeriveChunkModel_Packetized_UsesPacketIndex,
+} from "./test_NativeMuxer_chunkModel.js";
 import { testNativeMuxer_DeriveStscEntries_SingleChunkPattern } from "./test_NativeMuxer_stscDerivation.js";
 import { testNativeMuxer_DeriveStcoOffsets_Simple } from "./test_NativeMuxer_stcoDerivation.js";
 import { testNativeMuxer_DeriveSttsEntries_RunLengthEncoding } from "./test_NativeMuxer_sttsDerivation.js"
 
 import { 
-    testNativeMuxer_DeriveStssSampleNumbers_Simple,
-    testNativeMuxer_DeriveStssSampleNumbers_NoKeyInfo
-} from "./test_NativeMuxer_stssDerivation.js"
+    testNativeMuxer_DeriveSyncSampleNumbers_Simple,
+    testNativeMuxer_DeriveSyncSampleNumbers_NoKeyInfo
+} from "./test_NativeMuxer_SyncSampleNumbersDerivation.js"
 
 import { testNativeMuxer_AdaptSttsFromSamples_CFR, testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups } from "./test_NativeMuxer_sttsAdapter.js";
-import { testNativeMuxer_SttsAdapter_Conformance_ffmpeg } from "./test_NativeMuxer_sttsAdapter_Conformance.js"
 
 import { testNativeMuxer_DeriveStszSizesFromPayloads } from "./test_NativeMuxer_deriveStszSizesFromPayloads.js";
 import { testNativeMuxer_DeriveStsz_Conformance_ffmpeg } from "./test_NativeMuxer_stszDerivation_Conformance.js";
 
 import { testNativeMuxer_DeriveCttsEntries_RunLengthEncoding } from "./test_NativeMuxer_cttsDerivation.js";
-import { testNativeMuxer_CttsAdapter_Conformance_ffmpeg } from "./test_NativeMuxer_cttsAdapter_Conformance.js";
-import { testNativeMuxer_StscDerivation_Conformance_ffmpeg } from "./test_NativeMuxer_stscDerivation_Conformance.js";
 import { testNativeMuxer_trackDurationDerivation_basicSum } from "./test_NativeMuxer_trackDurationDerivation.js";
-import { testNativeMuxer_MdatAssembly_FromChunkModel } from "./test_NativeMuxer_mdatAssembly.js";
-import { testNativeMuxer_PhysicalLayoutResolution_Minimal_SingleChunk_Stco } from "./test_NativeMuxer_PhysicalLayoutResolution_Minimal_SingleChunk_Stco.js";
-import { testNativeMuxer_StcoCommit_FromPhysicalLayout } from "./test_NativeMuxer_StcoCommit_FromPhysicalLayout.js";
-import { testNativeMuxer_StcoConformance_ffmpeg } from "./test_NativeMuxer_StcoConformance_ffmpeg.js";
-import { testMdat_Structure } from "./test_mdat.js";
-import { testCommitStbl_InsertsStcoWhenMissing, testCommitStbl_PreservesAllChildrenAndReplacesStco } from "./testCommitStbl_ReplacesExistingStco.js";
-import { testCommitMinf_Structure } from "./test_commitMinf_Structure.js";
-import { testCommitMinf_SizePropagation } from "./test_commitMinf_SizePropagation.js";
-import { testCommitMdia_Structure } from "./test_commitMdia_Structure.js";
-import { testCommitMdia_SizePropagation } from "./test_commitMdia_SizePropagation.js";
-import { testCommitTrak_Structure } from "./test_commitTrak_Structure.js";
-import { testCommitTrak_SizePropagation } from "./test_commitTrak_SizePropagation.js";
-import { testCommitMoov_Structure } from "./test_commitMoov_Structure.js";
-import { testCommitMoov_SizePropagation } from "./test_commitMoov_SizePropagation.js";
+import {
+    testMdat_Structure,
+    testMdat_LockedLayoutEquivalence_ffmpeg,
+} from "./test_mdat.js";
 
 import {
     testUdta_Inspection_ffmpeg,
@@ -102,26 +139,29 @@ import {
 } from "./test_udta_inspection.js";
 
 import { testSerializer } from "./test_serializer.js"
-import { testMdatEmitter } from "./test_mdatEmitter.js";
 
-import { testSampleExtraction_FromGoldenMp4 } from "./test_sample_extraction.js";
+import { 
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_OPUS,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC_AudioSpecificConfigOnly,
+} from "./test_NativeMuxer_EndToEnd_FromMp4BuildInput.js";
 
-import { testNativeMuxer_EndToEnd_Conformance_ffmpeg } from "./test_NativeMuxer_EndToEnd_Conformance_ffmpeg.js";
-import { test_NativeMuxer_Linker_EmitsResolvedMp4 } from "./test_NativeMuxer_Linker_EmitsResolvedMp4.js";
-import { test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical } from "./test_NativeMuxer_EndToEnd_FromMp4BuildInput.js";
+import { 
+    test_SourceClient_WebCodecs_ProducesMp4BuildInput
+} from "./test_SourceClient_WebCodecs_ProducesMp4BuildInput.js";
+
 
 import { test_applyAvcCContainerPolicy } from "./policies/test_applyAvcCContainerPolicy.js"
 import { test_avcC_policy_locked_layout_container_complete, test_avcC_policy_locked_layout_semantic_high_profile } from "./test_avcC_policy_locked_layout.js"
 
 
-import { test_SourceClient_WebCodecs_ProducesMp4BuildInput }  from "./test_SourceClient_WebCodecs_ProducesMp4BuildInput.js";
+import { test_SourceClient_WebCodecs_AV_ProducesMp4BuildInputInput }  from "./test_SourceClient_WebCodecs_AV_ProducesMp4BuildInput.js";
 
 import { test_SourceClient_GoldenMp4_ProducesMp4BuildInput }  from "./test_SourceClient_GoldenMp4_ProducesMp4BuildInput.js";
 
-import { test_DeriveDecodeTimestamps_Invariants }  from "./test_DeriveDecodeTimestamps_Invariants.js";
-import { test_DeriveDecodeTimestamps_LockedLayoutEquivalence_ffmpeg }  from "./test_DeriveDecodeTimestamps_LockedLayoutEquivalence_ffmpeg.js";
 
-import { inspect_GoldenMp4_PtsDtsOrder } from "./test_DeriveDecodeTimestamps_Invariants.js";
+
+import { test_DeriveDecodeTimestamps_Invariants }  from "./test_DeriveDecodeTimestamps_Invariants.js";
 
 import { 
     test_UdtaPolicy_OpaquePassthrough,
@@ -133,10 +173,6 @@ import {
     test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic
 } from "./test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic.js";
 
-import {
-    test_adaptCodecConfigurationToStsdParams
-} from "./adapters/test_adaptCodecConfigurationToStsdParams.js";
-
 import { inspectBoxTreeDiff_AV_vs_Visual } 
     from "./inspection/inspect_AV_vs_Visual_BoxDiff.js";
 
@@ -145,10 +181,1121 @@ import { test_Inspection_Stsd_Semantics }
 
 import { 
     testEsds_Structure,
-    testEsds_GoldenTruthExtractor,
     testEsds_LockedLayoutEquivalence_ffmpeg
 } 
 from "./test_esds.js";
+
+
+import { 
+  testSmhd_Structure,
+  testSmhd_LockedLayoutEquivalence_ffmpeg
+} 
+from "./test_smhd.js";
+
+import { 
+    testFromMp4_RootMoov_Resolves,
+    testFromBox_RootMp4_ResolvesMoov,
+	testDispatcher_RequiresIndexedTrak,
+	testDispatcher_NormalizesIndexedPaths,
+	testDispatcher_RegistryIsCanonical,
+	testDispatcher_TrakIndexIsAuthoritative,
+	testDispatcher_SampleEntryTraversal,
+	testDispatcher_MinfDivergence,
+	testDispatcher_DoesNotSearchOtherTracks,
+	testDispatcher_InvalidChildFails,
+	testDispatcher_RejectsLegacySelectors,
+    testDispatcher_StsdImplicitSchemaResolution,
+	testDispatcher_HappyPathSanity,
+    testDispatcher_StsdSampleIndexRewritesToConcreteCodec,
+    testDispatcher_SampleEntryChildTraversal,
+    testStsd_ReturnsEmitterParamsOnly,
+    testResolveSampleEntryFromTrak_HappyPath,
+    testResolveSampleEntryFromTrak_RejectsInvalidGrammar,
+    testDispatcher_ResolutionIsTrackScoped,
+    testResolveSampleEntryFromTrak_OutOfRange,
+    testResolveByPath_SampleEntryTraversal,
+    testResolveByPath_NoCrossTrackFallback,
+    testResolveByPath_RejectsBareSampleSelector,
+    testResolveByPath_RejectsUnresolvedSampleChild,
+    testResolveByPath_AllowsTerminalSampleSelector,
+    testResolveSampleEntryFromTrak_AllowsTerminalSampleSelector,
+    testResolveSampleEntryFromTrak_AllowsChildTraversal,
+    testResolveSampleEntryFromTrak_RejectsLegacySelectors,
+    testResolveSampleEntryFromTrak_StripsSampleFromRegistryPath,
+    testResolveByPath_NeverLeaksSampleSelectorInRegistryPath,
+    //testTODO_LegacyExtractSampleEntry_DeprecationMarker,
+    testStsd_PluralSampleEntries_AreStructurallyDetectable,
+    testResolveByPath_RejectsBareSampleGrammar,
+    testDispatcher_BareStsd_UsesStsdExtractor,
+
+    testFromBox_ParityWithFromMp4_ForStsd,
+    testFromBox_RejectsEscapingRelativePath,
+    testFromBox_ParityWithFromMp4_ForStbl,
+
+    testFromLeafBox_RejectsNonUint8Array,
+    testFromLeafBox_RejectsTooSmallBox,
+    testDispatcher_FromMp4_RootMoov_Terminates,
+    testDispatcher_IsoBoxResolver_OutOfRangeTrakIndex_ReturnsNotFound,
+    testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminatesWithNotFound,
+    testDispatcher_FromMp4_DoesNotCallExtractorOnReturn,
+    testDispatcher_FromMp4_ReturnedObject_IsLazy,
+    testDispatcher_FromMp4_RootMoov_DoesNotRequireIndex,
+    test_FromRawBytes_AllowsAbsoluteTraversal,
+    testDispatcher_FromBox_ExactContext_DoesNotReResolveAncestors,
+    testDispatcher_FromBox_ExactContext_ResolvesSampleEntry_dOps,
+    testFromMp4_MoovMvhd_Resolves,
+    testResolveSingleIsoBoxFromContainer_ZeroBoxes_Throws,
+    testResolveSingleIsoBoxFromContainer_MultipleBoxes_Throws,
+    testLookupExtractorByRegistryPath_ValidPath_ReturnsExtractor,
+    testResolveSampleEntryBoundary_SetsRegistryPath,
+    testResolveSampleEntryBoundary_UsesBoxAsTrakBytesFallback,
+    testValidateIsoBoxTraversalContext_RejectsNonUint8Array,
+    testValidateIsoBoxTraversalContext_InjectsImplicitTrakBytes,
+    testValidateIsoBoxTraversalContext_RejectsEmptyPath,
+    testValidateIsoBoxTraversalContext_RejectsTraversalIntoTerminalBox,
+    testDispatcher_SampleIndexOutOfRange_ThrowsWithIntentionalMessage,
+    testLookupExtractorByRegistryKey_InvalidKey_Throws,
+    testDispatcher_IsoBoxResolver_RejectsUnsupportedCo64,
+    testDispatcher_OptionalCtts_MissingIsNotAnError,
+}
+from "./test_goldenTruthDispatcher.js";
+
+import { 
+    testResolveTrakFromPath_SequentialIndexTerminates,
+    testDispatcher_MoovTrak_RepeatedCallsStable,
+    testDispatcher_Moov_NotMutated_ByChildResolution,
+    testDispatcher_TrakResolution_TrackIdentitiesAreDistinct,
+    testDispatcher_TrakLoop_UsesStableMoovBoxBytes,
+}
+from "./test_goldenTruthDispatcher_PathResolver.js";
+
+
+import { 
+        testFindBoxes_Moov_Root,
+        testFindBoxes_Trak_VideoOnly,
+        testFindBoxes_Trak_AudioVideo,
+        testFindBoxes_Mdia_FanOut,
+        testFindBoxes_Stbl_DeepFanOut,
+        testFindBoxes_Sgpd_AudioOnly,
+        testFindBoxesFromMp4_RejectsNonBoxTraversal,
+        testFindBoxesFromMp4_AllowsTerminalStsd,
+        testFindBoxesFromMp4_RejectsDeepTraversalPastStsd,
+        testFindBoxesFromMp4_EmptyBeforeStsdIsStillValid,
+} 
+from "./reference/test_findBoxesByPathFromMp4.js";
+
+import { 
+        testStsd_Structure_SingleAvc1,
+        testStsd_Structure_SingleMp4a,
+        testStsd_LockedLayoutEquivalence_ffmpeg,
+        testStsd_LockedLayoutEquivalence_ffmpeg_mp4a,
+        testStsd_Opus_Dops_WebCodecs_Normalized_Equals_FFmpegOracle,
+} from "./test_stsd.js";
+
+import { 
+  runAudioEncoderProbe  
+} from "./inspection/audioEncoderProbe.js";
+
+import { 
+   runAudioEncoderCapabilityProbe
+} from "./inspection/audioEncoderCapabilityProbe.js";
+
+
+import { 
+   test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput
+} from "./test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput.js";
+import {
+    test_codecRegistry_ResolvesProfilesByCodecAndSampleEntry,
+    test_codecRegistry_ConfigShapeValidation_RejectsForeignKeys,
+    test_codecRegistry_ConfigShapeValidation_RequiresOwnedKey
+} from "./test_codecRegistry.js";
+
+import { 
+   test_DeriveSamplesFromStbl_Definition,
+   test_DeriveSamplesFromStbl_SyncParityWithStss,
+   test_DeriveSamplesFromStbl_AppliesCttsOffsets
+} from "./test_deriveSamplesFromStbl.js";
+import {
+    test_nativeDemux_vs_mp4box_phoneFixture
+} from "./test_nativeDemux_vs_mp4box_phoneFixture.js";
+import {
+    test_ContainerTrackView_iterateSamplesByPtsRange_reorderedPts_noEarlyBreak,
+    test_ContainerTrackView_iterateSamplesByDtsRange_filtersByDts,
+    test_ContainerTrackView_getTrackIdentity_reportsStableShape
+} from "./test_ContainerTrackView_iterators.js";
+import {
+    test_openContainerFromMp4_exposesTrackListingAndTrackViews,
+    test_openContainerFromMp4_rejectsInvalidInput,
+    test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType,
+    test_openContainerFromMp4Source_seam_parityWithLegacyEntryPoint,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromBytes,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromByteSource,
+    test_openContainer_sniffsMp4FromBytes,
+    test_openContainer_sniffsMp4FromByteSource,
+    test_openContainer_rejectsUnsupportedContainerType,
+    test_openContainer_rejectsWebmUntilImplemented,
+    test_openContainer_rejectsWebmByByteSourceUntilImplemented,
+    test_openContainerFromWebmSource_rejectsInvalidSource
+} from "./test_openContainerFromMp4.js";
+import {
+    WEBM_READ_VINT_TESTS
+} from "./test_webm_readVint.js";
+import {
+    WEBM_SELECTOR_REGISTRY_TESTS
+} from "./test_webm_selectorRegistry.js";
+import {
+    WEBM_EBML_PRIMITIVE_TESTS
+} from "./test_webm_ebmlPrimitives.js";
+import {
+    WEBM_ORACLE_REFERENCE_FIXTURE_TESTS
+} from "./test_webm_oracle_referenceFixture.js";
+import {
+    WEBM_EXTRACTOR_TESTS
+} from "./test_webm_extractors.js";
+import {
+    WEBM_READER_ORACLE_AGREEMENT_TESTS
+} from "./test_webm_reader_oracleAgreement.js";
+
+import { 
+   test_DeriveSamplesOnePerPacketFromStbl_Definition
+} from "./test_DeriveSamplesOnePerPacketFromStbl.js";
+
+import { test_ExtractorEmitter_StructuralAgreement_stsz }
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stsz.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_stbl_mp4a,
+    test_ExtractorEmitter_StructuralAgreement_stbl_opus
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stbl.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_stts
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stts.js";
+
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_stsc
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stsc.js";
+
+import {
+ test_ExtractorEmitter_StructuralAgreement_stco   
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stco.js";
+import {
+ test_ExtractorEmitter_StructuralAgreement_co64
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_co64.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_avcC
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_avcC.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_esds
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_esds.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_stss
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stss.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_ctts,
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_ctts.js";
+
+import {
+   inspectCttsResolver
+}
+    from "./inspection/inspect_Ctts_Resolver.js";
+
+import {
+   inspectCttsAcrossTracks
+}
+    from "./inspection/inspectCttsAcrossTracks.js";
+
+import {
+   inspectEdtsAcrossTracks
+}
+    from "./inspection/inspectEdtsAcrossTracks.js";
+
+import {
+    inspectUdtaAcrossTracks
+}
+    from "./inspection/inspectUdtaAcrossTracks.js";
+
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_avc1
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_avc1.js";
+
+import {
+   test_PathResolver_rejects_internal_pipe_grammar_in_input,
+}
+    from "./test_GoldenTruthPathResolver_SampleEntryGrammar.js";
+
+import {
+    test_PathResolver_rejects_relative_paths,
+    test_PathResolver_accepts_mdat_root,
+    test_PathResolver_rejects_invalid_root,
+    test_PathResolver_rejects_unindexed_trak,
+}
+    from "./test_GoldenTruthPathResolver_RootGrammar.js";
+
+import {
+       test_ExtractorEmitter_StructuralAgreement_btrt,
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_btrt.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_pasp
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_pasp.js";
+
+import {
+   testMp4a_Structure,
+   testMp4a_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+}
+from "./test_mp4a.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_mp4a
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mp4a.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_stsd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stsd.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_sbgp
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_sbgp.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_sgpd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_sgpd.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_ilstItem
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_ilstItem.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_ilst
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_ilst.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_meta_hdlr,
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_meta_hdlr.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_meta
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_meta.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_udta
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_udta.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_dref
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_dref.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_dinf
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_dinf.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_vmhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_vmhd.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_smhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_smhd.js";
+
+import {
+  test_EmitterRegistry_ValidationMatrix
+}
+from "./test_EmitterRegistry_Validation.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_minf
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_minf.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_hdlr
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_hdlr.js"
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_mdhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mdhd.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_mdia
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mdia.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_tkhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_tkhd.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_elst
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_elst.js"
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_edts
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_edts.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_trak
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_trak.js"
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_mvhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mvhd.js"
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_moov
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_moov.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_ftyp
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_ftyp.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_free
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_free.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_mdat
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mdat.js";
+
+import {
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Video,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Audio,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_InvalidTrackIndexThrows,
+}
+from "./test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex.js"
+import {
+    test_extractTrackCodecConfiguration_hvc1_referenceFixture
+}
+from "./test_extractTrackCodecConfiguration_hvc1_referenceFixture.js";
+
+import {
+    test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Video
+}
+from "./reference/test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Video.js";
+
+import {
+    test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Audio
+}
+from "./reference/test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Audio.js";
+
+import {
+    test_extractOpaqueUserDataFromMp4UsingRootContainer
+}
+from "./reference/test_extractOpaqueUserDataFromMp4UsingRootContainer.js";
+
+import {
+    test_validateMp4BuildInput_AcceptsGoldenMp4SourceClientOutput
+}
+from "./test_validateMp4BuildInput_AcceptsGoldenMp4SourceClientOutput.js";
+
+import {
+    test_adaptAudioCodecConfigurationToStsdParams_mp4a
+}
+from "./test_adaptAudioCodecConfigurationToStsdParams_mp4a.js";
+
+import {
+   testDOps_Structure,
+   testDOps_LockedLayoutEquivalence_ffmpeg,
+}
+from "./test_dOps.js";
+
+import {
+    testOpusSampleEntry_Structure,
+    testOpusSampleEntry_LockedLayoutEquivalence_ffmpeg,
+}
+from "./test_OpusSampleEntry.js";
+
+import {
+   test_SchemaOracleAgreement_OpusSampleEntry
+}
+from "./schema/test_SchemaOracleAgreement_Opus.js";
+
+import {
+   testNativeMuxer_DeriveSemanticTrackFamily
+}
+from "./testNativeMuxer_DeriveSemanticTrackFamily.js";
+
+import {
+   testNativeMuxer_TrackDuration_Relationships_AllFixtures
+}
+from "./testNativeMuxer_TrackDuration_RelationshipToOracleStts.js";
+
+import {
+   testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs
+}
+from "./testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs.js";
+
+import {
+    generateWebCodecsAvOpusFixtures
+}
+from "./fixtures/generateWebCodecsAvOpusFixtures.js";
+
+import {
+   testNativeMuxer_Opus_STBL_WebCodecsShapeCompatibility
+}
+from "./testNativeMuxer_Opus_STBL_WebCodecsShapeCompatibility.js";
+
+import {
+   testNativeMuxer_AdaptSttsFromSamples_WebCodecs_Opus,
+}
+from "./testNativeMuxer_AdaptSttsFromSamples_WebCodecs_Opus.js";
+
+import {
+    testNativeMuxer_AdaptSttsFromSamples_DoesNotReconcileTail,
+    testNativeMuxer_AdaptSttsWithTailFix_ReconcilesFinalSample
+}
+   from "./testNativeMuxer_AdaptSttsFromSamplesTailHandling.js";
+
+import {
+   testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerTopology_MustReproduceStscByteForByte_Opus,
+   testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerSuppliedHints_MustReproduceStscByteForByte_Mp4a,
+   testNativeMuxer_WhenGivenWebCodecsInputs_MustProduceLegalStsc,
+}
+from "./testNativeMuxer_DeriveStructuralState_Opus_WebCodecsShape.js";
+
+import {
+   testNativeMuxer_STSD_CompilerPath_Opus_Equals_FFmpegOracle,
+   testNativeMuxer_STSD_CompilerPath_Opus_WebCodecs_Equals_FFmpegOracle,
+   testNativeMuxer_STSD_CompilerPath_Mp4a_Equals_FFmpegOracle,
+   testNativeMuxer_STSD_CompilerPath_Avc1_Equals_FFmpegOracle,
+}
+from "./testNativeMuxer_AdaptAudioCodecToStsdParams_Opus_Equals_FFmpegOracle.js";
+
+import {
+   testNativeMuxer_SyncRepresentation_CompilerPath_Video_Equals_FFmpegOracle,
+   testNativeMuxer_SyncRepresentation_CompilerPath_Mp4a_Equals_FFmpegOracle,
+   testNativeMuxer_SyncRepresentation_CompilerPath_Opus_Equals_FFmpegOracle,
+   testNativeMuxer_SyncRepresentation_WebCodecs_NoHints_EmitsNothing,
+}
+from "./testNativeMuxer_SyncRepresentation_Equals_FFmpegOracle.js";
+
+import {
+   testNativeMuxer_Ctts_CompilerPath_Video_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_Ctts_CompilerPath_Video_Equals_FFmpegOracle.js";
+
+
+import {
+   testNativeMuxer_MVHD_Builder_Equals_FFmpegOpusOracle,
+   testNativeMuxer_MVHD_Builder_Equals_FFmpegMp4aOracle,
+}
+   from "./testNativeMuxer_MVHD_Builder_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MDAT_Box_Equals_FFmpegOracle,
+    testNativeMuxer_MDAT_Length_Equals_Sum_Of_STSZ,
+    testNativeMuxer_OPUS_STSC_MDAT_CompilerPath_with_FFmpegOpus_ChunkGroupPolicy_Equals_FFmpegOracle,
+    testNativeMuxer_AVC1_STSC_MDAT_CompilerPath_Equals_FFmpegOracle,
+    testNativeMuxer_MP4A_STSC_MDAT_CompilerPath_Equals_FFmpegOracle,
+    test_getSamplesChunkedInFfmpegOpusFormat_basic,
+}
+   from "./testNativeMuxer_MDAT_CompilerPath_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_STBL_Children_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_STBL_Children_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MINF_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MINF_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MDIA_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MDIA_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_TRAK_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_TRAK_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_UDTA_BuildIntent_FromGoldenClient_EqualsOracle
+}
+   from "./testNativeMuxer_UDTA_BuildIntent_FromGoldenClient_EqualsOracle.js";
+
+import {
+    testNativeMuxer_MOOV_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MOOV_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    test_BuildUdtaIntent_DefaultEncoderIdentity,
+}
+   from "./test_BuildUdtaIntentFromBuildHints.js";
+
+import {
+    testNativeMuxer_FTYP_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_FTYP_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_FREE_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_FREE_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MaterializePassOneTopLevelBoxes_EqualsOracle,
+}
+   from "./testNativeMuxer_MaterializePassOneTopLevelBoxes_EqualsOracle.js";
+
+import {
+    testResolveStcoOffsetsPerTrack_BasicLayoutResolution
+}
+   from "./testResolveStcoOffsetsPerTrack_BasicLayoutResolution.js";
+
+import {
+    testNativeMuxer_STCO_Adapter_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_STCO_Adapter_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_STBL_WithResolvedSTCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_STBL_WithResolvedSTCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_ELST_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_ELST_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MOOV_WithResolvedSTCO_Equals_FFmpegOracle,
+}
+   from "./testNativeMuxer_MOOV_WithResolvedSTCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MP4_FromResolvedParts_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MP4_FromResolvedParts_Equals_FFmpegOracle.js";
+
+
+
+import {
+    testNativeMuxer_TrakIntent_Debug
+}
+   from "./testNativeMuxer_TrakIntent_Debug.js";
+
+import {
+    testNativeMuxer_ElstIntent_Debug
+}
+   from "./testNativeMuxer_ElstIntent_Debug.js";
+
+import {
+    testNativeMuxer_TkhdIntent_Debug
+}
+   from "./testNativeMuxer_TkhdIntent_Debug.js";
+
+
+import {
+    testNativeMuxer_MP4_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MP4_Equals_FFmpegOracle.js";
+
+async function runUnitTests() {
+
+const testsAll = [
+
+    testSerializer,
+
+    //start done
+    test_EmitterRegistry_ValidationMatrix,
+    testFindBoxes_Moov_Root,
+    testFindBoxes_Trak_VideoOnly,
+    testFindBoxes_Trak_AudioVideo,
+    testFindBoxes_Mdia_FanOut,
+    testFindBoxes_Stbl_DeepFanOut,
+    testFindBoxes_Sgpd_AudioOnly,
+    testFindBoxesFromMp4_RejectsNonBoxTraversal,
+    testFindBoxesFromMp4_AllowsTerminalStsd,
+    testFindBoxesFromMp4_RejectsDeepTraversalPastStsd,
+    testFindBoxesFromMp4_EmptyBeforeStsdIsStillValid,
+    test_FromRawBytes_AllowsAbsoluteTraversal,
+    testDispatcher_FromBox_ExactContext_DoesNotReResolveAncestors,
+    testDispatcher_FromBox_ExactContext_ResolvesSampleEntry_dOps,
+    testDispatcher_RequiresIndexedTrak,
+    testDispatcher_RegistryIsCanonical,
+    testDispatcher_TrakIndexIsAuthoritative,
+    testDispatcher_SampleEntryTraversal,
+    testDispatcher_MinfDivergence,
+    testDispatcher_DoesNotSearchOtherTracks,
+    testDispatcher_InvalidChildFails,
+    testDispatcher_RejectsLegacySelectors,
+    testDispatcher_StsdImplicitSchemaResolution,
+    testDispatcher_HappyPathSanity,
+    testDispatcher_StsdSampleIndexRewritesToConcreteCodec,
+    testDispatcher_SampleEntryChildTraversal,
+    testStsd_ReturnsEmitterParamsOnly,
+    testResolveSampleEntryFromTrak_HappyPath,
+    testResolveSampleEntryFromTrak_RejectsInvalidGrammar,
+    testDispatcher_ResolutionIsTrackScoped,
+    testResolveSampleEntryFromTrak_OutOfRange,
+    testResolveByPath_SampleEntryTraversal,
+    testResolveByPath_NoCrossTrackFallback,
+    testResolveByPath_RejectsBareSampleSelector,
+    testResolveByPath_RejectsUnresolvedSampleChild,
+    testResolveByPath_AllowsTerminalSampleSelector,
+    testResolveSampleEntryFromTrak_AllowsTerminalSampleSelector,
+    testResolveSampleEntryFromTrak_AllowsChildTraversal,
+    testResolveSampleEntryFromTrak_RejectsLegacySelectors,
+    testResolveSampleEntryFromTrak_StripsSampleFromRegistryPath,
+    testResolveByPath_NeverLeaksSampleSelectorInRegistryPath,
+    //testTODO_LegacyExtractSampleEntry_DeprecationMarker,
+    testStsd_PluralSampleEntries_AreStructurallyDetectable,
+    testResolveByPath_RejectsBareSampleGrammar,
+    testDispatcher_BareStsd_UsesStsdExtractor,
+    testFromBox_ParityWithFromMp4_ForStsd,
+    testFromBox_RejectsEscapingRelativePath,
+    testFromBox_ParityWithFromMp4_ForStbl,
+    testFromLeafBox_RejectsNonUint8Array,
+    testFromLeafBox_RejectsTooSmallBox,
+    testDispatcher_IsoBoxResolver_OutOfRangeTrakIndex_ReturnsNotFound,
+    testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminatesWithNotFound,
+    testDispatcher_FromMp4_RootMoov_DoesNotRequireIndex,
+    testDispatcher_FromMp4_ReturnedObject_IsLazy,
+    testDispatcher_FromMp4_DoesNotCallExtractorOnReturn,
+    testDispatcher_FromMp4_RootMoov_Terminates,
+    testFromMp4_MoovMvhd_Resolves,
+    testResolveSingleIsoBoxFromContainer_ZeroBoxes_Throws,
+    testResolveSingleIsoBoxFromContainer_MultipleBoxes_Throws,
+    testLookupExtractorByRegistryPath_ValidPath_ReturnsExtractor,
+    testResolveSampleEntryBoundary_SetsRegistryPath,
+    testResolveSampleEntryBoundary_UsesBoxAsTrakBytesFallback,
+    testValidateIsoBoxTraversalContext_RejectsNonUint8Array,
+    testValidateIsoBoxTraversalContext_InjectsImplicitTrakBytes,
+    testValidateIsoBoxTraversalContext_RejectsEmptyPath,
+    testValidateIsoBoxTraversalContext_RejectsTraversalIntoTerminalBox,
+
+    // Path resolvers
+    testResolveTrakFromPath_SequentialIndexTerminates,
+    test_PathResolver_rejects_relative_paths,
+    test_PathResolver_accepts_mdat_root,
+    test_PathResolver_rejects_invalid_root,
+    test_PathResolver_rejects_unindexed_trak,
+
+    test_PathResolver_rejects_internal_pipe_grammar_in_input,
+    testDispatcher_MoovTrak_RepeatedCallsStable,
+    testDispatcher_Moov_NotMutated_ByChildResolution,
+    testDispatcher_TrakResolution_TrackIdentitiesAreDistinct,
+    testDispatcher_TrakLoop_UsesStableMoovBoxBytes,
+
+    testDOps_Structure,
+    testDOps_LockedLayoutEquivalence_ffmpeg,
+
+    testOpusSampleEntry_Structure,
+    testOpusSampleEntry_LockedLayoutEquivalence_ffmpeg,
+    test_SchemaOracleAgreement_OpusSampleEntry,
+
+    test_ExtractorEmitter_StructuralAgreement_mp4a,
+    testMp4a_Structure,
+    testMp4a_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+    testMp4a_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_esds,
+    testEsds_Structure,
+    testEsds_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_pasp,
+    testPasp_Structure,
+    testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_btrt,
+    testBtrt_Structure,
+    testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_avcC,
+    testAvcC_Structure,
+    testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_avc1,
+    testAvc1_Structure,
+    testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_stsd,
+    testStsd_Structure_SingleAvc1,
+    testStsd_Structure_SingleMp4a,
+    testStsd_LockedLayoutEquivalence_ffmpeg,
+    testStsd_LockedLayoutEquivalence_ffmpeg_mp4a,
+    testStsd_Opus_Dops_WebCodecs_Normalized_Equals_FFmpegOracle,
+
+    test_ExtractorEmitter_StructuralAgreement_sbgp,
+    testSbgp_Structure,
+    testSbgp_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_sgpd,
+    testSgpd_Structure_Fixed,
+    testSgpd_Structure_Variable,
+    testSgpd_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_ctts,
+    testCtts_Structure,
+    testCtts_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_stss,
+    testStss_Structure,
+    testStss_LockedLayoutEquivalence_ffmpeg,
+    testStss_LockedLayoutEquivalence_ffmpeg_audio,
+
+    test_ExtractorEmitter_StructuralAgreement_stco,
+    testStco_Structure,
+    testStco_LockedLayoutEquivalence_ffmpeg,
+    test_ExtractorEmitter_StructuralAgreement_co64,
+    testCo64_Structure,
+    testCo64_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_stsc,
+    testStsc_Structure,
+    testStsc_Conformance,
+
+    test_ExtractorEmitter_StructuralAgreement_stts,
+    testStts_Structure,
+    testStts_Conformance,
+
+    test_ExtractorEmitter_StructuralAgreement_stsz,
+    testStsz_Structure,
+    testStsz_Structure_Fixed,
+    testStsz_LockedLayoutEquivalence_ffmpeg,
+    testStsz_LockedLayoutEquivalence_ffmpeg_opus,
+
+    test_ExtractorEmitter_StructuralAgreement_stbl_mp4a,
+    test_ExtractorEmitter_StructuralAgreement_stbl_opus,
+    testStbl_Structure,
+    testStbl_LockedLayoutEquivalence_ffmpeg,
+    testStbl_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_ilstItem,
+    testIlstItem_Structure,
+    testIlstItem_LockedLayoutEquivalence_ffmpeg,
+
+    testData_Structure,
+    testData_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_ilst,
+    testIlst_Structure,
+    testIlst_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_meta_hdlr,
+    testMetaHdlr_Structure, 
+    testMetaHdlr_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_meta,
+    testMeta_Structure,
+    testMeta_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_udta,
+    testUdta_Structure,
+    testUdta_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_dref,
+    testDref_Structure,
+    testDref_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_dinf,
+    testDinf_Structure,
+    testDinf_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_vmhd,
+    testVmhd_Structure,
+    testVmhd_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_smhd,
+    testSmhd_Structure,
+    testSmhd_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_minf,
+    testMinf_BuilderInput_Video,
+    testMinf_BuilderInput_Audio,
+    testMinf_LockedLayoutEquivalence_ffmpeg_Video,
+    testMinf_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_hdlr,
+    testHdlr_Structure, 
+    testHdlr_LockedLayoutEquivalence_ffmpeg,
+    testHdlr_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_mdhd,
+    testMdhd_Structure,
+    testMdhd_Conformance,
+    testMdhd_Conformance_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_mdia,
+    testMdia_Structure,
+    testMdia_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_tkhd,
+    testTkhd_Structure,
+    testTkhd_LockedLayoutEquivalence_ffmpeg,
+    testTkhd_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_edts,
+    testEdts_Structure,
+    testEdts_LockedLayoutEquivalence_ffmpeg,
+    testEdts_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_elst,
+    testElst_Structure,
+    testElst_LockedLayoutEquivalence_ffmpeg,
+    testElst_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_trak,
+    testTrak_Structure,
+    testTrak_LockedLayoutEquivalence_ffmpeg,
+    testTrak_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_mvhd,
+    testMvhd_Structure,
+    testMvhd_LockedLayoutEquivalence_ffmpeg,
+    testMvhd_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_ftyp,
+    testFtyp_Structure,
+    testFtyp_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_moov,
+    testMoov_Structure,
+    testMoov_LockedLayoutEquivalence_ffmpeg,
+    testMoov_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_free,
+    testFree_Structure,
+    testFree_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_mdat,
+    testMdat_Structure,
+    testMdat_LockedLayoutEquivalence_ffmpeg,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Video,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Audio,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_InvalidTrackIndexThrows,
+    test_extractTrackCodecConfiguration_hvc1_referenceFixture,
+    test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Video,
+    test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Audio,
+    test_extractOpaqueUserDataFromMp4UsingRootContainer,
+    test_validateMp4BuildInput_AcceptsGoldenMp4SourceClientOutput,
+    test_adaptAudioCodecConfigurationToStsdParams_mp4a,
+
+    test_DeriveSamplesFromStbl_Definition,
+    test_DeriveSamplesFromStbl_SyncParityWithStss,
+    test_DeriveSamplesFromStbl_AppliesCttsOffsets,
+    test_nativeDemux_vs_mp4box_phoneFixture,
+    test_ContainerTrackView_iterateSamplesByPtsRange_reorderedPts_noEarlyBreak,
+    test_ContainerTrackView_iterateSamplesByDtsRange_filtersByDts,
+    test_ContainerTrackView_getTrackIdentity_reportsStableShape,
+    test_openContainerFromMp4_exposesTrackListingAndTrackViews,
+    test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType,
+    test_openContainerFromMp4_rejectsInvalidInput,
+    test_openContainerFromMp4Source_seam_parityWithLegacyEntryPoint,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromBytes,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromByteSource,
+    test_openContainer_sniffsMp4FromBytes,
+    test_openContainer_sniffsMp4FromByteSource,
+    test_openContainer_rejectsUnsupportedContainerType,
+    test_openContainer_rejectsWebmUntilImplemented,
+    test_openContainer_rejectsWebmByByteSourceUntilImplemented,
+    test_openContainerFromWebmSource_rejectsInvalidSource,
+    ...WEBM_READ_VINT_TESTS,
+    ...WEBM_SELECTOR_REGISTRY_TESTS,
+    ...WEBM_EBML_PRIMITIVE_TESTS,
+    ...WEBM_ORACLE_REFERENCE_FIXTURE_TESTS,
+    ...WEBM_EXTRACTOR_TESTS,
+    ...WEBM_READER_ORACLE_AGREEMENT_TESTS,
+    testNativeMuxer_DeriveSemanticTrackFamily,
+    testNativeMuxer_TrackDuration_Relationships_AllFixtures,
+    testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,
+    testNativeMuxer_Opus_STBL_WebCodecsShapeCompatibility,
+    testNativeMuxer_AdaptSttsFromSamples_WebCodecs_Opus,
+    testNativeMuxer_AdaptSttsFromSamples_DoesNotReconcileTail,
+    testNativeMuxer_AdaptSttsWithTailFix_ReconcilesFinalSample,
+    testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerTopology_MustReproduceStscByteForByte_Opus,
+    testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerSuppliedHints_MustReproduceStscByteForByte_Mp4a,
+    testNativeMuxer_WhenGivenWebCodecsInputs_MustProduceLegalStsc,
+    testNativeMuxer_STSD_CompilerPath_Opus_Equals_FFmpegOracle,
+    testNativeMuxer_STSD_CompilerPath_Opus_WebCodecs_Equals_FFmpegOracle,
+    testNativeMuxer_STSD_CompilerPath_Mp4a_Equals_FFmpegOracle,
+    testNativeMuxer_STSD_CompilerPath_Avc1_Equals_FFmpegOracle,
+    testNativeMuxer_SyncRepresentation_CompilerPath_Video_Equals_FFmpegOracle,
+    testNativeMuxer_SyncRepresentation_CompilerPath_Mp4a_Equals_FFmpegOracle,
+    testNativeMuxer_SyncRepresentation_CompilerPath_Opus_Equals_FFmpegOracle,
+    testNativeMuxer_SyncRepresentation_WebCodecs_NoHints_EmitsNothing,
+    testNativeMuxer_Ctts_CompilerPath_Video_Equals_FFmpegOracle,
+    testNativeMuxer_MVHD_Builder_Equals_FFmpegMp4aOracle,
+    testNativeMuxer_MVHD_Builder_Equals_FFmpegOpusOracle,
+    testNativeMuxer_MDAT_Box_Equals_FFmpegOracle,
+    testNativeMuxer_MDAT_Length_Equals_Sum_Of_STSZ,
+    testNativeMuxer_OPUS_STSC_MDAT_CompilerPath_with_FFmpegOpus_ChunkGroupPolicy_Equals_FFmpegOracle,
+    testNativeMuxer_MP4A_STSC_MDAT_CompilerPath_Equals_FFmpegOracle,
+    testNativeMuxer_AVC1_STSC_MDAT_CompilerPath_Equals_FFmpegOracle,
+    test_getSamplesChunkedInFfmpegOpusFormat_basic,
+    testDeriveChunkModel_OneSamplePerChunk,
+    testDeriveChunkModel_Packetized_UsesPacketIndex,
+    testNativeMuxer_DeriveStscEntries_SingleChunkPattern,
+    testNativeMuxer_DeriveStcoOffsets_Simple,
+    testNativeMuxer_DeriveSttsEntries_RunLengthEncoding,
+    testNativeMuxer_DeriveStszSizesFromPayloads,
+    testNativeMuxer_DeriveStsz_Conformance_ffmpeg,
+    testNativeMuxer_DeriveCttsEntries_RunLengthEncoding,
+    testNativeMuxer_DeriveSyncSampleNumbers_Simple,
+    testNativeMuxer_DeriveSyncSampleNumbers_NoKeyInfo,
+    testNativeMuxer_STBL_Children_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_MINF_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_MDIA_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_TRAK_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_UDTA_BuildIntent_FromGoldenClient_EqualsOracle,
+    test_BuildUdtaIntent_DefaultEncoderIdentity,
+    testNativeMuxer_MOOV_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_FTYP_Equals_FFmpegOracle,
+    testNativeMuxer_FREE_Equals_FFmpegOracle,
+    testNativeMuxer_MaterializePassOneTopLevelBoxes_EqualsOracle,
+    testResolveStcoOffsetsPerTrack_BasicLayoutResolution,
+    testNativeMuxer_STCO_Adapter_Equals_FFmpegOracle,
+    testNativeMuxer_STBL_WithResolvedSTCO_Equals_FFmpegOracle,
+    testNativeMuxer_ELST_Equals_FFmpegOracle,
+    testNativeMuxer_MOOV_WithResolvedSTCO_Equals_FFmpegOracle,
+    testDispatcher_NormalizesIndexedPaths,
+    testFromMp4_RootMoov_Resolves,
+    testFromBox_RootMp4_ResolvesMoov,
+    testDispatcher_SampleIndexOutOfRange_ThrowsWithIntentionalMessage,
+    testLookupExtractorByRegistryKey_InvalidKey_Throws,
+    testDispatcher_IsoBoxResolver_RejectsUnsupportedCo64,
+    testDispatcher_OptionalCtts_MissingIsNotAnError,
+    test_DeriveDecodeTimestamps_Invariants,
+    test_applyAvcCContainerPolicy,
+    test_avcC_policy_locked_layout_container_complete,
+    test_avcC_policy_locked_layout_semantic_high_profile,
+    test_UdtaPolicy_OpaquePassthrough,
+    test_UdtaPolicy_ExplicitOmission,
+    test_UdtaPolicy_SemanticIdentity_StructureOnly,
+    testNativeMuxer_AdaptSttsFromSamples_CFR,
+    testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups,
+    testNativeMuxer_trackDurationDerivation_basicSum,
+
+    //testNativeMuxer_EndToEnd_Conformance_ffmpeg,
+/*
+    test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput,
+    test_codecRegistry_ResolvesProfilesByCodecAndSampleEntry,
+    test_codecRegistry_ConfigShapeValidation_RejectsForeignKeys,
+    test_codecRegistry_ConfigShapeValidation_RequiresOwnedKey,
+    test_SourceClient_WebCodecs_AV_ProducesMp4BuildInputInput,
+    test_SourceClient_GoldenMp4_ProducesMp4BuildInput,
+    //test_SourceClient_GoldenMp4_ProducesMp4BuildInput,
+
+
+    test_SourceClient_WebCodecs_ProducesMp4BuildInput,
+    test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic,
+
+    */
+    //generateWebCodecsAvOpusFixtures,
+    //testNativeMuxer_MP4_FromResolvedParts_Equals_FFmpegOracle,
+    //test_SourceClient_WebCodecs_ProducesMp4BuildInput,
+
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_OPUS,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC_AudioSpecificConfigOnly,
+
+    test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic,
+    ];
+
+
+    const tests = testsAll;
+    const testsofff = [
+        testCtts_LockedLayoutEquivalence_ffmpeg
+    ];
+
+
+    let failures = 0;
+    let skips = 0;
+
+    for (const test of tests) {
+        try {
+
+            console.log(
+                `%cRunning: ${test.name}`,
+                "color: blue"
+            );
+
+            await test();
+
+            console.log(
+                `%cPASS: ${test.name}`,
+                "color: green"
+            );
+
+
+        } catch (err) {
+            if (err && err.name === "SkipTestError") {
+                skips++;
+                console.warn(
+                    `%cSKIP: ${test.name}`,
+                    "color: #b58900"
+                );
+                console.warn(err.message);
+            } else {
+                failures++;
+                console.error(
+                    `%cFAIL: ${test.name}`,
+                    "color: red"
+                );
+                console.error(err);
+            }
+        }
+    }
+
+    if (skips > 0) {
+        console.warn(
+            `%cUnit tests skipped: ${skips}`,
+            "color: #b58900"
+        );
+    }
+
+    if (failures > 0) {
+        throw new Error(
+            `${failures} unit test(s) failed`
+        );
+    }
+}
 
 
 /**
@@ -165,1508 +1312,64 @@ from "./test_esds.js";
  * They must never gate NativeMuxer progress.
  */
 async function runInspectionTests() {
+
+   const tests = [
+     //runAudioEncoderProbe,
+     //runAudioEncoderCapabilityProbe,
+     inspectCttsAcrossTracks,
+     inspectEdtsAcrossTracks,
+     inspectUdtaAcrossTracks,
+     inspectCttsResolver,
+     inspectBoxTreeDiff_AV_vs_Visual,
+     testNativeMuxer_TrakIntent_Debug,
+     testNativeMuxer_ElstIntent_Debug,
+     testNativeMuxer_TkhdIntent_Debug,
+   ];
+
+  /*
    await inspectBoxTreeDiff_AV_vs_Visual();
-   return
    await test_Inspection_Stsd_Semantics();
-   await inspect_GoldenMp4_PtsDtsOrder();
    await testUdta_Inspection_ffmpeg();
    await testMeta_Inspection_ffmpeg();
    await testMetaHdlr_Inspection_ffmpeg();
    await testMetaIlst_Inspection_ffmpeg();
-}
+   */
 
-async function runUnitTests() {
 
-/*
-    await testEsds_Structure();
-    await testEsds_GoldenTruthExtractor();
-    await testEsds_LockedLayoutEquivalence_ffmpeg();
-    await testStbl_Structure();
-    await testStbl_GoldenTruthExtractor_Structure_Audio();
-    await testStbl_LockedLayoutEquivalence_ffmpeg();
-    await testStbl_LockedLayoutEquivalence_ffmpeg_Audio();
-    await testStbl_Structure_ConditionalChildren();
-return;
+    let failures = 0;
 
-    
-    await testSbgp_Structure();
-    await testSbgp_LockedLayoutEquivalence_ffmpeg();
-    await testSgpd_Structure();
-    await testSgpd_LockedLayoutEquivalence_ffmpeg();
-    return;
+    for (const test of tests) {
+        try {
 
-*/
+            console.log(
+                `%cRunning: ${test.name}`,
+                "color: blue"
+            );
 
-/*
-     await test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic();
-     return;
+            await test();
 
-    await testNativeMuxer_AdaptSttsFromSamples_CFR();
-    await testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups();
-    await testNativeMuxer_SttsAdapter_Conformance_ffmpeg();
-    return;
+            console.log(
+                `%cPASS: ${test.name}`,
+                "color: green"
+            );
 
-     */
 
-/**
- * PASS 0 — REFERENCE / ORACLE (TEST-ONLY, NOT NATIVE MUXER)
+        } catch (err) {
+            failures++;
+            console.error(
+                `%cFAIL: ${test.name}`,
+                "color: red"
+            );
+            console.error(err);
+        }
+    }
 
-   await testSerializer();
- */
+    if (failures > 0) {
+        throw new Error(
+            `${failures} inspections(s) failed`
+        );
+    }
 
-/**
-    await test_adaptCodecConfigurationToStsdParams();
- * Test libraries used.
- * src/mux/native/tests/assertions.js
- * src/mux/native/tests/assertions.js
- *   - assertion API is being applied via assertions.js
- *   - assertEquals() etc.
- *   - assertEqualHex() 
- *   - assertExists() 
- * 
- * src/mux/native/tests/reference/BoxExtractor.js                                                                                                                            
- *   - extractBoxByPath(buffer, path);
- *   - extractChildBoxFromContainer(containerBox, fourcc);
- *   - extractChildBoxFromSampleEntry(sampleEntryBox, fourcc);
- *   - extractSampleEntry(stsdBox, fourcc);
- *   - findFourCC(buffer, fourcc);
- * 
- * src/mux/native/tests/testUtils.js 
- *   - export function readUint32FromMp4BoxBytes(boxBytes, offset);
- *   - export function readUint16FromMp4BoxBytes(boxBytes, offset);
- *   - export function readBoxTypeFromMp4BoxBytes(boxBytes, offset);
- *   - export function writeDebugAvcC(buffer);
- */
- 
-
-/**
- * Conformance architecture
- * 
- * enforce A Parameter Object with an Explicit Contract
- * 
- * I have now cleanly separated concerns:
- * 
- * Structure
- * 
- * * Field granularity test of box structure.
- * * Asserts against box's returned json node.
- * * Asserts what Framesmith intends to emit
- * * Tests my interpretation of the spec
- * * Stable, fast, isolated
- * 
- * Semantic equivalence (field-decoded comparison)
- *
- * Definition:
- *   Fields are extracted and decoded according to the MP4 spec,
- *   and their decoded values match exactly.
- * 
- * Examples:
- *   - integers
- *   - flags
- *   - arrays
- *   - fixed-point fields
- *   - opaque payloads when the payload itself is the field (e.g. avcC)
- * 
- * This proves:
- *   - no semantic loss
- *   - no endianness bugs
- *   - no truncation
- *   - no re-encoding mistakes  
- * 
- * Conformance Structure (field-level) comparison
- * 
- * * Asserts what the real world emits
- * * Tests against ffmpeg output
- * * Answers “does this match reality?”
- * * Every non-mdat box in the entire file must be constructed from meaning.
- * * A box equivalence test may only depend on inputs that are semantically valid for that box.
- * If this fails in the future, I will now get errors like:
- * 
- * FAIL: ftyp compatible_brand[2] mismatch
- * Expected: avc1
- * Actual: hev1
- * 
- * instead of:
- * 
- * FAIL: byte mismatch at offset 24
- * 
- * That is the whole point.
- */ 
-
-/**
- * Locked-Layout Equivalence Tests (IMPORTANT)
- * -------------------------------------------
- *
- * Some tests in this suite validate box builders by comparing their
- * serialized output byte-for-byte against a golden MP4 produced by ffmpeg.
- *
- * These tests operate under a *locked layout*:
- *
- *   - All layout-dependent values (e.g. moov size, chunk offsets)
- *     are injected or mocked
- *   - No policy decisions are made by the system under test
- *   - The box builder is treated as a pure serializer
- *
- * The purpose of these tests is NOT to test policy, assembly order,
- * or finalization logic.
- *
- * Their sole purpose is to answer the question:
- *
- *   “Given the same conditions ffmpeg had,
- *    do we serialize the same bytes?”
- *
- * This provides an early, atomic proof that:
- *   - our interpretation of the MP4 spec matches reality
- *   - our field ordering, sizing, and encoding are correct
- *   - no semantic information is lost during serialization
- *
- * These tests are allowed to run before full NativeMuxer finalization
- * exists, because all degrees of freedom are fixed by the test itself.
- *
- * Failures in these tests indicate a divergence from real-world MP4
- * encoding behavior and must be investigated immediately.
- */
-
-
-    // ---- LEAF BOXES ----
-
-    // NOTE ON TEST ORDER:
-    //
-    // Box builders are developed box-by-box in three phases:
-    //
-    // Phase A: JSON representation migration
-    // Phase B: Structural correctness (mp4ra + mp4box.js)
-    // Phase C: Optional conformance against golden MP4
-    //
-    // Phase C tests must only be added once A and B are complete
-    // for that box, otherwise they encode unstable assumptions.
-
-    // Testing rules:
-    // Tests do not parse MP4s. Tests ask extractors questions.
-
-    // The test before the `return` are the following status:
-    // Phase A - done 
-    // Phase B - done 
-    // Phase c - done 
-    await testStsz_Structure();
-    await testStsz_LockedLayoutEquivalence_ffmpeg();
-    await testHdlr_Structure(); 
-    await testHdlr_LockedLayoutEquivalence_ffmpeg();
-    await testVmhd_Structure();
-    await testVmhd_LockedLayoutEquivalence_ffmpeg();
-    await testDref_Structure();
-    await testDref_LockedLayoutEquivalence_ffmpeg();
-    await testStts_Structure();
-    await testStts_Conformance();
-    await testStsc_Structure();
-    await testStsc_Conformance();
-
-    // NOTE ON STCO CONFORMANCE (IMPORTANT)
-    // -----------------------------------
-    //
-    // STCO (Chunk Offset Box) CANNOT be validated for conformance
-    // at the box-builder level.
-    //
-    // This is not a limitation of the test suite — it is a property
-    // of the MP4 format itself.
-    //
-    // The offsets stored in STCO are *derived data*.
-    // They depend on the final physical layout of the file, including:
-    //
-    //   - the size of `ftyp`
-    //   - the fully assembled size of `moov`
-    //   - the placement and header size of `mdat`
-    //   - the chunking policy defined by `stsc`
-    //   - the sample sizes defined by `stsz`
-    //
-    // None of these values are known when the STCO box is built
-    // in isolation.
-    //
-    // Any attempt to validate STCO offsets before final assembly
-    // would require fabricating or hard-coding layout assumptions,
-    // which would make the test dishonest.
-    //
-    // Therefore:
-    //   - STCO Phase A (JSON intent) is validated here
-    //   - STCO Phase B (structural encoding) is validated here
-    //   - STCO Phase C (offset correctness) is validated ONLY at
-    //     the NativeMuxer finalization boundary, where the full
-    //     MP4 file layout is known and stable
-    //
-    // This separation is intentional and architectural.
-    await testStco_Structure();
-
-    // -----------------------------------------------------------------
-    // STCO — FINALIZATION & CONFORMANCE (PASS 4)
-    // -----------------------------------------------------------------
-    //
-    // STCO is finalized ONLY after physical layout resolution.
-    //
-    // This phase consists of:
-    //   - committing layout-derived offsets into STCO
-    //   - validating byte-for-byte equivalence with ffmpeg
-    //
-    // No layout logic exists beyond this point.
-    // These tests validate STCO serialization against a golden MP4
-    // under locked layout conditions.
-    //
-    // In these tests:
-    //   - chunk offsets are injected directly
-    //   - moov size is treated as already-known
-    //   - no offset computation logic is exercised
-    //
-    // The test asserts ONLY:
-    //   - correct field encoding
-    //   - correct ordering
-    //   - correct size accounting
-    //   - byte-for-byte equivalence with ffmpeg
-    //
-    // This is NOT a policy test.
-    // This is NOT a finalization test.
-    // This is NOT testing offset computation.
-    //
-    // It is a proof that, given the same inputs as ffmpeg,
-    // our STCO builder serializes identical bytes.
-    await testStco_LockedLayoutEquivalence_ffmpeg();
-    
-    await testFtyp_Structure();
-    await testFtyp_Conformance();
-    await testTkhd_Structure();
-    await testTkhd_LockedLayoutEquivalence_ffmpeg();
-    await testMdhd_Structure();
-    await testMdhd_Conformance();
-    await testMvhd_Structure();
-    await testMvhd_LockedLayoutEquivalence_ffmpeg();
-
-    await testAvcC_Structure();
-    await testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg();
-    await testBtrt_Structure();
-    await testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg();
-    await testPasp_Structure();
-    await testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg();
-    await testAvc1_Structure();
-    await testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg();
-    await testStsd_Structure();
-    await testStsd_GoldenTruthExtractor();
-    await testStsd_LockedLayoutEquivalence_ffmpeg();
-
-    // -----------------------------------------------------------------
-    // REMAINING STBL LEAF BOXES (REQUIRED BY REAL-WORLD MP4s)
-    // -----------------------------------------------------------------
-    //
-    // ffmpeg-produced MP4 files include additional sample table boxes
-    // beyond the minimal set:
-    //
-    //   - stss (Sync Sample Box)
-    //   - ctts (Composition Time to Sample Box)
-    //
-    // These boxes are *structural requirements* for real playback,
-    // not optional embellishments.
-    //
-    // They MUST be implemented, tested, and proven in isolation
-    // before STBL container equivalence can be asserted.
-    //
-    // Each box follows the same discipline as all others:
-    //   - Phase A: structural correctness
-    //   - Phase C: byte-for-byte equivalence against a golden MP4
-    //
-    // No container tests may proceed until these leaf boxes are proven.
-    
-    await testStss_Structure();
-    await testStss_LockedLayoutEquivalence_ffmpeg();
-    await testCtts_Structure();
-    await testCtts_LockedLayoutEquivalence_ffmpeg();
-
-    // -----------------------------------------------------------------
-    // CONTAINER BOUNDARY: STBL / MINF / MDIA / TRAK / MOOV
-    // -----------------------------------------------------------------
-    //
-    // At this point, all *leaf* boxes that form the Sample Table (STBL)
-    // must have completed Phase A (JSON-only builders).
-    //
-    // STBL is not a leaf box itself — it is a *composite container* made
-    // up of the following children:
-    //
-    //   stsd  Sample Descriptions
-    //   stts  Sample Timing
-    //   stsc  Sample-to-Chunk mapping
-    //   stsz  Sample Sizes
-    //   stco  Chunk Offsets
-    //
-    // These boxes are individually testable in isolation, but STBL
-    // cannot be validated meaningfully until *all five* are stable,
-    // because its correctness depends on their combined structure.
-    //
-    // The same is true for the higher-level containers built above STBL:
-    //
-    //   dinf → minf → mdia → trak → moov
-    //
-    // `testMoov()` is therefore the architectural boundary where:
-    //
-    //   - leaf box refactors must be complete
-    //   - byte-level serialization must be consistent
-    //   - container composition begins
-    //
-
-    // -----------------------------------------------------------------
-    // CONTAINER BUILDERS — PHASE A (STRUCTURE ONLY)
-    // -----------------------------------------------------------------
-    //
-    // The following tests represent the *intended architectural boundaries*
-    // of the MP4 container hierarchy.
-    //
-    // At this stage:
-    //
-    //   - These boxes exist conceptually in the MP4 specification
-    //   - Some are still implemented implicitly inside `buildMoovBox`
-    //   - Dedicated box builders for them do NOT yet exist
-    //
-    // These tests are therefore:
-    //   - Phase A only (JSON intent and structure)
-    //   - Expected to fail until each boundary is extracted
-    //
-    // The extraction order is intentional and MUST be followed:
-    //
-    //   1. STBL  (composes all sample table leaf boxes)
-    //   2. DINF  (simple, mostly static data references)
-    //   3. MINF  (media information container)
-    //   4. MDIA  (media container)
-    //   5. TRAK  (track container)
-    //   6. MOOV  (top-level movie container)
-    //
-    // As each container builder is introduced:
-    //   - Implement the builder
-    //   - Add ONLY a Phase A structure test
-    //   - Move the return cursor downward
-    //   - Do NOT modify higher-level tests
-    //
-    // This ensures:
-    //   - Architectural intent is preserved
-    //   - Refactoring remains incremental
-    //   - No derived or layout-dependent assumptions leak in early
-    //
-
-    // -----------------------------------------------------------------
-    // STBL — LOCKED-LAYOUT EQUIVALENCE
-    // -----------------------------------------------------------------
-    //
-    // These tests validate STBL serialization against a golden MP4
-    // under fully locked layout conditions.
-    //
-    // Preconditions (all MUST already be proven):
-    //   - STSD semantic and byte-level equivalence
-    //   - STTS semantic and byte-level equivalence
-    //   - STSS semantic and byte-level equivalence
-    //   - CTTS semantic and byte-level equivalence
-    //   - STSC semantic and byte-level equivalence
-    //   - STSZ semantic and byte-level equivalence
-    //   - STCO locked-layout equivalence
-    //
-    // In these tests:
-    //   - all child boxes are built using Framesmith builders
-    //   - all derived values are injected as resolved inputs
-    //   - no layout, chunking, or policy decisions are made
-    //
-    // The test asserts:
-    //   - correct child discovery and ordering
-    //   - correct container size propagation
-    //   - byte-for-byte equivalence with ffmpeg output
-    //
-    // This proves that STBL, as a container boundary,
-    // faithfully represents real-world MP4 structure.
-    //
-    await testStbl_Structure();
-    await testStbl_GoldenTruthExtractor_Structure_Audio();
-    await testStbl_LockedLayoutEquivalence_ffmpeg();
-    await testStbl_LockedLayoutEquivalence_ffmpeg_Audio();
-    await testStbl_Structure_ConditionalChildren();
-    await testStbl_ConditionalChildren_TODO();
-
-    await testDinf_Structure();
-    await testDinf_LockedLayoutEquivalence_ffmpeg();
-
-    await testMinf_Structure();
-    await testMinf_LockedLayoutEquivalence_ffmpeg();
-
-    await testMdia_Structure();
-    await testMdia_LockedLayoutEquivalence_ffmpeg();
-
-    await testElst_Structure();
-    await testElst_LockedLayoutEquivalence_ffmpeg();
-
-    await testEdts_Structure();
-    await testEdts_LockedLayoutEquivalence_ffmpeg();
-
-    await testTrak_Structure();
-    await testTrak_LockedLayoutEquivalence_ffmpeg();
-
-    await testData_Structure();
-    await testData_LockedLayoutEquivalence_ffmpeg();
-
-    await testIlstItem_Structure();
-    await testIlstItem_LockedLayoutEquivalence_ffmpeg();
-
-    await testIlst_Structure();
-    await testIlst_LockedLayoutEquivalence_ffmpeg();
-
-    await testMetaHdlr_Structure(); 
-    await testMetaHdlr_LockedLayoutEquivalence_ffmpeg();
-    await testMeta_Structure();
-    await testMeta_LockedLayoutEquivalence_ffmpeg();
-
-    await testUdta_Structure();
-    await testUdta_LockedLayoutEquivalence_ffmpeg();
-
-    await testMoov_Structure();
-    await testMoov_LockedLayoutEquivalence_ffmpeg();
-
-    await testMdat_Structure();
-
-    await testFree_Structure();
-    await testFree_LockedLayoutEquivalence_ffmpeg();
-/*
-    await testSbgp_Structure();
-    await testSbgp_LockedLayoutEquivalence_ffmpeg();
-    await testSgpd_Structure();
-    await testSgpd_LockedLayoutEquivalence_ffmpeg();
-*/
-    /**
-     * ===============================================================
-     * PHASE: SAMPLE EXTRACTION (REFERENCE → MEANING)
-     * ===============================================================
-     *
-     * Purpose
-     * -------
-     * This phase introduces a *reference-only* extractor that reads a
-     * real MP4 file (e.g. ffmpeg output) and produces a canonical list
-     * of media samples in Framesmith / NativeMuxer format.
-     *
-     * This is the first point where we intentionally cross from:
-     *
-     *   "MP4 as bytes"
-     *        →
-     *   "MP4 as semantic media events"
-     *
-     * The output of this phase becomes the *sole allowed input* to:
-     *
-     *   - mdat passthrough tests
-     *   - NativeMuxer assembly tests
-     *   - chunking / interleaving policy tests
-     *
-     * ---------------------------------------------------------------
-     * Output Contract (REQUIRED)
-     * ---------------------------------------------------------------
-     *
-     * The extractor MUST return an ordered array of sample objects:
-     *
-     * {
-     *   bytes: Uint8Array,   // exact sample payload, no mutation
-     *   timestamp: number,  // decode timestamp, in track timescale
-     *   duration: number,   // sample duration, in track timescale
-     *   isKey: boolean      // derived from stss (or true if absent)
-     * }
-     *
-     * This contract is:
-     *   - independent of MP4 box layout
-     *   - independent of chunking
-     *   - independent of file offsets
-     *
-     * It represents *meaning*, not structure.
-     *
-     * ---------------------------------------------------------------
-     * Test: testSampleExtraction_FromGoldenMp4
-     * ---------------------------------------------------------------
-     *
-     * This test asserts THREE things, and ONLY these three things:
-     *
-     *   1. Structural integrity
-     *      - Each sample matches the contract exactly
-     *      - No empty payloads
-     *      - No missing timestamps, durations, or keyframe flags
-     *
-     *   2. Coverage integrity
-     *      - The concatenation of all sample.bytes MUST cover the
-     *        entire mdat payload, exactly once
-     *
-     *   3. Byte preservation
-     *      - Concatenating sample.bytes in order MUST reproduce the
-     *        original mdat payload byte-for-byte
-     *
-     * This test does NOT assert:
-     *   - chunk boundaries
-     *   - offset correctness
-     *   - interleaving policy
-     *   - ffmpeg policy equivalence
-     *
-     * Those are NativeMuxer responsibilities.
-     *
-     * ---------------------------------------------------------------
-     * Architectural Constraints (IMPORTANT)
-     * ---------------------------------------------------------------
-     *
-     * 1. Tests DO NOT parse MP4 boxes.
-     *    Tests ask extractors questions.
-     *
-     * 2. There is NO generic `readMp4Boxes()` API.
-     *    MP4 parsing is internal to the extractor.
-     *
-     * 3. There is NO `extractVideoTrack()` API.
-     *    Track discovery is an implementation detail.
-     *
-     * 4. This extractor is REFERENCE-ONLY.
-     *    It exists to:
-     *      - read real-world MP4s
-     *      - validate understanding of MP4 semantics
-     *      - provide trusted inputs to NativeMuxer tests
-     *
-     * It is NOT part of the production NativeMuxer pipeline.
-     *
-     * ---------------------------------------------------------------
-     * Implementation Expectations (NON-NORMATIVE)
-     * ---------------------------------------------------------------
-     *
-     * Internally, the extractor will:
-     *
-     *   - Locate moov / trak / mdia / minf / stbl
-     *   - Use existing table readers:
-     *       stts, ctts, stsz, stsc, stco, stss
-     *   - Derive:
-     *       sample boundaries
-     *       decode timestamps
-     *       durations
-     *       keyframe flags
-     *   - Slice the mdat payload accordingly
-     *
-     * The order of operations is:
-     *
-     *   MP4 bytes
-     *     → tables
-     *     → sample layout
-     *     → semantic samples
-     *
-     * ---------------------------------------------------------------
-     * Why this phase exists
-     * ---------------------------------------------------------------
-     *
-     * Without this phase:
-     *   - `mdat` cannot be tested meaningfully
-     *   - NativeMuxer policy tests would depend on ffmpeg internals
-     *   - STCO correctness cannot be proven against real data
-     *
-     * With this phase:
-     *   - NativeMuxer becomes a pure assembler
-     *   - Derived layout logic is isolated and testable
-     *   - Box builders remain free of media semantics
-     *
-     * This is a hard architectural boundary.
-     */
-    await testSampleExtraction_FromGoldenMp4();
-
-    /**
-     * ===============================================================
-     * SEMANTIC DERIVATION & POLICY — IMPLEMENTED & LOCKED 
-     * (Architectural Pass 1)
-      ===============================================================
-     *
-     * This phase validates NativeMuxer logic that operates entirely
-     * on semantic inputs and fabricated data.
-
-     * They DO NOT:
-     *   - parse MP4 boxes themselves
-     *   - access MP4 bytes or container paths
-     *
-     * Any MP4 parsing occurs strictly in the reference
-     * extraction phase and is already resolved into
-     * semantic inputs before these tests run.    *
-
-     * Characteristics:
-     *   - NO ffmpeg fixtures
-     *   - NO box emitters
-     *
-     * ---------------------------------------------------------------
-     * SUBPHASE: DERIVED BOX INPUTS (SEMANTIC → STRUCTURAL)
-     * ---------------------------------------------------------------
-     *
-     * These tests validate pure derivation of MP4 table inputs
-     * from semantic models produced earlier in the pipeline.
-     *
-     * They DO NOT:
-     *   - emit MP4 boxes
-     *   - compute byte offsets from file layout
-     *
-     * They operate only on:
-     *   - samples[]
-     *   - chunks[]
-     *
-     * Covered derivations:
-     *   - STSC entries
-     *   - STCO offsets
-     *
-     * Purpose:
-     *   - Isolate derived-table logic from serialization
-     *   - Prevent policy leakage into box emitters
-     */
-    await testDeriveChunkModel_OneSamplePerChunk();
-    await testNativeMuxer_DeriveStscEntries_SingleChunkPattern();
-    await testNativeMuxer_DeriveStcoOffsets_Simple();
-    await testNativeMuxer_DeriveSttsEntries_RunLengthEncoding();
-    await testNativeMuxer_DeriveStszSizesFromPayloads();
-    await testNativeMuxer_DeriveStsz_Conformance_ffmpeg();
-    await testNativeMuxer_DeriveCttsEntries_RunLengthEncoding();
-    await testNativeMuxer_DeriveStssSampleNumbers_Simple();
-    await testNativeMuxer_DeriveStssSampleNumbers_NoKeyInfo();
-    await test_DeriveDecodeTimestamps_Invariants();
-    await test_DeriveDecodeTimestamps_LockedLayoutEquivalence_ffmpeg();
-    await test_applyAvcCContainerPolicy();
-    await test_avcC_policy_locked_layout_container_complete();
-    await test_avcC_policy_locked_layout_semantic_high_profile();
-    await test_UdtaPolicy_OpaquePassthrough();
-    await test_UdtaPolicy_ExplicitOmission();
-    await test_UdtaPolicy_SemanticIdentity_StructureOnly();
-    await test_adaptCodecConfigurationToStsdParams();
-                                                                    
-
-
-    /**
-     * ---------------------------------------------------------------
-     * SUBPHASE: EMITTER ADAPTERS (SEMANTIC → EMITTER CONTRACT)
-     * ---------------------------------------------------------------
-     *
-     * Purpose
-     * -------
-     * These tests validate *adapter functions* that translate
-     * semantic derivation output into the exact parameter objects
-     * required by box emitters.
-     *
-     * Adapters exist to enforce a hard boundary:
-     *
-     *   - Derivation logic produces *meaning*
-     *   - Emitters accept *strict, minimal contracts*
-     *
-     * Adapters:
-     *   - perform validation
-     *   - enforce emitter limitations (e.g. single-entry STSC)
-     *   - reject unsupported semantic shapes early
-     *
-     * They DO NOT:
-     *   - derive meaning
-     *   - inspect MP4 bytes
-     *   - apply policy
-     *
-     * This layer prevents semantic leakage into box emitters
-     * and keeps emitters deterministic and dumb.
-     */
-
-    await testNativeMuxer_AdaptSttsFromSamples_CFR();
-    await testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups();
-    await testNativeMuxer_SttsAdapter_Conformance_ffmpeg();
-
-    await testNativeMuxer_CttsAdapter_Conformance_ffmpeg();
-    await testNativeMuxer_StscDerivation_Conformance_ffmpeg();
-    await testNativeMuxer_trackDurationDerivation_basicSum();
-
-    // Finally the STCO replacement phase!
-    await testCommitStbl_InsertsStcoWhenMissing();
-    await testCommitStbl_PreservesAllChildrenAndReplacesStco();
-
-    await testCommitMinf_Structure();
-    await testCommitMinf_SizePropagation();
-
-    await testCommitMdia_Structure();
-    await testCommitMdia_SizePropagation();
-
-    await testCommitTrak_Structure();
-    await testCommitTrak_SizePropagation();
-
-    await testCommitMoov_Structure();
-    await testCommitMoov_SizePropagation();
-
-    /*
-     * ===============================================================
-     * COMPLETE — MDAT PAYLOAD ASSEMBLY (LOCKED)
-     * (Architectural classification: Pass 2 — MDAT Assembly)
-     * ===============================================================
-     *
-     * Architecturally, this corresponds to the MDAT assembly stage of the NativeMuxer pipeline.
-     *
-     * This test proves correctness of **mdat payload assembly** from a
-     * derived chunk model.
-     *
-     * What is proven here is NOT MP4 formatting — it is *semantic fidelity*.
-     *
-     * ---------------------------------------------------------------
-     * WHAT THIS TEST PROVES
-     * ---------------------------------------------------------------
-     *
-     * Given:
-     *   - canonical semantic samples extracted from a real MP4
-     *   - a derived chunk model produced by a chunking policy
-     *
-     * This test proves that NativeMuxer can:
-     *
-     *   - assemble a single contiguous mdat payload
-     *   - preserve every byte exactly once
-     *   - preserve global sample order
-     *   - preserve chunk-local boundaries
-     *   - compute correct chunk-relative byte offsets
-     *
-     * This establishes mdat assembly as a **pure, deterministic compiler pass**.
-     *
-     * ---------------------------------------------------------------
-     * WHAT IS NOW ARCHITECTURALLY LOCKED
-     * ---------------------------------------------------------------
-     *
-     * The following are now *invariants* of NativeMuxer:
-     *
-     *   1. `mdat` payload bytes are assembled exclusively from semantic samples
-     *   2. Chunk boundaries are authoritative and preserved
-     *   3. No MP4 box, layout, or offset knowledge exists in this pass
-     *   4. Chunk offsets are relative to mdat payload, not file layout
-     *
-     * Any future change that violates these invariants is a regression.
-     *
-     * ---------------------------------------------------------------
-     * WHAT THIS PASS EXPLICITLY DOES NOT DO
-     * ---------------------------------------------------------------
-     *
-     * This test does NOT:
-     *   - emit an `mdat` box
-     *   - compute absolute file offsets
-     *   - populate STCO
-     *   - depend on box sizes or ordering
-     *   - compare against ffmpeg output
-     *
-     * Those concerns belong to **physical layout resolution**,
-     * which is the next architectural pass.
-     *
-     * ---------------------------------------------------------------
-     * NEXT REQUIRED WORK (MANDATORY)
-     * ---------------------------------------------------------------
-     *
-     * NEXT DEVELOPMENT PHASE — PHYSICAL LAYOUT RESOLUTION (TEST SPEC)
-     * (Architectural Pass 3: Physical Layout Resolution)
-     * 
-     * This upcoming pass will:
-     *   - determine final box ordering
-     *   - resolve absolute file offsets
-     *   - finalize STCO values
-     *   - bind mdat-relative offsets to file-relative positions
-     *
-     * STCO correctness MUST be proven only after this pass exists.
-     *
-     * ---------------------------------------------------------------
-     * TODO (DO NOT SKIP)
-     * ---------------------------------------------------------------
-     *
-     * A second mdat assembly test MUST be added to harden this pass:
-     *
-     *   - Policy: ChunkPolicies.ONE_SAMPLE_PER_CHUNK
-     *   - Purpose: validate multi-chunk assembly invariants
-     *
-     * This test is intentionally deferred until layout work begins,
-     * but it MUST be implemented before declaring NativeMuxer assembly complete.
-     *
-     * Failure to add this test is a correctness gap.
-     */
-    await testNativeMuxer_MdatAssembly_FromChunkModel();
-
-    /**
-     * ===============================================================
-     * PASS 3 — PHYSICAL LAYOUT RESOLUTION (TEST SPEC)
-     * ===============================================================
-     *
-     * This test validates **physical layout resolution** for NativeMuxer.
-     *
-     * Physical layout resolution is the pass where:
-     *
-     *   - box ordering is fixed
-     *   - serialized box sizes are accounted for
-     *   - absolute file offsets are computed
-     *   - STCO offsets are finalized
-     *
-     * This pass is the ONLY place where:
-     *   - file offsets exist
-     *   - chunk-relative offsets become file-relative offsets
-     *
-     * ---------------------------------------------------------------
-     * PURPOSE
-     * ---------------------------------------------------------------
-     *
-     * Prove that NativeMuxer can deterministically resolve a valid
-     * MP4 file layout from:
-     *
-     *   - semantic samples
-     *   - a derived chunk model
-     *   - assembled mdat payload
-     *   - fully defined box structure (except STCO values)
-     *
-     * This test validates layout correctness, NOT serialization fidelity.
-     *
-     * ---------------------------------------------------------------
-     * PRECONDITIONS (MUST ALREADY BE PROVEN)
-     * ---------------------------------------------------------------
-     *
-     * - Sample extraction from a real MP4 is correct
-     * - Chunk model derivation is correct
-     * - MDAT payload assembly is correct (PASS 2)
-     * - All leaf box builders exist and are structurally correct
-     *
-     * This test MUST NOT re-validate those properties.
-     *
-     * ---------------------------------------------------------------
-     * INPUTS
-     * ---------------------------------------------------------------
-     *
-     * 1. Semantic samples (oracle)
-     *
-     *    Extracted from a golden MP4 via:
-     *
-     *      extractVideoSamplesFromMp4({ mp4Bytes })
-     *
-     * 2. Chunk model
-     *
-     *    Derived via:
-     *
-     *      deriveChunkModel(samples, policy)
-     *
-     * 3. MDAT assembly output
-     *
-     *    Produced via:
-     *
-     *      assembleMdatPayloadFromChunks(chunks)
-     *
-     *    {
-     *      payload: Uint8Array,
-     *      chunkOffsets: number[],        // relative to payload
-     *      chunkByteLengths: number[]
-     *    }
-     *
-     * 4. Box graph (JSON intent)
-     *
-     *    - ftyp
-     *    - moov (with all child boxes except final STCO values)
-     *    - mdat (payload only, header not yet serialized)
-     *
-     * ---------------------------------------------------------------
-     * SUBJECT UNDER TEST
-     * ---------------------------------------------------------------
-     *
-     *   resolvePhysicalLayout({
-     *     ftypNode,
-     *     moovNode,
-     *     mdatPayload,
-     *     chunkOffsets
-     *   })
-     *
-     * ---------------------------------------------------------------
-     * REQUIRED OUTPUT
-     * ---------------------------------------------------------------
-     *
-     * The resolver MUST return:
-     *
-     * {
-     *   fileBoxOrder: [ 'ftyp', 'moov', 'mdat' ],
-     *
-     *   boxOffsets: {
-     *     ftyp: number,
-     *     moov: number,
-     *     mdat: number
-     *   },
-     *
-     *   mdatDataOffset: number,
-     *
-     *   stcoOffsets: number[]
-     * }
-     *
-     * ---------------------------------------------------------------
-     * ASSERTIONS (MANDATORY)
-     * ---------------------------------------------------------------
-     *
-     * A. Box ordering (LOCKED)
-     *
-     *    fileBoxOrder MUST equal:
-     *
-     *      [ 'ftyp', 'moov', 'mdat' ]
-     *
-     *    No other ordering is permitted in this pass.
-     *
-     * ---------------------------------------------------------------
-     *
-     * B. Box offset correctness
-     *
-     *    Offsets MUST satisfy:
-     *
-     *      ftypOffset === 0
-     *      moovOffset === ftypOffset + ftypSerializedSize
-     *      mdatOffset === moovOffset + moovSerializedSize
-     *
-     *    Offsets MUST be:
-     *      - monotonically increasing
-     *      - gap-free
-     *      - non-overlapping
-     *
-     * ---------------------------------------------------------------
-     *
-     * C. MDAT payload offset correctness
-     *
-     *    mdatDataOffset MUST equal:
-     *
-     *      mdatOffset + mdatHeaderSize
-     *
-     *    Where:
-     *      mdatHeaderSize === 8 bytes
-     *
-     * ---------------------------------------------------------------
-     *
-     * D. STCO offset finalization
-     *
-     *    For every chunk index i:
-     *
-     *      stcoOffsets[i] ===
-     *        mdatDataOffset + chunkOffsets[i]
-     *
-     * ---------------------------------------------------------------
-     *
-     * E. STCO bounds validity
-     *
-     *    Every STCO offset MUST satisfy:
-     *
-     *      stcoOffset >= mdatDataOffset
-     *      stcoOffset <  mdatDataOffset + mdatPayload.length
-     *
-     * ---------------------------------------------------------------
-     *
-     * F. Cardinality invariants
-     *
-     *    - stcoOffsets.length === chunkOffsets.length
-     *    - chunkOffsets.length === number of chunks
-     *
-     * ---------------------------------------------------------------
-     * EXPLICIT NON-ASSERTIONS
-     * ---------------------------------------------------------------
-     *
-     * This test MUST NOT:
-     *
-     *   - emit any MP4 bytes
-     *   - serialize boxes to buffers
-     *   - compare against ffmpeg output
-     *   - validate sample timing or codec metadata
-     *   - test STCO box encoding
-     *
-     * It validates layout math ONLY.
-     *
-     * ---------------------------------------------------------------
-     * FAILURE INTERPRETATION
-     * ---------------------------------------------------------------
-     *
-     * A failure in this test indicates:
-     *
-     *   - incorrect box size accounting
-     *   - incorrect layout ordering
-     *   - incorrect offset arithmetic
-     *   - premature or incorrect STCO derivation
-     *
-     * It does NOT indicate:
-     *   - box builder errors
-     *   - sample extraction errors
-     *   - chunking policy errors
-     *
-     * ---------------------------------------------------------------
-     * ARCHITECTURAL INVARIANTS (LOCKED BY THIS TEST)
-     * ---------------------------------------------------------------
-     *
-     * 1. STCO values are finalized ONLY after physical layout resolution
-     * 2. No box is aware of its file offset
-     * 3. Layout resolution is deterministic and policy-free
-     * 4. MDAT-relative offsets are the sole input to STCO finalization
-     *
-     * Any future change violating these rules is a regression.
-     *
-     * ---------------------------------------------------------------
-     * NEXT REQUIRED WORK
-     * ---------------------------------------------------------------
-     *
-     * After this test passes:
-     *
-     *   - Implement final STCO emission
-     *   - Emit the `mdat` box using the assembled payload
-     *   - Write a single end-to-end NativeMuxer test
-     *
-     * End-to-end conformance MUST NOT be attempted before this test is green.
-     */
-
-     await testNativeMuxer_PhysicalLayoutResolution_Minimal_SingleChunk_Stco();
-
-    /**
-     * ===============================================================
-     * PASS 4 — STCO FINALIZATION (COMMIT PHASE)
-     * ===============================================================
-     *
-     * This phase is where NativeMuxer crosses from:
-     *
-     *   “layout is known”
-     *        →
-     *   “layout is written into boxes”
-     *
-     * This is the FIRST commit step of the muxer.
-     *
-     * ---------------------------------------------------------------
-     * PURPOSE
-     * ---------------------------------------------------------------
-     *
-     * Finalize the STCO (Chunk Offset Box) using the output of
-     * physical layout resolution (Pass 3).
-     *
-     * At this point:
-     *   - ftyp size is known
-     *   - moov size is known
-     *   - mdat header size is known
-     *   - mdat payload layout is known
-     *   - absolute chunk offsets are final
-     *
-     * STCO offsets are no longer provisional.
-     *
-     * ---------------------------------------------------------------
-     * SUBPHASE A — SEMANTIC COMMIT (NO FFMPEG)
-     * ---------------------------------------------------------------
-     *
-     * This test proves that:
-     *
-     *   - layout.stcoOffsets are written verbatim into STCO
-     *   - no recomputation occurs
-     *   - no hidden layout or policy logic exists in the emitter
-     *
-     * This test does NOT:
-     *   - compare against ffmpeg
-     *   - validate byte-level equivalence
-     *
-     * It answers one question only:
-     *
-     *   “Did we commit exactly what Pass 3 decided?”
-     *
-     * This test MUST pass before any conformance test is meaningful.
-     */
-    await testNativeMuxer_StcoCommit_FromPhysicalLayout();
-
-    /**
-     * ---------------------------------------------------------------
-     * SUBPHASE B — STCO CONFORMANCE (BYTE-FOR-BYTE)
-     * ---------------------------------------------------------------
-     *
-     * This test validates that a finalized STCO box produced by
-     * NativeMuxer is byte-for-byte identical to the STCO box in
-     * a golden MP4 produced by ffmpeg.
-     *
-     * Preconditions (ALL MUST HOLD):
-     *   - Physical layout resolution is proven
-     *   - STCO commit test is proven
-     *   - Chunking policy matches the fixture
-     *
-     * This test:
-     *   - extracts the reference STCO box bytes
-     *   - serializes the NativeMuxer STCO box
-     *   - compares bytes directly
-     *
-     * A failure here indicates:
-     *   - incorrect offset arithmetic
-     *   - incorrect field encoding
-     *   - incorrect size propagation
-     *
-     * It does NOT indicate policy or derivation errors.
-     */
-    await testNativeMuxer_StcoConformance_ffmpeg();
-
-    /**
-     * ===============================================================
-     * PASS 5 — END-TO-END FILE ASSEMBLY (CONFORMANCE)
-     * ===============================================================
-     *
-     * This is the first test that validates NativeMuxer as a complete compiler.
-     *
-     * It asserts that:
-     *   - semantic samples extracted from a real MP4
-     *   - when passed through all NativeMuxer passes
-     *   - produce a byte-for-byte identical MP4 file
-     *
-     * This test:
-     *   - spans all architectural passes
-     *   - allows no mocking
-     *   - allows no injected layout assumptions
-     *
-     * A failure here indicates a boundary violation between passes,
-     * not a local box error.
-     *
-     * This test MUST remain below all Pass 1–4 tests.
-     */
-     await testNativeMuxer_EndToEnd_Conformance_ffmpeg();
-
-     await test_NativeMuxer_Linker_EmitsResolvedMp4();
-
-     await test_SourceClient_WebCodecs_ProducesMp4BuildInput();
-     await test_SourceClient_GoldenMp4_ProducesMp4BuildInput();
-
-     await test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical();
-
-     await test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic();
-
-
-   // `return` cursor, we move these down through this function
-   // as we implement each box builder, this tracks our progress
-   // through phase A, B and C
-   // The test following `return` are the following status:
-   // Phase A - todo 
-   // Phase B - todo 
-   // Phase c - todo 
-   return
-
-    /**
-     * ===============================================================
-     * NATIVE MUXER — ASSEMBLY & POLICY (IMPLEMENTED / PARTIAL) 
-     * (POLICY COMPLETE, ASSEMBLY PARTIAL)
-     * ===============================================================
-     *
-     * This section defines the **current, authoritative architecture**
-     * for NativeMuxer assembly and policy.
-     *
-     * It reflects the system *as it exists today*, not historical
-     * experiments or deprecated abstractions.
-     *
-     * ---------------------------------------------------------------
-     * ARCHITECTURAL CORRECTION (IMPORTANT)
-     * ---------------------------------------------------------------
-     *
-     * NativeMuxer does NOT have a standalone “chunk layout policy”
-     * that returns MP4 table shapes (e.g. STSC fields).
-     *
-     * That model has been deliberately removed.
-     *
-     * Instead:
-     *
-     *   • Policies define **semantic grouping intent only**
-     *   • Chunk models are **derived from samples + policy**
-     *   • MP4 tables (STSC, STCO, etc.) are **derived from the chunk model**
-     *
-     * This preserves a strict separation between:
-     *
-     *   - policy decisions (meaning)
-     *   - derivation logic (meaning → structure)
-     *   - serialization (structure → bytes)
-     *
-     * ---------------------------------------------------------------
-     * CURRENTLY IMPLEMENTED
-     * ---------------------------------------------------------------
-     *
-     * 1. Sample Extraction (REFERENCE → MEANING)
-     *
-     *    Purpose:
-     *      - Read a real MP4 (e.g. ffmpeg output)
-     *      - Extract canonical semantic samples
-     *
-     *    Output contract:
-     *      {
-     *        bytes: Uint8Array,
-     *        timestamp: number,
-     *        duration: number,
-     *        isKey: boolean,
-     *        sampleDescriptionIndex: number
-     *      }
-     *
-     *    Guarantees:
-     *      - Full mdat coverage
-     *      - Byte-for-byte preservation
-     *      - No layout or policy assumptions
-     *
-     *    This is a HARD boundary.
-     *    All NativeMuxer logic consumes samples from this point onward.
-     *
-     *
-     * 2. Chunk Policies (SEMANTIC INTENT)
-     *
-     *    Location:
-     *      src/mux/native/policies/chunkPolicies.js
-     *
-     *    Purpose:
-     *      - Express *how samples should be grouped*
-     *
-     *    Examples:
-     *      - ONE_SAMPLE_PER_CHUNK
-     *      - ALL_SAMPLES_ONE_CHUNK
-     *
-     *    Non-responsibilities:
-     *      - No MP4 knowledge
-     *      - No table derivation
-     *      - No offsets
-     *      - No bytes
-     *
-     *    Policies describe **intent**, not structure.
-     *
-     *
-     * 3. Chunk Model Derivation (PASS 1 — MEANING → MEANING)
-     *
-     *    Function:
-     *      deriveChunkModel(samples, policy)
-     *
-     *    Purpose:
-     *      - Convert semantic samples into an abstract chunk model
-     *      - Apply grouping intent expressed by the policy
-     *
-     *    Output:
-     *      Chunk[]
-     *        {
-     *          samples: Sample[],
-     *          duration: number,
-     *          byteLength: number
-     *        }
-     *
-     *    Guarantees:
-     *      - Every sample appears exactly once
-     *      - No reordering
-     *      - No byte access beyond sample payloads
-     *
-     *    This is the **sole authority** on chunk boundaries.
-     *
-     *
-     * 4. Table Derivation (MEANING → STRUCTURE)
-     *
-     *    From:
-     *      - samples[]
-     *      - chunk model
-     *
-     *    Derive:
-     *      - STSC entries
-     *      - STTS entries
-     *      - STSZ sizes
-     *      - CTTS entries
-     *      - provisional STCO offsets
-     *
-     *    Characteristics:
-     *      - Pure
-     *      - Deterministic
-     *      - No serialization
-     *      - No physical layout assumptions
-     *
-     *
-     * 5. Adapters (STRUCTURE NORMALIZATION)
-     *
-     *    Purpose:
-     *      - Translate semantic derivation output into
-     *        strict emitter input contracts
-     *
-     *    Responsibilities:
-     *      - Validate constraints
-     *      - Enforce current limitations
-     *        (e.g. single-entry STSC)
-     *      - Fail early on unsupported shapes
-     *
-     *    Adapters prevent policy leakage into emitters.
-     *
-     *
-     * 6. Emitters (STRUCTURE → BYTES)
-     *
-     *    Emitters:
-     *      - Accept validated parameter objects only
-     *      - Perform no derivation
-     *      - Perform no policy decisions
-     *
-     *    Emitters are pure serializers.
-     *
-     *  7. Physical layout resolution
-     *
-     * ---------------------------------------------------------------
-     * NOT YET IMPLEMENTED (NEXT WORK)
-     * ---------------------------------------------------------------
-     *
-     * - Full NativeMuxer end-to-end assembly
-     *
-     * These steps MUST occur in this order.
-     *
-     * Any logic that:
-     *   - requires physical offsets
-     *   - depends on final box ordering
-     *   - inspects serialized byte positions
-     *
-     * does NOT belong in the current phase.
-     *
-     * ---------------------------------------------------------------
-     * SUMMARY
-     * ---------------------------------------------------------------
-     *
-     * Chunking is a **semantic decision**.
-     * STSC is a **derived artifact**.
-     * Emitters are **dumb and deterministic**.
-     *
-     * This structure is intentional.
-     * This boundary is enforced by tests.
-     */
-
-
-    /**
-     * ===============================================================
-     * ARCHIVAL / PRE-COMPILER-ARCHITECTURE TESTS
-     * ===============================================================
-     *
-     * The tests below were written before NativeMuxer adopted
-     * a semantic-first, compiler-style architecture.
-     *
-     * They assume container-level equivalence as a primary goal.
-     *
-     * That assumption is no longer valid.
-     *
-     * These tests are retained temporarily for historical reference
-     * and will be removed once end-to-end NativeMuxer assembly tests
-     * are complete.
-     */
-
-
-    // -----------------------------------------------------------------
-    // CONTAINER CONFORMANCE — COMPOSED (PLANNED)
-    // -----------------------------------------------------------------
-    //
-    // These tests validate container correctness *only when composed
-    // with real child boxes*. They do NOT test boxes in isolation.
-    //
-    // They assert:
-    //   - child ordering
-    //   - presence of required children
-    //   - size coherence
-    //   - byte-for-byte equivalence against a golden MP4 *at the container
-    //     boundary*, not the leaf level
-    //
-    // They do NOT assert:
-    //   - chunking policy
-    //   - offset correctness
-    //   - interleaving strategy
-    //
-    // Those are NativeMuxer responsibilities.
-    //
-    // These tests make container conformance explicit and visible,
-    // even though validation is necessarily indirect.
-    //
-    await testStbl_ComposedConformance();
-    await testDinf_ComposedConformance();
-    await testMinf_ComposedConformance();
-    await testMdia_ComposedConformance();
-    await testTrak_ComposedConformance();
-    await testMoov_ComposedConformance();
-
-    // -----------------------------------------------------------------
-    // MDAT — MEDIA DATA BOX (OPAQUE PAYLOAD)
-    // -----------------------------------------------------------------
-    //
-    // `mdat` is a structurally trivial but semantically critical box.
-    //
-    // Per the MP4 specification, `mdat` contains:
-    //
-    //   - a box header (size + type)
-    //   - an opaque sequence of media bytes
-    //
-    // It has:
-    //   - no version
-    //   - no flags
-    //   - no internal fields
-    //
-    // The `mdat` builder therefore has exactly two responsibilities:
-    //
-    //   1. Preserve the provided byte payload verbatim
-    //   2. Serialize it correctly as an MP4 box
-    //
-    // What `mdat` does NOT decide:
-    //   - how samples are chunked
-    //   - how samples are grouped or ordered
-    //   - where chunk boundaries occur
-    //   - how offsets are computed
-    //
-    // Those are *derived policy decisions* handled later by the NativeMuxer.
-    //
-    // Because `mdat` is an opaque payload, it is safe and correct to
-    // validate byte-for-byte equivalence against ffmpeg *in passthrough
-    // mode*, where the input payload is taken directly from a golden MP4.
-    //
-    // This comparison asserts ONLY:
-    //   - serialization fidelity
-    //   - absence of mutation, reordering, or truncation
-    //
-    // It does NOT assert:
-    //   - chunking policy
-    //   - offset correctness
-    //   - interleaving strategy
-    //   - encoder behavior
-    //
-    // Those assertions are deferred to full NativeMuxer tests.
-    //
-    await testMdat_Structure();
-    await testMdat_PassthroughEquivalence_ffmpeg();
-
-    // -----------------------------------------------------------------
-    // NATIVE MUXER — DERIVED DATA & POLICY (PLANNED)
-    // -----------------------------------------------------------------
-    //
-    // The following tests validate *derived state* produced during
-    // final MP4 assembly. They are NOT box-level tests.
-    //
-    // These tests MUST NOT be enabled until:
-    //   - All container builders above exist
-    //   - `mdat` is written and sized
-    //   - Chunk offsets have been computed
-    //
-    // These tests are listed here to make the intended progression explicit.
-    //
-    // They will be enabled in the following order:
-    //
-    //   1. Internal consistency
-    //      - Offsets point to real data
-    //      - Chunk boundaries do not overlap
-    //      - Tables agree with each other
-    //
-    //   2. STCO correctness against assembled `mdat`
-    //      - Offsets match actual chunk starts
-    //
-    //   3. Optional policy comparison against ffmpeg
-    //      - Validates equivalence, not correctness
-    //
-    // Until those conditions are met, these tests are placeholders
-    // and MUST remain below the return cursor.
-    //
-    await test_NativeMuxer_chunkPolicy_internalConsistency();
-    await test_NativeMuxer_stco_offsets_match_mdat();
-    await test_NativeMuxer_chunkPolicy_ffmpeg();
-
-    // -----------------------------------------------------------------
-    // LEGACY / PRE-REFACTOR TESTS
-    // -----------------------------------------------------------------
-    //
-    // The following tests were implemented under an earlier architecture.
-    // They may:
-    //   - assume byte-level output where JSON intent now exists
-    //   - overlap with newer Phase A / B / C tests
-    //   - encode assumptions that no longer hold
-    //
-    // These tests are intentionally retained for now to:
-    //   - track what still exists
-    //   - identify what needs updating or removal
-    //   - prevent accidental loss of coverage
-    //
-    // As the refactor stabilizes, each of these should be:
-    //   - evaluated
-    //   - either migrated to the new model
-    //   - or explicitly deprecated with justification
-    //
-    // ---- STRUCTURE VALIDATION ----
-    await testNalPrefixIntegrity();
-    await test_mp4_structure();
-
-
-    // -----------------------------------------------------------------
-    // STATEFUL / PIPELINE LOGIC
-    // -----------------------------------------------------------------
-    //
-    // These tests validate logic that spans multiple components or
-    // depends on runtime state rather than static box structure.
-    //
-    // They are not directly tied to the box-builder refactor, but may
-    // need revisiting as boundaries become more explicit.
-    //
-    await testMdatEmitter();
 }
 
 async function runBoundaryTests() {
@@ -1726,4 +1429,3 @@ document.getElementById("run-all").onclick = async () => {
 </script>
 </body>
 </html>
-

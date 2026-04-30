@@ -48,42 +48,49 @@
  */
 
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { emitPaspBox } from "../box-emitters/stsdBox/paspBox.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 export async function testPasp_Structure() {
-    console.log("=== pasp Granular structural tests ===");
 
-    const box = serializeBoxTree(emitPaspBox());
-
-    assertEqual("pasp.size", box.length, 16);
-    assertEqual(
-        "pasp.size field",
-        readUint32(box, 0),
-        16
+    const node = EmitterRegistry.emit(
+        "moov/trak/mdia/minf/stbl/stsd|avc1/pasp",
+        {}
     );
 
-    assertEqual(
-        "pasp.type",
-        readFourCC(box, 4),
-        "pasp"
-    );
+    // --------------------------------------------------
+    // Box identity
+    // --------------------------------------------------
+
+    assertEqual("pasp.type", node.type, "pasp");
+
+    // --------------------------------------------------
+    // Body structure
+    // --------------------------------------------------
+
+    if (!Array.isArray(node.body)) {
+        throw new Error("FAIL: pasp.body must be an array");
+    }
+
+    assertEqual("pasp.body.length", node.body.length, 2);
+
+    // --------------------------------------------------
+    // Field values (structural)
+    // --------------------------------------------------
 
     assertEqual(
         "pasp.hSpacing",
-        readUint32(box, 8),
+        node.body[0].int,
         1
     );
 
     assertEqual(
         "pasp.vSpacing",
-        readUint32(box, 12),
+        node.body[1].int,
         1
     );
-
-    console.log("PASS: pasp granular structural tests");
 }
 
 /**
@@ -114,7 +121,6 @@ export async function testPasp_Structure() {
  * Any difference indicates an error in serialization or layout.
  */
 export async function testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg() {
-    console.log("=== testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg ===");
 
     // ---------------------------------------------------------
     // 1. Load golden MP4
@@ -125,24 +131,23 @@ export async function testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg()
     // ---------------------------------------------------------
     // 2. Extract pasp via golden truth registry (single authority)
     // ---------------------------------------------------------
-    const truth = getGoldenTruthBox.fromMp4(
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         buf,
-        "moov/trak/mdia/minf/stbl/stsd",
-        {
-            sampleEntry: "avc1",
-            child: "pasp",
-            trackType: "video"
-        }
+        "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/pasp",
     );
 
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput();
+    const refFields = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
+    console.log(params);
 
     // ---------------------------------------------------------
     // 3. Re-emit pasp strictly from declared metadata
     // ---------------------------------------------------------
     const outRaw = serializeBoxTree(
-        emitPaspBox(params)
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stsd|avc1/pasp",
+            {}
+        )
     );
 
     // ---------------------------------------------------------
@@ -182,5 +187,4 @@ export async function testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg()
         refFields.raw.length
     );
 
-    console.log("PASS: pasp matches golden MP4");
 }

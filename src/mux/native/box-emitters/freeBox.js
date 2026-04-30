@@ -44,9 +44,15 @@
  * - No byte mutation
  * - No layout decisions
  */
-export function emitFreeBox() {
+function emitFreeBox() {
     return {
         type: "free",
-        body: []
     };
+}
+
+export function registerFreeEmitter(registry) {
+    registry.registerEmitter(
+        "free",
+        emitFreeBox
+    );
 }

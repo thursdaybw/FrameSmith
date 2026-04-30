@@ -16,7 +16,8 @@
  *     offset: number    // composition_offset (unsigned)
  *   }
  */
-export function emitCttsBox({ entries }) {
+function emitCttsBox({ entries }) {
+
     // ---------------------------------------------------------
     // Contract validation
     // ---------------------------------------------------------
@@ -81,3 +82,9 @@ export function emitCttsBox({ entries }) {
     };
 }
 
+export function registerCttsEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/ctts",
+        emitCttsBox
+    );
+}

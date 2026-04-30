@@ -1,75 +1,130 @@
-import { extractChildBoxFromContainer } from "../reference/BoxExtractor.js";
-import { getGoldenTruthBox } from "./index.js";
-import { emitVmhdBox } from "../../box-emitters/vmhdBox.js";
-import { emitDinfBox } from "../../box-emitters/dinfBox.js";
-import { emitStblBox } from "../../box-emitters/stblBox.js";
+import { asIsoBoxContainer } from "../../box-model/Box.js";
+import { GoldenTruthRegistry } from "./GoldenTruthRegistry.js";
 
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
 
-/**
- * MINF — Media Information Box
- * ===========================
- *
- * Golden truth extractor for minf.
- *
- * Responsibilities:
- * - validate required children exist
- * - delegate truth extraction to child extractors
- * - return exact builder input for buildMinfBox
- *
- * Required children (video track):
- *   - vmhd
- *   - dinf
- *   - stbl
- */
+function readBoxReport(boxBytes) {
 
-function readMinfBoxFieldsFromBoxBytes(box) {
-    if (!(box instanceof Uint8Array)) {
-        throw new Error("minf.readFields: expected Uint8Array");
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("minf.readBoxReport: expected Uint8Array");
     }
 
-    const vmhdBytes = extractChildBoxFromContainer(box, "vmhd");
-    const dinfBytes = extractChildBoxFromContainer(box, "dinf");
-    const stblBytes = extractChildBoxFromContainer(box, "stbl");
+    const path = "moov/trak/mdia/minf";
 
-    if (!vmhdBytes) {
-        throw new Error("minf.readFields: missing required child 'vmhd'");
-    }
-    if (!dinfBytes) {
-        throw new Error("minf.readFields: missing required child 'dinf'");
-    }
-    if (!stblBytes) {
-        throw new Error("minf.readFields: missing required child 'stbl'");
+    const container =
+        asIsoBoxContainer(boxBytes, path);
+
+    const children = {};
+
+    for (const { type, offset, size } of container.enumerateChildren()) {
+        children[type] = {
+            type,
+            raw: boxBytes.slice(offset, offset + size)
+        };
     }
 
     return {
-        vmhdBytes,
-        dinfBytes,
-        stblBytes,
-        raw: box
+        raw: boxBytes,
+
+        box: {
+            type: "minf",
+            fields: {},
+            children
+        },
+
+        derived: {}
     };
 }
 
-function getMinfEmitterInputFromBoxBytes(box) {
-    const parsed = readMinfBoxFieldsFromBoxBytes(box);
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
 
-    const vmhdNode = emitVmhdBox();
+function getEmitterInput(boxBytes) {
 
-    const dinfParams = getGoldenTruthBox
-        .fromBox(parsed.dinfBytes, "moov/trak/mdia/minf/dinf")
-        .getBuilderInput();
+    const read = readBoxReport(boxBytes);
+    const children = read.box.children;
 
-    const stblParams = getGoldenTruthBox
-        .fromBox(parsed.stblBytes, "moov/trak/mdia/minf/stbl")
-        .getBuilderInput();
+    const input = {};
 
-    return {
-        vmhd: vmhdNode,
-        dinf: emitDinfBox(dinfParams),
-        stbl: emitStblBox(stblParams),
-    };
+    // ---------------------------------------------------------
+    // Media header (EXACTLY ONE of vmhd or smhd)
+    // ---------------------------------------------------------
+
+    if (children.vmhd && children.smhd) {
+        throw new Error(
+            "minf.getEmitterInput: both vmhd and smhd present (illegal state)"
+        );
+    }
+
+    if (!children.vmhd && !children.smhd) {
+        throw new Error(
+            "minf.getEmitterInput: missing media header (vmhd or smhd)"
+        );
+    }
+
+    if (children.vmhd) {
+        input.mediaHeader = { type: "vmhd" };
+    }
+
+    if (children.smhd) {
+        input.mediaHeader = { type: "smhd" };
+    }
+
+    // ---------------------------------------------------------
+    // Required child: dinf
+    // ---------------------------------------------------------
+
+    if (!children.dinf) {
+        throw new Error("minf.getEmitterInput: missing required child 'dinf'");
+    }
+
+    const dinfExtractor =
+        GoldenTruthRegistry.getExtractor(
+            "moov/trak/mdia/minf/dinf"
+        );
+
+    if (!dinfExtractor) {
+        throw new Error(
+            "minf.getEmitterInput: no extractor registered for dinf"
+        );
+    }
+
+    input.dinf =
+        dinfExtractor.getEmitterInput(children.dinf.raw);
+
+    // ---------------------------------------------------------
+    // Required child: stbl
+    // ---------------------------------------------------------
+
+    if (!children.stbl) {
+        throw new Error("minf.getEmitterInput: missing required child 'stbl'");
+    }
+
+    const stblExtractor =
+        GoldenTruthRegistry.getExtractor(
+            "moov/trak/mdia/minf/stbl"
+        );
+
+    if (!stblExtractor) {
+        throw new Error(
+            "minf.getEmitterInput: no extractor registered for stbl"
+        );
+    }
+
+    input.stbl =
+        stblExtractor.getEmitterInput(children.stbl.raw);
+
+    return input;
 }
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerMinfGoldenTruthExtractor(register) {
-    register.readFields(readMinfBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getMinfEmitterInputFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

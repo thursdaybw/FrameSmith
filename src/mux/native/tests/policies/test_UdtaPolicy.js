@@ -7,6 +7,8 @@ import {
     applyUdtaPolicy
 } from "../../policies/applyUdtaPolicy.js";
 
+import { EmitterRegistry } from "../../box-emitters/EmitterRegistry.js";
+
 /*
  * =========================================================
  * UdtaPolicy — Boundary Tests
@@ -33,8 +35,6 @@ import {
  */
 
 export function test_UdtaPolicy_OpaquePassthrough() {
-
-    console.log("=== test_UdtaPolicy_OpaquePassthrough ===");
 
     const opaque = Uint8Array.from([
         0x00, 0x00, 0x00, 0x08,
@@ -81,8 +81,6 @@ export function test_UdtaPolicy_OpaquePassthrough() {
 
 export function test_UdtaPolicy_ExplicitOmission() {
 
-    console.log("=== test_UdtaPolicy_ExplicitOmission ===");
-
     const result = applyUdtaPolicy({
         encoderIdentity: ""
     });
@@ -98,52 +96,62 @@ export function test_UdtaPolicy_ExplicitOmission() {
  * Test 3 — Semantic authorship (structure only)
  * ---------------------------------------------------------
  */
-
 export function test_UdtaPolicy_SemanticIdentity_StructureOnly() {
 
-    console.log("=== test_UdtaPolicy_SemanticIdentity_StructureOnly ===");
-
-    const result = applyUdtaPolicy({
+    const udtaIntent = applyUdtaPolicy({
         encoderIdentity: "NativeMuxer"
     });
 
     assertExists(
-        "semantic udta result",
-        result
+        "semantic udta intent",
+        udtaIntent
+    );
+
+    // ---------------------------------------------------------
+    // Emit via registry (no direct structure inspection)
+    // ---------------------------------------------------------
+    const udtaNode = EmitterRegistry.assemble(
+            "moov/udta",
+            udtaIntent
+        );
+
+    assertExists(
+        "emitted udta node",
+        udtaNode
     );
 
     assertEqual(
         "udta.type",
-        result.type,
+        udtaNode.type,
         "udta"
     );
 
     assertEqual(
-        "semantic udta not opaque",
-        "__opaque" in result,
+        "udta not opaque",
+        "__opaque" in udtaNode,
         false
     );
 
     assertExists(
         "udta.children",
-        result.children
+        udtaNode.children
     );
 
     assertEqual(
         "udta.children is array",
-        Array.isArray(result.children),
+        Array.isArray(udtaNode.children),
         true
     );
 
     assertEqual(
         "udta.children length",
-        result.children.length,
+        udtaNode.children.length,
         1
     );
 
     assertEqual(
         "first child type",
-        result.children[0].type,
+        udtaNode.children[0].type,
         "meta"
     );
 }

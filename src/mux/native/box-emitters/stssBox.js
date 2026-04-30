@@ -20,7 +20,7 @@
  * - this builder does NOT compute sync samples
  * - it only serializes provided truth
  */
-export function emitStssBox({sampleNumbers}) {
+function emitStssBox({sampleNumbers}) {
 
     // ---------------------------------------------------------
     // Contract validation
@@ -68,4 +68,11 @@ export function emitStssBox({sampleNumbers}) {
             { array: "int", values: samples }
         ]
     };
+}
+
+export function registerStssEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stss",
+        emitStssBox
+    );
 }

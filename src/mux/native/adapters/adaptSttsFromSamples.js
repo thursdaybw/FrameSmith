@@ -1,67 +1,48 @@
+import { collapseDurationsToSttsEntries } from "./adaptStts/helpers/collapseDurationsToSttsEntries.js";
+
 /**
- * STTS Adapter
- * ===========
+ * adaptSttsFromSamples
+ * ====================
  *
- * Purpose
- * -------
- * Collapse semantic sample durations into STTS run-length entries.
+ * Build STTS entries from semantic samples.
  *
- * This adapter:
- * - derives meaning
- * - preserves real-world timing variance
- * - performs no policy decisions
- * - does NOT emit bytes
+ * Rules:
+ * 1. Always collapse consecutive equal durations
  *
- * Output shape matches STTS semantics directly.
+ * PURE:
+ * - No reconciliation
+ * - No oracle authority
+ *
+ * Rules:
+ * 1. Always collapse consecutive equal durations
+ *
+ * TESTS
+ *   testNativeMuxer_DeriveSamplesOnePerPacketFromStbl_OpusOracle
+ *   testNativeMuxer_AdaptSttsFromSamples_CFR
+ *   testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups
  */
 export function adaptSttsFromSamples({ samples }) {
-    if (!Array.isArray(samples)) {
-        throw new Error(
-            "adaptSttsFromSamples: samples must be an array"
-        );
-    }
+
+    assertSamples(samples);
 
     if (samples.length === 0) {
         return { entries: [] };
     }
 
-    const entries = [];
-
-    let currentDelta = samples[0].duration;
-    let currentCount = 1;
-
-    if (!Number.isInteger(currentDelta) || currentDelta < 0) {
-        throw new Error(
-            "adaptSttsFromSamples: invalid sample duration"
-        );
-    }
-
-    for (let i = 1; i < samples.length; i++) {
-        const delta = samples[i].duration;
-
-        if (!Number.isInteger(delta) || delta < 0) {
+    const durations = samples.map((s, i) => {
+        if (!Number.isInteger(s.duration) || s.duration < 0) {
             throw new Error(
-                "adaptSttsFromSamples: invalid sample duration"
+                `adaptSttsFromSamples: invalid duration at index ${i}`
             );
         }
-
-        if (delta === currentDelta) {
-            currentCount++;
-        } else {
-            entries.push({
-                sampleCount: currentCount,
-                sampleDelta: currentDelta
-            });
-
-            currentDelta = delta;
-            currentCount = 1;
-        }
-    }
-
-    entries.push({
-        sampleCount: currentCount,
-        sampleDelta: currentDelta
+        return s.duration;
     });
 
-    return { entries };
+    return collapseDurationsToSttsEntries(durations);
+}
+
+function assertSamples(samples) {
+    if (!Array.isArray(samples)) {
+        throw new Error("adaptSttsFromSamples: samples must be an array");
+    }
 }

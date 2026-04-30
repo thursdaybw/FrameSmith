@@ -128,5 +128,5 @@ export function splitFixed1616(value) {
  *   - Fraction is masked to 16 bits to avoid overflow
  */
 export function makeFixed1616(integer, fraction) {
-    return (integer << 16) | (fraction & 0xFFFF);
+    return ((integer << 16) | (fraction & 0xFFFF)) >>> 0;
 }

@@ -72,12 +72,12 @@ Each golden truth extractor exposes **exactly two capabilities**:
 
 ```
 
-readFields(boxBytes)
-getBuilderInput(boxBytes)
+readBoxReport(boxBytes)
+getEmitterInput(boxBytes)
 
 ```
 
-### `readFields`
+### `readBoxReport`
 
 Returns **full structural truth** about the box:
 
@@ -91,7 +91,7 @@ Used for:
 * diagnostics
 * field-level conformance tests
 
-### `getBuilderInput`
+### `getEmitterInput`
 
 Returns **exactly the input object required by the corresponding builder**.
 
@@ -131,8 +131,8 @@ The installer **must** register both capabilities:
 ```
 
 register({
-readFields(fn),
-getBuilderInput(fn)
+readBoxReport(fn),
+getEmitterInput(fn)
 })
 
 ```
@@ -239,7 +239,7 @@ The relationship is strictly one-way:
 ```
 
 Box bytes
-→ Golden truth extractor (readFields / getBuilderInput)
+→ Golden truth extractor (readBoxReport / getEmitterInput)
 → BuilderInput 
 → Builder
 → Box node

@@ -14,24 +14,26 @@
  */
 
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { emitSgpdBox } from "../box-emitters/sgpdBox.js";
-import { readUint32, readFourCC } from "../bytes/mp4ByteReader.js";
+import { readUint32 } from "../bytes/mp4ByteReader.js";
 import { assertEqual } from "./assertions.js";
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 
 /**
  * sgpd Structural (Granular) Test
  */
-export function testSgpd_Structure() {
-    console.log("=== sgpd Structural tests ===");
+export function testSgpd_Structure_Fixed() {
 
-    const node = emitSgpdBox({
-        groupingType: "roll",
-        defaultLength: 2,
-        descriptions: [
-            Uint8Array.from([0x00, 0x01])
-        ]
-    });
+    const node = EmitterRegistry.emit(
+        "moov/trak/mdia/minf/stbl/sgpd|fixed",
+        {
+            groupingType: "roll",
+            defaultLength: 2,
+            descriptions: [
+                Uint8Array.from([0x00, 0x01])
+            ]
+        }
+    );
 
     // ---------------------------------------------------------
     // Box identity
@@ -41,42 +43,102 @@ export function testSgpd_Structure() {
     assertEqual("sgpd.flags", node.flags, 0);
 
     // ---------------------------------------------------------
-    // Body shape
+    // Body shape (fixed-length variant)
     // ---------------------------------------------------------
     assertEqual("sgpd.body.length", node.body.length, 4);
 
-    assertEqual("sgpd.grouping_type", node.body[0].type, "roll");
+    // grouping_type
+    assertEqual(
+        "sgpd.grouping_type",
+        node.body[0].int,
+        (
+            ("r".charCodeAt(0) << 24) |
+            ("o".charCodeAt(0) << 16) |
+            ("l".charCodeAt(0) << 8)  |
+            "l".charCodeAt(0)
+        ) >>> 0
+    );
+
+    // default_length
     assertEqual("sgpd.default_length", node.body[1].int, 2);
+
+    // entry_count
     assertEqual("sgpd.entry_count", node.body[2].int, 1);
 
-    const desc = node.body[3].array;
-
-    assertEqual("sgpd.description.array.type", desc, "byte");
+    // description_bytes (no per-entry length in fixed variant)
+    assertEqual("sgpd.description.array.type", node.body[3].array, "byte");
     assertEqual("sgpd.description.length", node.body[3].values.length, 2);
+}
 
-    console.log("PASS: sgpd structural correctness");
+export function testSgpd_Structure_Variable() {
+
+    const node = EmitterRegistry.emit(
+        "moov/trak/mdia/minf/stbl/sgpd|variable",
+        {
+            groupingType: "roll",
+            defaultLength: 0,
+            descriptions: [
+                Uint8Array.from([0x00, 0x01])
+            ]
+        }
+    );
+
+    // ---------------------------------------------------------
+    // Box identity
+    // ---------------------------------------------------------
+    assertEqual("sgpd.type", node.type, "sgpd");
+    assertEqual("sgpd.version", node.version, 1);
+    assertEqual("sgpd.flags", node.flags, 0);
+
+    // ---------------------------------------------------------
+    // Body shape (variable-length)
+    // ---------------------------------------------------------
+    assertEqual("sgpd.body.length", node.body.length, 5);
+
+    assertEqual(
+        "sgpd.grouping_type",
+        node.body[0].int,
+        (
+            ("r".charCodeAt(0) << 24) |
+            ("o".charCodeAt(0) << 16) |
+            ("l".charCodeAt(0) << 8)  |
+            "l".charCodeAt(0)
+        ) >>> 0
+    );
+    assertEqual("sgpd.default_length", node.body[1].int, 0);
+    assertEqual("sgpd.entry_count", node.body[2].int, 1);
+
+    // description_length
+    assertEqual("sgpd.description_length", node.body[3].int, 2);
+
+    // description_bytes
+    assertEqual("sgpd.description.array.type", node.body[4].array, "byte");
+    assertEqual("sgpd.description.length", node.body[4].values.length, 2);
 }
 
 /**
  * sgpd Locked Layout Equivalence (ffmpeg)
  */
 export async function testSgpd_LockedLayoutEquivalence_ffmpeg() {
-    console.log("=== sgpd LockedLayoutEquivalence (ffmpeg) ===");
 
-    const resp = await fetch("reference/reference_visual.mp4");
+    const resp = await fetch("reference/reference_av.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const truth = getGoldenTruthBox.fromMp4(
+    const truth = getGoldenTruthBox.getSemanticBoxDataByPathFromMp4File(
         mp4,
-        "moov/trak/mdia/minf/stbl",
-        { child: "sgpd" }
+        "moov/trak[1]/mdia/minf/stbl/sgpd",
     );
 
-    const refFields = truth.readFields();
-    const params    = truth.getBuilderInput();
+    const refFields = truth.readBoxReport();
+    const params    = truth.getEmitterInput();
 
     const outRaw = serializeBoxTree(
-        emitSgpdBox(params)
+        EmitterRegistry.emit(
+            params.defaultLength === 0
+            ? "moov/trak/mdia/minf/stbl/sgpd|variable"
+            : "moov/trak/mdia/minf/stbl/sgpd|fixed",
+            params
+        )
     );
 
     assertEqual("sgpd.size", outRaw.length, refFields.raw.length);
@@ -89,5 +151,4 @@ export async function testSgpd_LockedLayoutEquivalence_ffmpeg() {
         );
     }
 
-    console.log("PASS: sgpd matches golden MP4");
 }

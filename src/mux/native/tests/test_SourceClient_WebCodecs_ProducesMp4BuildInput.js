@@ -28,12 +28,8 @@ import {
 } from "./clients/webcodecsReferenceSourceClient.js";
 
 export async function test_SourceClient_WebCodecs_ProducesMp4BuildInput() {
-    console.log(
-        "=== test_SourceClient_WebCodecs_ProducesMp4BuildInput ==="
-    );
 
-    const mp4BuildInput =
-        await runWebCodecsTestClient();
+    const mp4BuildInput = await runWebCodecsTestClient();
 
     // ---------------------------------------------------------
     // ACCESS UNIT PAYLOADS
@@ -114,7 +110,33 @@ export async function test_SourceClient_WebCodecs_ProducesMp4BuildInput() {
 
     assertExists("mp4BuildInput", mp4BuildInput);
 
+
+    if (window.DEBUG_DOWNLOAD_MP4 === true) {
+
+        const mp4CompilerState =
+            await createMp4CompilerStateFromBuildInput(mp4BuildInput);
+
+        const { bytes } =
+            compileMp4({ mp4CompilerState });
+
+        downloadMp4(bytes, "webcodecs-native.mp4");
+    }
+
     console.log(
         "PASS: WebCodecs test client produces valid Mp4BuildInput"
     );
+}
+
+function downloadMp4(bytes, filename) {
+    const blob = new Blob([bytes], { type: "video/mp4" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }

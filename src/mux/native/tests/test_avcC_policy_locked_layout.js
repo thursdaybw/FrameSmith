@@ -6,9 +6,10 @@
  *
  *   semantic avcC
  *        ↓
- * applyAvcCContainerPolicy
+ * applyAvcCContainerPolicySemantic /
+ * applyAvcCContainerPolicyContainerComplete
  *        ↓
- * emitAvcCBox
+ * avcC box emission (via EmitterRegistry)
  *
  * This test proves that policy + emitter together reproduce
  * the exact avcC box bytes found in a known-good ffmpeg MP4.
@@ -20,40 +21,48 @@
  */
 
 import { serializeBoxTree } from "../serializer/serializeBoxTree.js";
-import { emitAvcCBox } from "../box-emitters/stsdBox/avcCBox.js";
-import { applyAvcCContainerPolicy } from "../policies/applyAvcCContainerPolicy.js";
+
+import {
+    applyAvcCContainerPolicySemantic,
+    applyAvcCContainerPolicyContainerComplete,
+} from "../policies/applyAvcCContainerPolicy.js";
+
 import { getGoldenTruthBox } from "./goldenTruthExtractors/index.js";
+import { EmitterRegistry } from "../box-emitters/EmitterRegistry.js";
 import { assertEqual } from "./assertions.js";
 
 export async function test_avcC_policy_locked_layout_container_complete() {
-    console.log("=== test_avcC_policy_locked_layout_container_complete ===");
 
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl/stsd",
-        {
-            sampleEntry: "avc1",
-            trackType: "video"
-        }
-    );
+    const oracleAvcC =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/avcC"
+            )
+            .readBoxReport()
+            .raw;
 
-    const oracleParams = truth.getBuilderInput();
-
-    // Emit oracle avcC directly (baseline for comparison)
+    // Emit oracle avcC directly (baseline)
     const oracleBox = serializeBoxTree(
-        emitAvcCBox({ avcC: oracleParams.avcC })
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stsd|avc1/avcC",
+            { avcC: oracleAvcC }
+        )
     );
 
-    const policyOut = applyAvcCContainerPolicy({
-        avcC: oracleParams.avcC,
-        avcCCompleteness: "container-complete"
-    });
+    const policyOut =
+        applyAvcCContainerPolicyContainerComplete({
+            avcC: oracleAvcC
+        });
 
     const producedBox = serializeBoxTree(
-        emitAvcCBox({ avcC: policyOut })
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stsd|avc1/avcC",
+            { avcC: policyOut }
+        )
     );
 
     assertEqual("avcC box size", producedBox.length, oracleBox.length);
@@ -65,48 +74,59 @@ export async function test_avcC_policy_locked_layout_container_complete() {
             oracleBox[i]
         );
     }
-
-    console.log("PASS: container-complete avcC preserved byte-for-byte");
 }
 
 export async function test_avcC_policy_locked_layout_semantic_high_profile() {
-    console.log("=== test_avcC_policy_locked_layout_semantic_high_profile ===");
 
     const resp = await fetch("reference/reference_visual.mp4");
     const mp4  = new Uint8Array(await resp.arrayBuffer());
 
-    const truth = getGoldenTruthBox.fromMp4(
-        mp4,
-        "moov/trak/mdia/minf/stbl/stsd",
-        {
-            sampleEntry: "avc1",
-            trackType: "video"
-        }
-    );
+    // ---------------------------------------------------------
+    // Extract oracle avcC payload + raw bytes
+    // ---------------------------------------------------------
+    const oracleAvcCBox =
+        getGoldenTruthBox
+            .getSemanticBoxDataByPathFromMp4File(
+                mp4,
+                "moov/trak[0]/mdia/minf/stbl/stsd/sample[0]/avcC"
+            );
 
-    const oracleParams = truth.getBuilderInput();
+    const oracleAvcC = oracleAvcCBox.getEmitterInput().avcC;
+    const oracleBox = oracleAvcCBox.readBoxReport().raw;
 
-    const oracleBox = serializeBoxTree(
-        emitAvcCBox({ avcC: oracleParams.avcC })
-    );
+    // ---------------------------------------------------------
+    // Construct semantic avcC explicitly (strip container extension)
+    // ---------------------------------------------------------
+    const semanticAvcC = new Uint8Array([
+        oracleAvcC[0], // configurationVersion
+        oracleAvcC[1], // AVCProfileIndication
+        oracleAvcC[2], // profile_compatibility
+        oracleAvcC[3], // AVCLevelIndication
+        ...oracleAvcC.slice(4, oracleAvcC.length - 4)
+    ]);
 
-    const SEMANTIC_EXTENSION_LENGTH = 4;
+    // ---------------------------------------------------------
+    // Apply container policy (semantic → container-complete)
+    // ---------------------------------------------------------
+    const completed =
+        applyAvcCContainerPolicySemantic({
+            avcC: semanticAvcC,
+            profileIndication: oracleAvcC[1]
+        });
 
-    const semanticAvcC = oracleParams.avcC.slice(
-        0,
-        oracleParams.avcC.length - SEMANTIC_EXTENSION_LENGTH
-    );
-
-    const completed = applyAvcCContainerPolicy({
-        avcC: semanticAvcC,
-        avcCCompleteness: "semantic",
-        profileIndication: oracleParams.avcC[1]
-    });
-
+    // ---------------------------------------------------------
+    // Emit avcC box from policy output
+    // ---------------------------------------------------------
     const producedBox = serializeBoxTree(
-        emitAvcCBox({ avcC: completed })
+        EmitterRegistry.emit(
+            "moov/trak/mdia/minf/stbl/stsd|avc1/avcC",
+            { avcC: completed }
+        )
     );
 
+    // ---------------------------------------------------------
+    // Byte-for-byte equivalence
+    // ---------------------------------------------------------
     assertEqual("avcC box size", producedBox.length, oracleBox.length);
 
     for (let i = 0; i < oracleBox.length; i++) {
@@ -116,6 +136,4 @@ export async function test_avcC_policy_locked_layout_semantic_high_profile() {
             oracleBox[i]
         );
     }
-
-    console.log("PASS: semantic High Profile avcC completes to oracle");
 }

@@ -1,43 +1,96 @@
-import { extractChildBoxFromContainer } from "../reference/BoxExtractor.js";
+import { asIsoBoxContainer } from "../../box-model/Box.js";
 import { getGoldenTruthBox } from "./index.js";
 
-import { emitMdhdBox } from "../../box-emitters/mdhdBox.js";
-import { emitHdlrBox } from "../../box-emitters/hdlrBox.js";
-import { emitMinfBox } from "../../box-emitters/minfBox.js";
+/**
+ * mdia — Media Box (Golden Truth Extractor)
+ * ========================================
+ *
+ * Structural container for media-specific metadata.
+ *
+ * Rules:
+ * - mdia has no fields of its own
+ * - required children: mdhd, hdlr, minf
+ * - no policy
+ * - no inference
+ * - no mutation
+ *
+ * readBoxReport defines STRUCTURAL TRUTH
+ * getEmitterInput derives COMPILER INTENT from that truth
+ */
 
-function readMdiaBoxFieldsFromBoxBytes(box) {
-    if (!(box instanceof Uint8Array)) {
-        throw new Error("mdia.readFields: expected Uint8Array");
+// ---------------------------------------------------------------------------
+// readBoxReport (structural truth)
+// ---------------------------------------------------------------------------
+
+function readBoxReport(boxBytes) {
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("mdia.readBoxReport: expected Uint8Array");
+    }
+
+    const container =
+        asIsoBoxContainer(
+            boxBytes,
+            "moov/trak/mdia"
+        );
+
+    const children = container.enumerateChildren();
+
+    const childrenMap = {};
+
+    for (const child of children) {
+        childrenMap[child.type] = { type: child.type };
     }
 
     return {
-        raw: box
+        raw: boxBytes,
+
+        box: {
+            type: "mdia",
+            children: childrenMap
+        },
+
+        derived: {}
     };
 }
 
-function getMdiaBuildParamsFromBoxBytes(box) {
+// ---------------------------------------------------------------------------
+// getEmitterInput (compiler intent)
+// ---------------------------------------------------------------------------
 
-    function emitChild(name, emitter) {
-        const childBytes = extractChildBoxFromContainer(box, name);
+function getEmitterInput(boxBytes) {
 
-        const params = getGoldenTruthBox
-            .fromBox(
-                childBytes,
-                `moov/trak/mdia/${name}`
-            )
-            .getBuilderInput();
+    const read = readBoxReport(boxBytes);
 
-        return emitter(params);
-    }
+    const mdhdInput = {
+        boxBytes,
+        sourceRegistryKey: "moov/trak/mdia",
+        targetBoxPath: "moov/trak/mdia/mdhd"
+    };
+
+    const hdlrInput = {
+        boxBytes,
+        sourceRegistryKey: "moov/trak/mdia",
+        targetBoxPath: "moov/trak/mdia/hdlr"
+    };
+
+    const minfInput = {
+        boxBytes,
+        sourceRegistryKey: "moov/trak/mdia",
+        targetBoxPath: "moov/trak/mdia/minf"
+    };
 
     return {
-        mdhd: emitChild("mdhd", emitMdhdBox),
-        hdlr: emitChild("hdlr", emitHdlrBox),
-        minf: emitChild("minf", emitMinfBox)
+        mdhd: getGoldenTruthBox.getSemanticBoxDataFromBox(mdhdInput).getEmitterInput(),
+        hdlr: getGoldenTruthBox.getSemanticBoxDataFromBox(hdlrInput).getEmitterInput(),
+        minf: getGoldenTruthBox.getSemanticBoxDataFromBox(minfInput).getEmitterInput(),
     };
 }
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerMdiaGoldenTruthExtractor(register) {
-    register.readFields(readMdiaBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getMdiaBuildParamsFromBoxBytes);
+    register.readBoxReport(readBoxReport);
+    register.getEmitterInput(getEmitterInput);
 }

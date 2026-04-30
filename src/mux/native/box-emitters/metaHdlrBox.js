@@ -14,7 +14,7 @@
  *
  * Total body length = 21 bytes
  */
-export function emitMetaHdlrBox(params) {
+function emitMetaHdlrBox(params) {
 
     if (typeof params !== "object" || params === null) {
         throw new Error(
@@ -49,4 +49,11 @@ export function emitMetaHdlrBox(params) {
             }
         ]
     };
+}
+
+export function registerMetaHdlrEmitter(registry) {
+    registry.registerEmitter(
+        "moov/udta/meta/hdlr",
+        emitMetaHdlrBox
+    );
 }

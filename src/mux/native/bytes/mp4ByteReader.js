@@ -18,14 +18,25 @@ export function readUint16(bytes, offset) {
     return ((bytes[offset] << 8) | bytes[offset + 1]) >>> 0;
 }
 
-export function readUint32(bytes, offset) {
+/**
+ * Reads a big-endian unsigned 32-bit integer from a byte buffer.
+ *
+ * This is a low-level structural helper used only for:
+ * - MP4 box size fields
+ * - table entry sizes
+ *
+ * No bounds checking is performed.
+ * Callers must ensure the offset is valid.
+ */
+export function readUint32(buffer, offset) {
     return (
-        (bytes[offset]     << 24) |
-        (bytes[offset + 1] << 16) |
-        (bytes[offset + 2] << 8)  |
-        bytes[offset + 3]
+        (buffer[offset]     << 24) |
+        (buffer[offset + 1] << 16) |
+        (buffer[offset + 2] << 8)  |
+        buffer[offset + 3]
     ) >>> 0;
 }
+
 
 export function readInt32(bytes, offset) {
     return (
@@ -46,15 +57,6 @@ export function readInt64(bytes, offset) {
     const high = readInt32(bytes, offset);
     const low  = readUint32(bytes, offset + 4);
     return high * 0x100000000 + low;
-}
-
-export function readFourCC(bytes, offset) {
-    return String.fromCharCode(
-        bytes[offset],
-        bytes[offset + 1],
-        bytes[offset + 2],
-        bytes[offset + 3]
-    );
 }
 
 export function readUint32BE(bytes, offset) {

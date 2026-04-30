@@ -1,74 +1,84 @@
-/**
- * ILST Golden Truth Extractor
- * ==========================
- *
- * Structural truth extractor for the ilst container.
- *
- * Responsibilities:
- * - acknowledge the presence of an ilst box
- * - preserve raw bytes for locked-layout comparison
- *
- * Non-responsibilities:
- * - item enumeration
- * - key interpretation
- * - data decoding
- * - semantic rebuilding
- */
-import {
-    extractChildBoxFromIlstItem
-} from "../reference/BoxExtractor.js";
-
-import { readUint32, readFourCC } from "../../bytes/mp4ByteReader.js";
+import { asIsoBoxContainer } from "../../box-model/Box.js";
 import { getGoldenTruthBox } from "./index.js";
-import { emitIlstItemBox } from "../../box-emitters/ilstItemBox.js";
+import { readUint32 } from "../../bytes/mp4ByteReader.js";
+import { GoldenTruthRegistry } from "./GoldenTruthRegistry.js";
+import { readFourCC } from "../..//box-schema/boxLayoutReaders.js";
 
-function readIlstBoxFieldsFromBoxBytes(box) {
-    if (!(box instanceof Uint8Array)) {
-        throw new Error("ilst.readFields: expected Uint8Array");
+// ---------------------------------------------------------------------------
+// readBoxReport
+// ---------------------------------------------------------------------------
+
+function readIlstBoxReport(boxBytes) {
+
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("ilst.readBoxReport: expected Uint8Array");
+    }
+
+    const container =
+        asIsoBoxContainer(
+            boxBytes,
+            "moov/udta/meta/ilst"
+        );
+
+    const children = container.enumerateChildren();
+
+    const childrenMap = {};
+
+    for (const child of children) {
+        childrenMap[child.type] = { type: child.type };
     }
 
     return {
-        raw: box
+        raw: boxBytes,
+
+        box: {
+            type: "ilst",
+            fields: {},
+            children: childrenMap
+        },
+
+        derived: {}
     };
 }
 
-function getIlstBuilderInputFromBoxBytes(box) {
-    const items = [];
+// ---------------------------------------------------------------------------
+// getEmitterInput
+// ---------------------------------------------------------------------------
+function getIlstBuilderInput(boxBytes) {
 
+    const report = readIlstBoxReport(boxBytes);
+
+    const items = [];
     let offset = 8; // skip ilst header
 
-    while (offset + 8 <= box.length) {
-        const size = readUint32(box, offset);
-        const type = readFourCC(box, offset + 4);
-
+    while (offset + 8 <= boxBytes.length) {
+        const size = readUint32(boxBytes, offset);
         if (size < 8) break;
 
-        const itemBytes = box.slice(offset, offset + size);
+        const itemBytes = boxBytes.slice(offset, offset + size);
 
-        // -----------------------------------------------------
-        // Golden truth → ilst item emitter input
-        // -----------------------------------------------------
-        const truth = getGoldenTruthBox.fromBox(
-            itemBytes,
-            "moov/udta/meta/ilst/*"
-        );
+        const itemType = readFourCC(itemBytes, 4);
 
-        const itemParams = truth.getBuilderInput();
+        const itemSemantic = getGoldenTruthBox.getSemanticBoxDataFromBox({
+                boxBytes: boxBytes,
+                sourceRegistryKey: "moov/udta/meta/ilst",
+                targetBoxPath: `moov/udta/meta/ilst/${itemType}`
+            });
 
-        // -----------------------------------------------------
-        // Direct pipe into emitter (NO modification)
-        // -----------------------------------------------------
-        const itemNode = emitIlstItemBox(itemParams);
-
-        items.push(itemNode);
-
+        const itemInput =
+            itemSemantic.getEmitterInput();
+        items.push(itemInput);
         offset += size;
     }
 
     return { items };
 }
 
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
 export function registerIlstGoldenTruthExtractor(register) {
-    register.readFields(readIlstBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getIlstBuilderInputFromBoxBytes);
+    register.readBoxReport(readIlstBoxReport);
+    register.getEmitterInput(getIlstBuilderInput);
 }

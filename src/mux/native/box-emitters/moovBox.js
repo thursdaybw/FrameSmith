@@ -13,7 +13,7 @@
  * - No policy decisions
  * - No child construction
  */
-export function emitMoovBox(params) {
+function emitMoovBox(params) {
 
     if (typeof params !== "object" || params === null) {
         throw new Error("emitMoovBox: expected parameter object");
@@ -58,4 +58,11 @@ export function emitMoovBox(params) {
         type: "moov",
         children
     };
+}
+
+export function registerMoovEmitter(registry) {
+    registry.registerEmitter(
+        "moov",
+        emitMoovBox
+    );
 }

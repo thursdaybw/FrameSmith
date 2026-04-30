@@ -1,39 +1,68 @@
-import { extractChildBoxFromContainer } from "../reference/BoxExtractor.js";
-import { getGoldenTruthBox } from "./index.js";
-import { emitDrefBox } from "../../box-emitters/drefBox.js";
+import { asIsoBoxContainer } from "../../box-model/Box.js";
 
-function readDinfBoxFieldsFromBoxBytes(box) {
-    if (!(box instanceof Uint8Array)) {
-        throw new Error("dinf.readFields: expected Uint8Array");
+const PATH = "moov/trak/mdia/minf/dinf";
+
+// ---------------------------------------------------------------------------
+// readBoxReport
+// ---------------------------------------------------------------------------
+
+function readDinfFields(boxBytes) {
+
+    if (!(boxBytes instanceof Uint8Array)) {
+        throw new Error("dinf.readBoxReport: expected Uint8Array");
     }
 
-    const drefBytes = extractChildBoxFromContainer(box, "dref");
+    const container =
+        asIsoBoxContainer(
+            boxBytes,
+            PATH
+        );
 
-    if (!drefBytes) {
-        throw new Error("dinf.readFields: missing required child 'dref'");
+    const children = container.enumerateChildren();
+
+    if (children.length !== 1 || children[0].type !== "dref") {
+
+        const receivedTypes =
+            children.map(c => `'${c.type}'`).join(", ");
+
+        throw new Error(
+            "dinf.readBoxReport: expected exactly one 'dref' child, " +
+            `but received ${children.length}: [${receivedTypes}]`
+        );
     }
 
     return {
-        drefBytes,
-        raw: box
+        raw: boxBytes,
+
+        box: {
+            type: "dinf",
+
+            fields: {},
+
+            children: {
+                dref: {
+                    type: "dref"
+                }
+            }
+        },
+
+        derived: {}
     };
 }
 
-function getDinfBuildParamsFromBoxBytes(box) {
-    const parsed = readDinfBoxFieldsFromBoxBytes(box);
+// ---------------------------------------------------------------------------
+// getEmitterInput
+// ---------------------------------------------------------------------------
 
-    const drefParams = getGoldenTruthBox
-        .fromBox(parsed.drefBytes, "moov/trak/mdia/minf/dinf/dref")
-        .getBuilderInput();
-
-    const drefNode = emitDrefBox(drefParams);
-
-    return {
-        dref: drefNode
-    };
+function getDinfBuilderInput() {
+    return {};
 }
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerDinfGoldenTruthExtractor(register) {
-    register.readFields(readDinfBoxFieldsFromBoxBytes);
-    register.getBuilderInput(getDinfBuildParamsFromBoxBytes);
+    register.readBoxReport(readDinfFields);
+    register.getEmitterInput(getDinfBuilderInput);
 }

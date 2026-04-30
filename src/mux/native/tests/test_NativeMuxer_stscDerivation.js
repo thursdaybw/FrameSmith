@@ -3,10 +3,6 @@ import { assertEqual } from "./assertions.js";
 
 export function testNativeMuxer_DeriveStscEntries_SingleChunkPattern() {
 
-    console.log(
-        "=== testNativeMuxer_DeriveStscEntries_SingleChunkPattern ==="
-    );
-
     // ---------------------------------------------------------
     // Canonical semantic samples
     // ---------------------------------------------------------
@@ -61,8 +57,5 @@ export function testNativeMuxer_DeriveStscEntries_SingleChunkPattern() {
         true
     );
 
-    console.log(
-        "PASS: STSC derivation (single canonical entry)"
-    );
 }
 

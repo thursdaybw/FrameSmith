@@ -107,90 +107,110 @@
  * - MP4 registry: https://mp4ra.org/registered-types/boxes
  * - mp4box.js reference implementation
  */
-export function emitStscBox({
-    firstChunk,
-    samplesPerChunk,
-    sampleDescriptionIndex
-}) {
+function emitStscBox(params) {
 
     // ---------------------------------------------------------
     // Contract validation
     // ---------------------------------------------------------
-    if (!Number.isInteger(firstChunk) || firstChunk < 1) {
+    if (!params || !Array.isArray(params.entries) || params.entries.length === 0) {
         throw new Error(
-            "emitStscBox: firstChunk must be a positive integer (1-based)"
+            "emitStscBox: entries must be a non-empty array"
         );
     }
 
-    if (!Number.isInteger(samplesPerChunk) || samplesPerChunk < 1) {
-        throw new Error(
-            "emitStscBox: samplesPerChunk must be a positive integer"
-        );
-    }
+    // Validate each entry explicitly
+    for (let i = 0; i < params.entries.length; i++) {
+        const entry = params.entries[i];
 
-    if (!Number.isInteger(sampleDescriptionIndex) || sampleDescriptionIndex < 1) {
-        throw new Error(
-            "emitStscBox: sampleDescriptionIndex must be a positive integer (1-based)"
-        );
+        if (!Number.isInteger(entry.firstChunk) || entry.firstChunk < 1) {
+            throw new Error(
+                "emitStscBox: firstChunk must be a positive integer (1-based)"
+            );
+        }
+
+        if (!Number.isInteger(entry.samplesPerChunk) || entry.samplesPerChunk < 1) {
+            throw new Error(
+                "emitStscBox: samplesPerChunk must be a positive integer"
+            );
+        }
+
+        if (
+            !Number.isInteger(entry.sampleDescriptionIndex) ||
+            entry.sampleDescriptionIndex < 1
+        ) {
+            throw new Error(
+                "emitStscBox: sampleDescriptionIndex must be a positive integer (1-based)"
+            );
+        }
     }
 
     // ---------------------------------------------------------
     // Defensive snapshot
     // ---------------------------------------------------------
-    const layout = {
-        firstChunk,
-        samplesPerChunk,
-        sampleDescriptionIndex
-    };
+    // Copy values so later mutation of input cannot affect output
+    const entries = [];
 
+    for (let i = 0; i < params.entries.length; i++) {
+        const src = params.entries[i];
+
+        entries.push({
+            firstChunk: src.firstChunk,
+            samplesPerChunk: src.samplesPerChunk,
+            sampleDescriptionIndex: src.sampleDescriptionIndex
+        });
+    }
 
     // ---------------------------------------------------------
     // STSC serialization
     // ---------------------------------------------------------
+    // STSC is a FullBox that defines a table mapping:
+    //
+    //   chunk index → samples per chunk → sample description index
+    //
+    // Each table entry applies starting from firstChunk
+    // until the next entry (or end of stream).
+    //
+    const body = [];
+
+    /**
+     * entry_count
+     * -----------
+     * Number of mapping rules that follow.
+     *
+     * Each rule defines how chunks are populated with samples.
+     */
+    body.push({ int: entries.length });
+
+    /**
+     * entries
+     * -------
+     * Each entry consists of:
+     *
+     *   first_chunk
+     *   samples_per_chunk
+     *   sample_description_index
+     *
+     * Entries are evaluated in order.
+     */
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+
+        body.push({ int: entry.firstChunk });
+        body.push({ int: entry.samplesPerChunk });
+        body.push({ int: entry.sampleDescriptionIndex });
+    }
+
     return {
         type: "stsc",
         version: 0,
         flags: 0,
-
-        body: [
-            /**
-             * entry_count
-             * -----------
-             * Number of mapping rules that follow.
-             *
-             * Framesmith always emits exactly one rule:
-             *   a single, uniform mapping for all chunks.
-             */
-            { int: 1 },
-
-            /**
-             * first_chunk
-             * -----------
-             * The first chunk index this rule applies to.
-             *
-             * Chunk numbering is 1-based in MP4.
-             *
-             * Controlled by the provided chunkLayout
-             */
-            { int: firstChunk },
-
-            /**
-             * samples_per_chunk
-             * -----------------
-             * How many samples are stored in each chunk.
-             *
-             * Controlled by the provided chunkLayout
-             */
-            { int: samplesPerChunk },
-
-            /**
-             * sample_description_index
-             * ------------------------
-             * Index into the sample description table (stsd).
-             *
-             * Controlled by the provided chunkLayout
-             */
-            { int: sampleDescriptionIndex }
-        ]
+        body
     };
+}
+
+export function registerStscEmitter(registry) {
+    registry.registerEmitter(
+        "moov/trak/mdia/minf/stbl/stsc",
+        emitStscBox
+    );
 }
