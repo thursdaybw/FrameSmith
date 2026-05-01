@@ -966,11 +966,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
+    const WHISPER_UPLOAD_INITIAL_CHUNK_SIZE_BYTES = 256 * 1024;
+    const WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES = 64 * 1024;
+    const WHISPER_UPLOAD_ATTEMPTS_BEFORE_RANGE_REDUCTION = 8;
+
     function uploadRetryDelayMilliseconds(attempt) {
-        const baseDelayMs = 750;
+        const baseDelayMs = 1_000;
         const exponentialDelayMs = baseDelayMs * (2 ** Math.max(0, attempt - 1));
-        const jitterMs = Math.floor(Math.random() * 250);
-        return Math.min(20_000, exponentialDelayMs + jitterMs);
+        const jitterMs = Math.floor(Math.random() * 500);
+        return Math.min(30_000, exponentialDelayMs + jitterMs);
     }
 
     function describeUploadFailure(error) {
@@ -978,44 +982,172 @@ document.addEventListener("DOMContentLoaded", async () => {
         return message.length > 0 ? message : "network request failed";
     }
 
-    async function uploadWhisperAudioChunkWithRetry({
-        uploadUrl,
-        chunk,
-        index,
-        total,
+    function uploadProgressPercent(uploadedBytes, totalBytes) {
+        if (!totalBytes) {
+            return 0;
+        }
+        return Math.max(0, Math.min(100, Math.floor((uploadedBytes / totalBytes) * 100)));
+    }
+
+    function createWhisperUploadId() {
+        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+            return globalThis.crypto.randomUUID();
+        }
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function smallerUploadRangeSize(currentRangeSize) {
+        return Math.max(WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES, Math.floor(currentRangeSize / 2));
+    }
+
+    function canReduceUploadRangeSize(currentRangeSize) {
+        return currentRangeSize > WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES;
+    }
+
+    function estimateRemainingUploadRanges({ uploadedBytes, totalBytes, rangeSize }) {
+        const remainingBytes = Math.max(0, totalBytes - uploadedBytes);
+        return Math.max(1, Math.ceil(remainingBytes / rangeSize));
+    }
+
+    function setAdaptiveUploadStatus({
+        uploadedBytes,
+        totalBytes,
+        rangeSize,
+        message
+    }) {
+        const percent = uploadProgressPercent(uploadedBytes, totalBytes);
+        const rangeSizeKiB = Math.max(1, Math.round(rangeSize / 1024));
+        const remainingRanges = estimateRemainingUploadRanges({
+            uploadedBytes,
+            totalBytes,
+            rangeSize
+        });
+        setVideoSourceStatus(
+            `${message} Uploaded ${percent}% (${uploadedBytes}/${totalBytes} bytes, ` +
+            `${rangeSizeKiB} KiB ranges, about ${remainingRanges} ranges remaining). ` +
+            "Please keep this tab open while the audio upload completes."
+        );
+    }
+
+    function createWhisperRangeUploadUrl({
+        resolvedBaseUrl,
+        taskId,
+        uploadId,
+        offset,
+        size,
+        totalSize
+    }) {
+        const uploadUrl = new URL("/api/framesmith/transcription/upload", resolvedBaseUrl);
+        uploadUrl.searchParams.set("task_id", taskId);
+        uploadUrl.searchParams.set("upload_id", uploadId);
+        uploadUrl.searchParams.set("offset", String(offset));
+        uploadUrl.searchParams.set("size", String(size));
+        uploadUrl.searchParams.set("total_size", String(totalSize));
+        return uploadUrl;
+    }
+
+    function createWhisperUploadRangeFailure({
+        error,
+        offset,
+        size,
+        attempts,
+        uploadedBytes,
+        totalBytes
+    }) {
+        const failure = new Error(describeUploadFailure(error));
+        failure.name = "WhisperUploadRangeFailure";
+        failure.cause = error;
+        failure.offset = offset;
+        failure.size = size;
+        failure.attempts = attempts;
+        failure.uploadedBytes = uploadedBytes;
+        failure.totalBytes = totalBytes;
+        return failure;
+    }
+
+    async function uploadWhisperAudioRangeWithRetry({
+        resolvedBaseUrl,
+        uploadId,
+        blob,
+        offset,
+        rangeSize,
         taskId,
         autoLaunch,
-        maxAttempts = 12
+        maxAttempts = WHISPER_UPLOAD_ATTEMPTS_BEFORE_RANGE_REDUCTION
     }) {
+        const end = Math.min(offset + rangeSize, blob.size);
+        const size = end - offset;
         let lastError = null;
+
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
             await waitForBrowserOnlineBeforeUploadRetry();
+            const chunk = blob.slice(offset, end, blob.type || "audio/wav");
             const formData = createWhisperAudioChunkFormData({
                 chunk,
-                index,
+                index: offset,
                 taskId,
                 autoLaunch
             });
+            const uploadUrl = createWhisperRangeUploadUrl({
+                resolvedBaseUrl,
+                taskId,
+                uploadId,
+                offset,
+                size,
+                totalSize: blob.size
+            });
+
             try {
-                return await fetchJsonOrThrow(uploadUrl.toString(), {
+                const result = await fetchJsonOrThrow(uploadUrl.toString(), {
                     method: "POST",
                     credentials: "include",
                     body: formData
                 });
+                return {
+                    result,
+                    offset,
+                    size,
+                    attempts: attempt,
+                    uploadedBytesAfterRange: end
+                };
             } catch (error) {
                 lastError = error;
                 if (attempt >= maxAttempts) {
                     break;
                 }
                 const retryDelayMs = uploadRetryDelayMilliseconds(attempt);
-                setVideoSourceStatus(
-                    `Uploading audio chunk ${index + 1}/${total} failed (${describeUploadFailure(error)}); ` +
-                    `retrying ${attempt + 1}/${maxAttempts} in ${Math.round(retryDelayMs / 1000)}s...`
-                );
+                setAdaptiveUploadStatus({
+                    uploadedBytes: offset,
+                    totalBytes: blob.size,
+                    rangeSize,
+                    message:
+                        `Poor network detected; upload range at byte ${offset} failed ` +
+                        `(${describeUploadFailure(error)}). Retrying ${attempt + 1}/${maxAttempts} ` +
+                        `in ${Math.round(retryDelayMs / 1000)}s.`
+                });
                 await sleep(retryDelayMs);
             }
         }
-        throw lastError || new Error("Audio chunk upload failed.");
+
+        throw createWhisperUploadRangeFailure({
+            error: lastError,
+            offset,
+            size,
+            attempts: maxAttempts,
+            uploadedBytes: offset,
+            totalBytes: blob.size
+        });
+    }
+
+    function createFinalWhisperUploadFailureMessage({ taskId, failure }) {
+        const uploadedBytes = failure.uploadedBytes || 0;
+        const totalBytes = failure.totalBytes || 0;
+        const progressPercent = uploadProgressPercent(uploadedBytes, totalBytes);
+        const offset = typeof failure.offset === "number" ? failure.offset : "unknown";
+        return `Audio upload could not continue after repeated network failures. ` +
+            `Uploaded ${progressPercent}% (${uploadedBytes}/${totalBytes} bytes) before failing at byte ${offset}. ` +
+            `Task ID: ${taskId}. Keep this tab open if you can; retry/resume is needed instead of starting over. ` +
+            `Last error: ${describeUploadFailure(failure)}`;
     }
 
     async function uploadWhisperAudioBlobInChunks({
@@ -1023,7 +1155,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         taskId,
         blob,
         filename,
-        chunkSize = 256 * 1024
+        chunkSize = WHISPER_UPLOAD_INITIAL_CHUNK_SIZE_BYTES
     }) {
         if (!(blob instanceof Blob)) {
             throw new Error("uploadWhisperAudioBlobInChunks: blob is required.");
@@ -1032,45 +1164,83 @@ document.addEventListener("DOMContentLoaded", async () => {
             throw new Error("uploadWhisperAudioBlobInChunks: taskId is required.");
         }
 
-        const total = Math.max(1, Math.ceil(blob.size / chunkSize));
-        const uploadId = globalThis.crypto && typeof globalThis.crypto.randomUUID === "function"
-            ? globalThis.crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const uploadId = createWhisperUploadId();
+        let uploadedBytes = 0;
+        let currentRangeSize = Math.max(WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES, chunkSize);
         let finalResult = null;
+        let lastFailure = null;
 
-        for (let index = 0; index < total; index += 1) {
-            const start = index * chunkSize;
-            const end = Math.min(start + chunkSize, blob.size);
-            const chunk = blob.slice(start, end, blob.type || "audio/wav");
-            const uploadUrl = new URL("/api/framesmith/transcription/upload", resolvedBaseUrl);
-            uploadUrl.searchParams.set("task_id", taskId);
-            uploadUrl.searchParams.set("upload_id", uploadId);
-            uploadUrl.searchParams.set("index", String(index));
-            uploadUrl.searchParams.set("total", String(total));
-
-            const isFinalChunk = index + 1 === total;
-            setVideoSourceStatus(
-                `Uploading audio to transcription service... ${Math.round(((index + 1) / total) * 100)}%`
-            );
-            const chunkResult = await uploadWhisperAudioChunkWithRetry({
-                uploadUrl,
-                chunk,
-                index,
-                total,
-                taskId,
-                autoLaunch: isFinalChunk
+        while (uploadedBytes < blob.size) {
+            const end = Math.min(uploadedBytes + currentRangeSize, blob.size);
+            const size = end - uploadedBytes;
+            const autoLaunch = end >= blob.size;
+            setAdaptiveUploadStatus({
+                uploadedBytes,
+                totalBytes: blob.size,
+                rangeSize: currentRangeSize,
+                message: "Uploading audio to transcription service."
             });
 
-            window.__lastWhisperUploadProgress = chunkResult?.upload_progress || null;
-            if (isFinalChunk) {
-                finalResult = chunkResult;
+            try {
+                const rangeUpload = await uploadWhisperAudioRangeWithRetry({
+                    resolvedBaseUrl,
+                    uploadId,
+                    blob,
+                    offset: uploadedBytes,
+                    rangeSize: currentRangeSize,
+                    taskId,
+                    autoLaunch
+                });
+                const rangeResult = rangeUpload.result;
+                uploadedBytes = rangeUpload.uploadedBytesAfterRange;
+                window.__lastWhisperUploadProgress = rangeResult?.upload_progress || null;
+                window.__lastWhisperUploadAdaptiveState = {
+                    uploadId,
+                    taskId,
+                    uploadedBytes,
+                    totalBytes: blob.size,
+                    rangeSize: currentRangeSize,
+                    lastUploadedOffset: rangeUpload.offset,
+                    lastUploadedSize: rangeUpload.size,
+                    lastRangeAttempts: rangeUpload.attempts
+                };
+                if (autoLaunch) {
+                    finalResult = rangeResult;
+                }
+            } catch (error) {
+                lastFailure = error;
+                if (!canReduceUploadRangeSize(currentRangeSize)) {
+                    break;
+                }
+                currentRangeSize = smallerUploadRangeSize(currentRangeSize);
+                window.__lastWhisperUploadAdaptiveState = {
+                    uploadId,
+                    taskId,
+                    uploadedBytes,
+                    totalBytes: blob.size,
+                    rangeSize: currentRangeSize,
+                    reducedRangeSizeAfterFailure: true,
+                    failedOffset: error.offset,
+                    restartReason: describeUploadFailure(error)
+                };
+                setAdaptiveUploadStatus({
+                    uploadedBytes,
+                    totalBytes: blob.size,
+                    rangeSize: currentRangeSize,
+                    message:
+                        "Poor network detected; reducing upload range size and continuing from the last stored byte."
+                });
             }
         }
 
-        if (!finalResult) {
-            throw new Error("Chunked audio upload did not return a final response.");
+        if (finalResult) {
+            return finalResult;
         }
-        return finalResult;
+
+        throw new Error(createFinalWhisperUploadFailureMessage({
+            taskId,
+            failure: lastFailure || new Error("unknown upload failure")
+        }));
     }
 
     /**
