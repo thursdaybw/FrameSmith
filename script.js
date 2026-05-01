@@ -767,7 +767,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             window.__lastWhisperAudioBytes instanceof Uint8Array;
         if (hasCachedWhisperAudio) {
             if (showStatus) {
-                setVideoSourceStatus("Audio ready for Whisper");
+                const cachedBytes = Number(window.__lastWhisperAudioBytes?.length || 0);
+                const cachedMiB = cachedBytes > 0 ? ` (${(cachedBytes / (1024 * 1024)).toFixed(1)} MiB WAV)` : "";
+                setVideoSourceStatus(`Extracted WAV audio ready for upload${cachedMiB}.`);
             }
             return {
                 blob: window.__lastWhisperAudioBlob,
@@ -777,14 +779,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         if (showStatus) {
-            setVideoSourceStatus("Preparing audio for captions...");
+            setVideoSourceStatus("Extracting audio from the selected video for transcription...");
         }
         const decodedAudioBuffer = await decodeAudioBufferFromSourceBytes(cachedSelectedVideo.bytes);
+        if (showStatus) {
+            setVideoSourceStatus(`Converting extracted audio to ${targetSampleRate} Hz mono WAV for upload...`);
+        }
         const renderedAudioBuffer = await resampleAudioBufferForWhisper({
             audioBuffer: decodedAudioBuffer,
             targetSampleRate,
             targetChannels
         });
+        if (showStatus) {
+            setVideoSourceStatus("Encoding transcription audio as WAV before upload...");
+        }
         const wavBytes = encodePcm16WavFromAudioBuffer(renderedAudioBuffer);
         const wavBlob = new Blob([wavBytes], {
             type: "audio/wav"
@@ -799,7 +807,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
         lastWhisperAudioSourceKey = currentSourceKey;
         if (showStatus) {
-            setVideoSourceStatus("Audio ready for Whisper");
+            setVideoSourceStatus(`Extracted WAV audio ready for upload (${(wavBytes.length / (1024 * 1024)).toFixed(1)} MiB).`);
         }
         return {
             blob: wavBlob,
@@ -836,15 +844,196 @@ document.addEventListener("DOMContentLoaded", async () => {
         return window.location.origin;
     }
 
+    function isBrowserOffline() {
+        return typeof navigator !== "undefined" && navigator.onLine === false;
+    }
+
+    function isHttpRetryableStatus(status) {
+        return status === 408 || status === 425 || status === 429 || status >= 500;
+    }
+
+    function classifyFetchFailure(error) {
+        const remote = error && typeof error === "object" ? error.remote : null;
+        if (remote && typeof remote === "object") {
+            return {
+                kind: String(remote.kind || "unknown"),
+                retryable: remote.retryable !== false,
+                status: typeof remote.status === "number" ? remote.status : null,
+                url: typeof remote.url === "string" ? remote.url : ""
+            };
+        }
+        const message = error && error.message ? error.message : String(error || "");
+        const looksLikeNetworkFailure = /Failed to fetch|Network request failed|Load failed|NetworkError|timeout|abort/i.test(message);
+        return {
+            kind: isBrowserOffline() ? "offline" : (looksLikeNetworkFailure ? "network" : "unknown"),
+            retryable: looksLikeNetworkFailure || isBrowserOffline(),
+            status: null,
+            url: ""
+        };
+    }
+
+    function describeRemoteFailure(error) {
+        const classification = classifyFetchFailure(error);
+        if (classification.kind === "offline") {
+            return "network appears offline";
+        }
+        if (classification.kind === "http" && classification.status !== null) {
+            return `server returned HTTP ${classification.status}`;
+        }
+        if (classification.kind === "invalid_json") {
+            return "server returned an unreadable response";
+        }
+        if (classification.kind === "retry_exhausted") {
+            return describeRemoteFailure(error?.lastError || error?.cause || "network retry attempts were exhausted");
+        }
+        const message = error && error.message ? error.message : String(error || "");
+        return message.length > 0 ? message : "network request failed";
+    }
+
+    function createRetryPolicy({
+        maxAttempts = 3,
+        baseDelayMs = 1_000,
+        maxDelayMs = 30_000,
+        jitterMs = 500
+    } = {}) {
+        return {
+            maxAttempts: Math.max(1, Number(maxAttempts) || 1),
+            baseDelayMs: Math.max(0, Number(baseDelayMs) || 0),
+            maxDelayMs: Math.max(0, Number(maxDelayMs) || 0),
+            jitterMs: Math.max(0, Number(jitterMs) || 0)
+        };
+    }
+
+    function retryDelayMilliseconds(attempt, retryPolicy = {}) {
+        const policy = createRetryPolicy(retryPolicy);
+        const exponentialDelayMs = policy.baseDelayMs * (2 ** Math.max(0, attempt - 1));
+        const jitterMs = policy.jitterMs > 0 ? Math.floor(Math.random() * policy.jitterMs) : 0;
+        return Math.min(policy.maxDelayMs, exponentialDelayMs + jitterMs);
+    }
+
+    function uploadRetryDelayMilliseconds(attempt) {
+        return retryDelayMilliseconds(attempt, createRetryPolicy());
+    }
+
+    function formatRetryStatusMessage({
+        subject = "Request",
+        error,
+        nextAttempt,
+        maxAttempts,
+        delayMs
+    }) {
+        return `${subject} failed (${describeRemoteFailure(error)}). ` +
+            `Retrying ${nextAttempt}/${maxAttempts} in ${Math.round(delayMs / 1000)}s.`;
+    }
+
+    function isRetryableRemoteError(error) {
+        return classifyFetchFailure(error).retryable !== false;
+    }
+
+    function createRemoteOperationExhaustedError({
+        operationName,
+        attempts,
+        lastError
+    }) {
+        const error = new Error(
+            `${operationName} failed after ${attempts} attempt${attempts === 1 ? "" : "s"}: ` +
+            describeRemoteFailure(lastError)
+        );
+        error.name = "RemoteOperationExhaustedError";
+        error.operationName = operationName;
+        error.attempts = attempts;
+        error.lastError = lastError;
+        error.cause = lastError;
+        error.remote = {
+            kind: "retry_exhausted",
+            retryable: true,
+            attempts,
+            lastClassification: classifyFetchFailure(lastError)
+        };
+        return error;
+    }
+
+    async function runRetryingRemoteOperation({
+        operationName = "remote_operation",
+        retryPolicy = {},
+        request,
+        beforeAttempt = null,
+        beforeRetry = null,
+        isRetryableError = isRetryableRemoteError
+    }) {
+        if (typeof request !== "function") {
+            throw new Error("runRetryingRemoteOperation: request callback is required.");
+        }
+        const policy = createRetryPolicy(retryPolicy);
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
+            if (typeof beforeAttempt === "function") {
+                await beforeAttempt({ attempt, maxAttempts: policy.maxAttempts, operationName, retryPolicy: policy });
+            }
+            try {
+                return {
+                    result: await request({ attempt, maxAttempts: policy.maxAttempts, operationName, retryPolicy: policy }),
+                    attempts: attempt
+                };
+            } catch (error) {
+                lastError = error;
+                if (error && typeof error === "object") {
+                    error.attempts = attempt;
+                    error.operationName = operationName;
+                }
+                const retryable = isRetryableError(error, { attempt, maxAttempts: policy.maxAttempts, operationName, retryPolicy: policy });
+                if (!retryable) {
+                    throw error;
+                }
+                if (attempt >= policy.maxAttempts) {
+                    throw createRemoteOperationExhaustedError({
+                        operationName,
+                        attempts: attempt,
+                        lastError
+                    });
+                }
+                const delayMs = retryDelayMilliseconds(attempt, policy);
+                if (typeof beforeRetry === "function") {
+                    await beforeRetry({
+                        attempt,
+                        nextAttempt: attempt + 1,
+                        maxAttempts: policy.maxAttempts,
+                        delayMs,
+                        error,
+                        operationName,
+                        retryPolicy: policy,
+                        classification: classifyFetchFailure(error)
+                    });
+                }
+                await sleep(delayMs);
+            }
+        }
+
+        throw createRemoteOperationExhaustedError({
+            operationName,
+            attempts: policy.maxAttempts,
+            lastError
+        });
+    }
+
     async function fetchJsonOrThrow(url, options) {
         let response;
         try {
             response = await fetch(url, options);
         } catch (error) {
-            throw new Error(
+            const wrapped = new Error(
                 `Network request failed for ${url}. If this is cross-origin, check CORS and auth cookies. ` +
                 `Original error: ${error?.message || String(error)}`
             );
+            wrapped.name = "RemoteTransportError";
+            wrapped.cause = error;
+            wrapped.remote = {
+                kind: isBrowserOffline() ? "offline" : "network",
+                retryable: true,
+                url
+            };
+            throw wrapped;
         }
         const text = await response.text();
         let parsed = null;
@@ -854,12 +1043,30 @@ document.addEventListener("DOMContentLoaded", async () => {
             parsed = null;
         }
         if (!response.ok) {
-            throw new Error(
+            const error = new Error(
                 `Request failed (${response.status}) ${url}: ${parsed?.error || text || response.statusText}`
             );
+            error.name = "RemoteHttpError";
+            error.remote = {
+                kind: "http",
+                status: response.status,
+                retryable: isHttpRetryableStatus(response.status),
+                url,
+                responseBody: text,
+                responseJson: parsed
+            };
+            throw error;
         }
         if (parsed === null) {
-            throw new Error(`Expected JSON response from ${url}`);
+            const error = new Error(`Expected JSON response from ${url}`);
+            error.name = "RemoteParseError";
+            error.remote = {
+                kind: "invalid_json",
+                retryable: true,
+                url,
+                responseBody: text
+            };
+            throw error;
         }
         return parsed;
     }
@@ -948,17 +1155,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         return formData;
     }
 
-    function isBrowserOffline() {
-        return typeof navigator !== "undefined" && navigator.onLine === false;
-    }
-
-    async function waitForBrowserOnlineBeforeUploadRetry() {
+    async function waitForBrowserOnline({
+        message = "Network appears offline; waiting before retrying request...",
+        timeoutMs = 15_000
+    } = {}) {
         if (!isBrowserOffline()) {
             return;
         }
-        setVideoSourceStatus("Network appears offline; waiting before retrying audio upload...");
+        setVideoSourceStatus(message);
         await new Promise((resolve) => {
-            const timeout = setTimeout(resolve, 15_000);
+            const timeout = setTimeout(resolve, timeoutMs);
             window.addEventListener("online", () => {
                 clearTimeout(timeout);
                 resolve();
@@ -970,16 +1176,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES = 64 * 1024;
     const WHISPER_UPLOAD_ATTEMPTS_BEFORE_RANGE_REDUCTION = 4;
 
-    function uploadRetryDelayMilliseconds(attempt) {
-        const baseDelayMs = 1_000;
-        const exponentialDelayMs = baseDelayMs * (2 ** Math.max(0, attempt - 1));
-        const jitterMs = Math.floor(Math.random() * 500);
-        return Math.min(30_000, exponentialDelayMs + jitterMs);
-    }
-
     function describeUploadFailure(error) {
-        const message = error && error.message ? error.message : String(error || "");
-        return message.length > 0 ? message : "network request failed";
+        return describeRemoteFailure(error);
     }
 
     function uploadProgressPercent(uploadedBytes, totalBytes) {
@@ -1077,66 +1275,67 @@ document.addEventListener("DOMContentLoaded", async () => {
     }) {
         const end = Math.min(offset + rangeSize, blob.size);
         const size = end - offset;
-        let lastError = null;
+        const retryPolicy = createRetryPolicy({ maxAttempts });
 
-        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-            await waitForBrowserOnlineBeforeUploadRetry();
-            const chunk = blob.slice(offset, end, blob.type || "audio/wav");
-            const formData = createWhisperAudioChunkFormData({
-                chunk,
-                index: offset,
-                taskId,
-                autoLaunch
+        try {
+            const operation = await runRetryingRemoteOperation({
+                operationName: "whisper_audio_range_upload",
+                retryPolicy,
+                beforeAttempt: () => waitForBrowserOnline({
+                    message: "Network appears offline; waiting before retrying audio upload..."
+                }),
+                request: async () => {
+                    const chunk = blob.slice(offset, end, blob.type || "audio/wav");
+                    const formData = createWhisperAudioChunkFormData({
+                        chunk,
+                        index: offset,
+                        taskId,
+                        autoLaunch
+                    });
+                    const uploadUrl = createWhisperRangeUploadUrl({
+                        resolvedBaseUrl,
+                        taskId,
+                        uploadId,
+                        offset,
+                        size,
+                        totalSize: blob.size
+                    });
+                    return fetchJsonOrThrow(uploadUrl.toString(), {
+                        method: "POST",
+                        credentials: "include",
+                        body: formData
+                    });
+                },
+                beforeRetry: ({ error, nextAttempt, maxAttempts: retryMaxAttempts, delayMs }) => {
+                    setAdaptiveUploadStatus({
+                        uploadedBytes: offset,
+                        totalBytes: blob.size,
+                        rangeSize,
+                        message:
+                            `Poor network detected; upload range at byte ${offset} failed ` +
+                            `(${describeUploadFailure(error)}). Retrying ${nextAttempt}/${retryMaxAttempts} ` +
+                            `in ${Math.round(delayMs / 1000)}s.`
+                    });
+                }
             });
-            const uploadUrl = createWhisperRangeUploadUrl({
-                resolvedBaseUrl,
-                taskId,
-                uploadId,
+
+            return {
+                result: operation.result,
                 offset,
                 size,
-                totalSize: blob.size
+                attempts: operation.attempts,
+                uploadedBytesAfterRange: end
+            };
+        } catch (error) {
+            throw createWhisperUploadRangeFailure({
+                error,
+                offset,
+                size,
+                attempts: typeof error?.attempts === "number" ? error.attempts : maxAttempts,
+                uploadedBytes: offset,
+                totalBytes: blob.size
             });
-
-            try {
-                const result = await fetchJsonOrThrow(uploadUrl.toString(), {
-                    method: "POST",
-                    credentials: "include",
-                    body: formData
-                });
-                return {
-                    result,
-                    offset,
-                    size,
-                    attempts: attempt,
-                    uploadedBytesAfterRange: end
-                };
-            } catch (error) {
-                lastError = error;
-                if (attempt >= maxAttempts) {
-                    break;
-                }
-                const retryDelayMs = uploadRetryDelayMilliseconds(attempt);
-                setAdaptiveUploadStatus({
-                    uploadedBytes: offset,
-                    totalBytes: blob.size,
-                    rangeSize,
-                    message:
-                        `Poor network detected; upload range at byte ${offset} failed ` +
-                        `(${describeUploadFailure(error)}). Retrying ${attempt + 1}/${maxAttempts} ` +
-                        `in ${Math.round(retryDelayMs / 1000)}s.`
-                });
-                await sleep(retryDelayMs);
-            }
         }
-
-        throw createWhisperUploadRangeFailure({
-            error: lastError,
-            offset,
-            size,
-            attempts: maxAttempts,
-            uploadedBytes: offset,
-            totalBytes: blob.size
-        });
     }
 
     function createFinalWhisperUploadFailureMessage({ taskId, failure }) {
@@ -1307,7 +1506,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const whisperAudio = await extractWhisperReadyAudioFromLoadedSource({
             targetSampleRate,
             targetChannels,
-            showStatus: false
+            showStatus: true
         });
 
         setVideoSourceStatus("Creating transcription task...");
@@ -1355,24 +1554,124 @@ document.addEventListener("DOMContentLoaded", async () => {
         return result;
     }
 
+    function shortTaskId(taskId) {
+        const value = String(taskId || "");
+        return value.length > 8 ? `${value.slice(0, 8)}…` : value;
+    }
+
+    async function fetchTranscriptionStatusWithResilience({
+        resolvedBaseUrl,
+        taskId,
+        retryPolicy,
+        operationName = "whisper_transcription_status_poll"
+    }) {
+        const statusUrl = new URL("/api/framesmith/transcription/status", resolvedBaseUrl);
+        statusUrl.searchParams.set("task_id", taskId);
+        return runRetryingRemoteOperation({
+            operationName,
+            retryPolicy,
+            beforeAttempt: () => waitForBrowserOnline({
+                message: `Network appears offline; waiting before checking transcription status for task ${shortTaskId(taskId)}.`
+            }),
+            request: () => fetchJsonOrThrow(statusUrl.toString(), {
+                method: "GET",
+                credentials: "include"
+            }),
+            beforeRetry: ({ error, nextAttempt, maxAttempts, delayMs }) => {
+                const failure = {
+                    taskId,
+                    error: describeRemoteFailure(error),
+                    classification: classifyFetchFailure(error),
+                    nextAttempt,
+                    maxAttempts,
+                    delayMs,
+                    at: Date.now()
+                };
+                window.__lastWhisperStatusPollTransportFailure = failure;
+                setTranscriptionStageStatus("polling", "network retry");
+                setVideoSourceStatus(
+                    `Poor network while checking transcription status for task ${shortTaskId(taskId)}. ` +
+                    `${formatRetryStatusMessage({
+                        subject: "Status check",
+                        error,
+                        nextAttempt,
+                        maxAttempts,
+                        delayMs
+                    })} This does not mean transcription failed. Please keep this tab open.`
+                );
+            }
+        });
+    }
+
     async function pollWhisperTranscriptionStatus({
         transcriptionBaseUrl,
         taskId,
         pollIntervalMs = 3_000,
-        timeoutMs = 10 * 60 * 1_000
+        timeoutMs = 10 * 60 * 1_000,
+        statusRetryPolicy = createRetryPolicy({
+            maxAttempts: 4,
+            baseDelayMs: 1_000,
+            maxDelayMs: 15_000,
+            jitterMs: 500
+        })
     }) {
         const resolvedBaseUrl = resolveTranscriptionBaseUrl(transcriptionBaseUrl);
         const startedAt = Date.now();
         const history = [];
+        let lastStatusPayload = null;
+        let lastTransportFailure = null;
+        let transportFailureCount = 0;
 
         while (Date.now() - startedAt <= timeoutMs) {
-            const statusUrl = new URL("/api/framesmith/transcription/status", resolvedBaseUrl);
-            statusUrl.searchParams.set("task_id", taskId);
-            const statusPayload = await fetchJsonOrThrow(statusUrl.toString(), {
-                method: "GET",
-                credentials: "include"
-            });
+            let statusPayload = null;
+            try {
+                const operation = await fetchTranscriptionStatusWithResilience({
+                    resolvedBaseUrl,
+                    taskId,
+                    retryPolicy: statusRetryPolicy
+                });
+                statusPayload = operation.result;
+                if (transportFailureCount > 0) {
+                    setVideoSourceStatus(`Status check recovered for task ${shortTaskId(taskId)}.`);
+                }
+            } catch (error) {
+                const classification = classifyFetchFailure(error);
+                const failure = {
+                    ok: false,
+                    taskId,
+                    error: describeRemoteFailure(error),
+                    classification,
+                    attempts: typeof error?.attempts === "number" ? error.attempts : null,
+                    at: Date.now()
+                };
+                lastTransportFailure = failure;
+                transportFailureCount += 1;
+                history.push({ transport_error: failure });
+                window.__lastWhisperStatusPollTransportFailure = failure;
+
+                if (classification.retryable === false) {
+                    setTranscriptionErrorStatus(`status check rejected (${failure.error})`);
+                    return {
+                        ok: false,
+                        taskId,
+                        statusPayload: lastStatusPayload,
+                        history,
+                        transportFailure: failure,
+                        reason: "status_poll_non_retryable_transport_failure"
+                    };
+                }
+
+                setTranscriptionStageStatus("polling", "network retry");
+                setVideoSourceStatus(
+                    `Poor network while checking transcription status for task ${shortTaskId(taskId)}. ` +
+                    `Still waiting; this does not mean transcription failed. Please keep this tab open.`
+                );
+                await sleep(pollIntervalMs);
+                continue;
+            }
+
             history.push(statusPayload);
+            lastStatusPayload = statusPayload;
 
             const status = String(statusPayload?.status || "").toLowerCase();
             setTranscriptionStageStatus("polling", status || "working");
@@ -1383,7 +1682,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                     ok: true,
                     taskId,
                     statusPayload,
-                    history
+                    history,
+                    transportFailureCount
                 };
             }
 
@@ -1392,7 +1692,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                     ok: false,
                     taskId,
                     statusPayload,
-                    history
+                    history,
+                    transportFailureCount
                 };
             }
 
@@ -1403,10 +1704,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         return {
             ok: false,
             taskId,
-            statusPayload: null,
+            statusPayload: lastStatusPayload,
             history,
             timeout: true,
-            reason: "timeout_waiting_for_framesmith_transcription"
+            transportFailure: lastTransportFailure,
+            transportFailureCount,
+            reason: lastTransportFailure
+                ? "timeout_waiting_for_framesmith_transcription_after_status_transport_failures"
+                : "timeout_waiting_for_framesmith_transcription"
         };
     }
 
@@ -1473,9 +1778,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             return result;
         }
         if (pollResult.timeout) {
-            setTranscriptionStageStatus("polling", "queued");
-            setVideoSourceStatus("Transcription queued. Waiting for queue worker...");
-            console.log("[Whisper][Drupal] queued; waiting for worker/transcription", result);
+            setTranscriptionStageStatus("polling", pollResult.transportFailure ? "status unknown" : "queued");
+            setVideoSourceStatus(
+                `Transcription is still pending or status is unknown for task ${shortTaskId(uploadAndQueueResult.taskId)}. ` +
+                "Keep this tab open, or retry/reconnect by task ID instead of starting over."
+            );
+            console.log("[Whisper][Drupal] queued/status unknown; waiting for worker/transcription", result);
         } else {
             setTranscriptionErrorStatus(String(pollResult?.statusPayload?.status || "failed"));
             console.warn("[Whisper][Drupal] transcription incomplete", result);
