@@ -968,7 +968,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const WHISPER_UPLOAD_INITIAL_CHUNK_SIZE_BYTES = 256 * 1024;
     const WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES = 64 * 1024;
-    const WHISPER_UPLOAD_ATTEMPTS_BEFORE_RANGE_REDUCTION = 8;
+    const WHISPER_UPLOAD_ATTEMPTS_BEFORE_RANGE_REDUCTION = 4;
 
     function uploadRetryDelayMilliseconds(attempt) {
         const baseDelayMs = 1_000;
@@ -1150,6 +1150,44 @@ document.addEventListener("DOMContentLoaded", async () => {
             `Last error: ${describeUploadFailure(failure)}`;
     }
 
+    async function reportWhisperUploadFailure({
+        resolvedBaseUrl,
+        taskId,
+        uploadId,
+        failure,
+        message
+    }) {
+        const failureUrl = new URL("/api/framesmith/transcription/upload-failure", resolvedBaseUrl);
+        const payload = {
+            task_id: taskId,
+            upload_id: uploadId,
+            message,
+            failed_offset: typeof failure.offset === "number" ? failure.offset : null,
+            range_size: typeof failure.size === "number" ? failure.size : null,
+            attempts: typeof failure.attempts === "number" ? failure.attempts : null
+        };
+        try {
+            const result = await fetchJsonOrThrow(failureUrl.toString(), {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+            window.__lastWhisperUploadFailureReport = result;
+            return result;
+        } catch (error) {
+            window.__lastWhisperUploadFailureReport = {
+                ok: false,
+                error: describeUploadFailure(error),
+                payload
+            };
+            console.warn("[Whisper][Drupal] upload failure report failed", error);
+            return null;
+        }
+    }
+
     async function uploadWhisperAudioBlobInChunks({
         resolvedBaseUrl,
         taskId,
@@ -1237,10 +1275,19 @@ document.addEventListener("DOMContentLoaded", async () => {
             return finalResult;
         }
 
-        throw new Error(createFinalWhisperUploadFailureMessage({
+        const finalFailure = lastFailure || new Error("unknown upload failure");
+        const finalMessage = createFinalWhisperUploadFailureMessage({
             taskId,
-            failure: lastFailure || new Error("unknown upload failure")
-        }));
+            failure: finalFailure
+        });
+        await reportWhisperUploadFailure({
+            resolvedBaseUrl,
+            taskId,
+            uploadId,
+            failure: finalFailure,
+            message: finalMessage
+        });
+        throw new Error(finalMessage);
     }
 
     /**
