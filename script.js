@@ -948,6 +948,36 @@ document.addEventListener("DOMContentLoaded", async () => {
         return formData;
     }
 
+    function isBrowserOffline() {
+        return typeof navigator !== "undefined" && navigator.onLine === false;
+    }
+
+    async function waitForBrowserOnlineBeforeUploadRetry() {
+        if (!isBrowserOffline()) {
+            return;
+        }
+        setVideoSourceStatus("Network appears offline; waiting before retrying audio upload...");
+        await new Promise((resolve) => {
+            const timeout = setTimeout(resolve, 15_000);
+            window.addEventListener("online", () => {
+                clearTimeout(timeout);
+                resolve();
+            }, { once: true });
+        });
+    }
+
+    function uploadRetryDelayMilliseconds(attempt) {
+        const baseDelayMs = 750;
+        const exponentialDelayMs = baseDelayMs * (2 ** Math.max(0, attempt - 1));
+        const jitterMs = Math.floor(Math.random() * 250);
+        return Math.min(20_000, exponentialDelayMs + jitterMs);
+    }
+
+    function describeUploadFailure(error) {
+        const message = error && error.message ? error.message : String(error || "");
+        return message.length > 0 ? message : "network request failed";
+    }
+
     async function uploadWhisperAudioChunkWithRetry({
         uploadUrl,
         chunk,
@@ -955,10 +985,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         total,
         taskId,
         autoLaunch,
-        maxAttempts = 3
+        maxAttempts = 12
     }) {
         let lastError = null;
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            await waitForBrowserOnlineBeforeUploadRetry();
             const formData = createWhisperAudioChunkFormData({
                 chunk,
                 index,
@@ -976,9 +1007,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 if (attempt >= maxAttempts) {
                     break;
                 }
-                const retryDelayMs = Math.min(2_000, 250 * attempt);
+                const retryDelayMs = uploadRetryDelayMilliseconds(attempt);
                 setVideoSourceStatus(
-                    `Uploading audio chunk ${index + 1}/${total} failed; retrying (${attempt + 1}/${maxAttempts})...`
+                    `Uploading audio chunk ${index + 1}/${total} failed (${describeUploadFailure(error)}); ` +
+                    `retrying ${attempt + 1}/${maxAttempts} in ${Math.round(retryDelayMs / 1000)}s...`
                 );
                 await sleep(retryDelayMs);
             }
@@ -991,7 +1023,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         taskId,
         blob,
         filename,
-        chunkSize = 1 * 1024 * 1024
+        chunkSize = 256 * 1024
     }) {
         if (!(blob instanceof Blob)) {
             throw new Error("uploadWhisperAudioBlobInChunks: blob is required.");
