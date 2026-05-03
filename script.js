@@ -1608,6 +1608,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         taskId,
         pollIntervalMs = 3_000,
         timeoutMs = 10 * 60 * 1_000,
+        softTimeoutMs = timeoutMs,
+        hardTimeoutMs = Math.max(softTimeoutMs, 30 * 60 * 1_000),
+        slowPollIntervalMs = 15_000,
         statusRetryPolicy = createRetryPolicy({
             maxAttempts: 4,
             baseDelayMs: 1_000,
@@ -1621,8 +1624,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         let lastStatusPayload = null;
         let lastTransportFailure = null;
         let transportFailureCount = 0;
+        let recoveryPolling = false;
 
-        while (Date.now() - startedAt <= timeoutMs) {
+        while (Date.now() - startedAt <= hardTimeoutMs) {
+            const elapsedMs = Date.now() - startedAt;
+            if (!recoveryPolling && elapsedMs > softTimeoutMs) {
+                recoveryPolling = true;
+                setTranscriptionStageStatus("polling", "still watching");
+                setVideoSourceStatus(
+                    `Transcription is taking longer than usual for task ${shortTaskId(taskId)}. ` +
+                    "Still checking the same task; please keep this tab open."
+                );
+            }
+            const currentPollIntervalMs = recoveryPolling ? slowPollIntervalMs : pollIntervalMs;
             let statusPayload = null;
             try {
                 const operation = await fetchTranscriptionStatusWithResilience({
@@ -1666,7 +1680,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     `Poor network while checking transcription status for task ${shortTaskId(taskId)}. ` +
                     `Still waiting; this does not mean transcription failed. Please keep this tab open.`
                 );
-                await sleep(pollIntervalMs);
+                await sleep(currentPollIntervalMs);
                 continue;
             }
 
@@ -1697,8 +1711,23 @@ document.addEventListener("DOMContentLoaded", async () => {
                 };
             }
 
-            setVideoSourceStatus(`Transcription status: ${status || "working"}...`);
-            await sleep(pollIntervalMs);
+            if (recoveryPolling) {
+                setVideoSourceStatus(
+                    `Still waiting for transcription task ${shortTaskId(taskId)}. ` +
+                    `Latest backend status: ${status || "working"}.`
+                );
+            } else {
+                setVideoSourceStatus(`Transcription status: ${status || "working"}...`);
+            }
+            window.__lastWhisperTranscriptionPollState = {
+                taskId,
+                elapsedMs: Date.now() - startedAt,
+                recoveryPolling,
+                status,
+                transportFailureCount,
+                lastStatusPayload
+            };
+            await sleep(currentPollIntervalMs);
         }
 
         return {
@@ -1707,11 +1736,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             statusPayload: lastStatusPayload,
             history,
             timeout: true,
+            softTimeoutMs,
+            hardTimeoutMs,
+            recoveryPolling,
             transportFailure: lastTransportFailure,
             transportFailureCount,
             reason: lastTransportFailure
-                ? "timeout_waiting_for_framesmith_transcription_after_status_transport_failures"
-                : "timeout_waiting_for_framesmith_transcription"
+                ? "hard_timeout_waiting_for_framesmith_transcription_after_status_transport_failures"
+                : "hard_timeout_waiting_for_framesmith_transcription"
         };
     }
 
@@ -1725,7 +1757,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         targetSampleRate = 16_000,
         targetChannels = 1,
         pollIntervalMs = 3_000,
-        timeoutMs = 10 * 60 * 1_000
+        timeoutMs = 10 * 60 * 1_000,
+        hardTimeoutMs = Math.max(timeoutMs, 30 * 60 * 1_000),
+        slowPollIntervalMs = 15_000
     } = {}) {
         const uploadAndQueueResult = await sendWhisperAudioToDrupal({
             transcriptionBaseUrl,
@@ -1738,7 +1772,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             transcriptionBaseUrl: uploadAndQueueResult.baseUrl,
             taskId: uploadAndQueueResult.taskId,
             pollIntervalMs,
-            timeoutMs
+            timeoutMs,
+            softTimeoutMs: timeoutMs,
+            hardTimeoutMs,
+            slowPollIntervalMs
         });
 
         const result = {
@@ -1778,12 +1815,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             return result;
         }
         if (pollResult.timeout) {
-            setTranscriptionStageStatus("polling", pollResult.transportFailure ? "status unknown" : "queued");
+            setTranscriptionStageStatus("polling", pollResult.transportFailure ? "status unknown" : "timeout");
             setVideoSourceStatus(
-                `Transcription is still pending or status is unknown for task ${shortTaskId(uploadAndQueueResult.taskId)}. ` +
-                "Keep this tab open, or retry/reconnect by task ID instead of starting over."
+                `Stopped watching transcription task ${shortTaskId(uploadAndQueueResult.taskId)} after the extended wait window. ` +
+                "Retry/reconnect by task ID instead of starting over."
             );
-            console.log("[Whisper][Drupal] queued/status unknown; waiting for worker/transcription", result);
+            console.log("[Whisper][Drupal] extended wait expired before transcription completed", result);
         } else {
             setTranscriptionErrorStatus(String(pollResult?.statusPayload?.status || "failed"));
             console.warn("[Whisper][Drupal] transcription incomplete", result);
