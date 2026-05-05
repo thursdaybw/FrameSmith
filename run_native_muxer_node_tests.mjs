@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const DEFAULT_NATIVE_MUXER_ROOT = "./src/mux/native";
+const DEFAULT_NATIVE_MUXER_ROOT = "./vendor/native-mp4-muxer";
 
 function resolveNativeMuxerRoot() {
     const requestedRoot = process.env.NATIVE_MUXER_ROOT || DEFAULT_NATIVE_MUXER_ROOT;

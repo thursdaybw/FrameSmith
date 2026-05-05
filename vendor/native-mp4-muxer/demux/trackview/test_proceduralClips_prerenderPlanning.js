@@ -7,14 +7,14 @@
  * - Procedural fragments are emitted deterministically
  */
 
-import { __test__ } from "../../../../../script.js";
+import { __test__ } from "../../../../script.js";
 
 import {
     PreRenderPlanFragmentKinds,
     PreRenderPlanContributorKinds
-} from "../../../../timeline/planFragments.js";
+} from "../../../../src/timeline/planFragments.js";
 
-import { ProceduralClip } from "../../../../timeline/ProceduralClip.js";
+import { ProceduralClip } from "../../../../src/timeline/ProceduralClip.js";
 
 const {
     Timeline,

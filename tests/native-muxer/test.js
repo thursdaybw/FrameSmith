@@ -1,7 +1,7 @@
-import { NativeMuxer } from "../../src/mux/native/NativeMuxer.js";
+import { createMp4FromInputs } from "../../vendor/native-mp4-muxer/index.js";
 
 document.getElementById("run").onclick = async () => {
-    console.log("=== NativeMuxer Smoke Test ===");
+    console.log("=== NativeMuxer Smoke Test ===", { createMp4FromInputs });
 
     // TODO:
     // 1. generate 3 synthetic frames

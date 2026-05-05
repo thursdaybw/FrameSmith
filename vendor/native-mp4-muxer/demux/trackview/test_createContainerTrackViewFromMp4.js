@@ -37,12 +37,12 @@
  * If any of these invariants change, this file MUST be updated first.
  */
 import { createContainerTrackViewFromMp4 } from "./createContainerTrackViewFromMp4.js";
-import { __test__ } from "../../../../../script.js";
+import { __test__ } from "../../../../script.js";
 
 import {
     PreRenderPlanFragmentKinds,
     PreRenderPlanContributorKinds
-} from "../../../../timeline/planFragments.js";
+} from "../../../../src/timeline/planFragments.js";
 
 const {
     Timeline,

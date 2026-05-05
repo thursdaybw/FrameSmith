@@ -407,8 +407,8 @@ async function runMp4BoxDemux({ mp4Buffer }) {
 
 async function runNativeDemux({ mp4Bytes }) {
     const [{ listTracksFromMp4 }, { extractTrackDataForNativeDemux }] = await Promise.all([
-        import("../src/mux/native/demux/container/listTracksFromMp4.js"),
-        import("../src/mux/native/demux/track/extractTrackDataForNativeDemux.js")
+        import("../vendor/native-mp4-muxer/demux/container/listTracksFromMp4.js"),
+        import("../vendor/native-mp4-muxer/demux/track/extractTrackDataForNativeDemux.js")
     ]);
 
     const tracks = listTracksFromMp4({ mp4Bytes });
