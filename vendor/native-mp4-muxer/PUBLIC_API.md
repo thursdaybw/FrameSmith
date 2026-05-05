@@ -61,6 +61,17 @@ tests/fixtures/README.md
 
 The Node harness skips optional oracle tests when their local-only dependencies or heavyweight fixtures are absent.
 
+## Browser/WebCodecs smoke test
+
+The native muxer owns a browser-only smoke runner:
+
+```text
+tests/browser/smoke.html
+tests/browser/smoke.js
+```
+
+It runs WebCodecs audio/video encoding, feeds the result into the native MP4 muxer, validates MP4 structure, and can download the generated MP4 for manual inspection.
+
 ## Test strategy
 
 The existing native muxer test harness can now run against either root:

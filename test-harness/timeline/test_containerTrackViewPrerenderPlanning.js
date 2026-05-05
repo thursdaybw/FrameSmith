@@ -36,13 +36,13 @@
  *
  * If any of these invariants change, this file MUST be updated first.
  */
-import { createContainerTrackViewFromMp4 } from "./createContainerTrackViewFromMp4.js";
-import { __test__ } from "../../../../script.js";
+import { createContainerTrackViewFromMp4 } from "../../vendor/native-mp4-muxer/demux/trackview/createContainerTrackViewFromMp4.js";
+import { __test__ } from "../../script.js";
 
 import {
     PreRenderPlanFragmentKinds,
     PreRenderPlanContributorKinds
-} from "../../../../src/timeline/planFragments.js";
+} from "../../src/timeline/planFragments.js";
 
 const {
     Timeline,

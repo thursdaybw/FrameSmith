@@ -46,9 +46,9 @@
 
 import { __test__ } from "../script.js";
 
-import { TRACKVIEW_TESTS } from "../vendor/native-mp4-muxer/demux/trackview/test_createContainerTrackViewFromMp4.js";
+import { TRACKVIEW_TESTS } from "./timeline/test_containerTrackViewPrerenderPlanning.js";
 
-import { PROCEDURAL_CLIP_TESTS } from "../vendor/native-mp4-muxer/demux/trackview/test_proceduralClips_prerenderPlanning.js";
+import { PROCEDURAL_CLIP_TESTS } from "./timeline/test_proceduralClipsPrerenderPlanning.js";
 
 import { PRERENDER_DECODE_CONTAINER_VIDEO_TESTS } from "../src/prerender/test_decodeContainerAccessUnits_containerVideo.js";
 import { PRERENDER_DECODE_CONTAINER_AUDIO_TESTS } from "../src/prerender/test_decodeContainerAccessUnits_containerAudio.js";

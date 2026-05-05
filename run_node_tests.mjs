@@ -35,8 +35,8 @@ function log(color, label, name) {
 }
 
 const SKIPPED_BROWSER_ONLY_MODULES = [
-    "./vendor/native-mp4-muxer/demux/trackview/test_createContainerTrackViewFromMp4.js",
-    "./vendor/native-mp4-muxer/demux/trackview/test_proceduralClips_prerenderPlanning.js"
+    "./test-harness/timeline/test_containerTrackViewPrerenderPlanning.js",
+    "./test-harness/timeline/test_proceduralClipsPrerenderPlanning.js"
 ];
 
 async function loadNodeSafeScriptLocalTests() {
