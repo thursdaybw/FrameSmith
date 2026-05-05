@@ -12,9 +12,9 @@ import { __test__ } from "../../script.js";
 import {
     PreRenderPlanFragmentKinds,
     PreRenderPlanContributorKinds
-} from "../../src/timeline/planFragments.js";
+} from "../../vendor/media-timeline-compiler/planFragments.js";
 
-import { ProceduralClip } from "../../src/timeline/ProceduralClip.js";
+import { ProceduralClip } from "../../vendor/media-timeline-compiler/ProceduralClip.js";
 
 const {
     Timeline,

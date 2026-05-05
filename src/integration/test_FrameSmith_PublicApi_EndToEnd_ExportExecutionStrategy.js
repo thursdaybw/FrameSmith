@@ -1,9 +1,9 @@
-import { Timeline } from "../timeline/Timeline.js";
-import { Track } from "../timeline/Track.js";
-import { ProceduralClip } from "../timeline/ProceduralClip.js";
-import { Clip } from "../timeline/Clip.js";
+import { Timeline } from "../../vendor/media-timeline-compiler/Timeline.js";
+import { Track } from "../../vendor/media-timeline-compiler/Track.js";
+import { ProceduralClip } from "../../vendor/media-timeline-compiler/ProceduralClip.js";
+import { Clip } from "../../vendor/media-timeline-compiler/Clip.js";
 
-import { buildPrerenderPlanFromTimeline } from "../timeline/compileTimeline.js";
+import { buildPrerenderPlanFromTimeline } from "../../vendor/media-timeline-compiler/compileTimeline.js";
 import { resolveProceduralFragmentsAtTimeFromPlan } from "../prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
 import { decodeContainerAccessUnitsFromPreRenderPlanBatch } from "../prerender/decodeContainerAccessUnitsFromPreRenderPlanBatch.js";
 

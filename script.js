@@ -19,20 +19,20 @@
  * - Keep deep architecture narrative out of this file.
  */
 
-import { Timeline } from "./src/timeline/Timeline.js";
-import { Track } from "./src/timeline/Track.js";
-import { Clip } from "./src/timeline/Clip.js";
-import { ProceduralClip } from "./src/timeline/ProceduralClip.js";
+import { Timeline } from "./vendor/media-timeline-compiler/Timeline.js";
+import { Track } from "./vendor/media-timeline-compiler/Track.js";
+import { Clip } from "./vendor/media-timeline-compiler/Clip.js";
+import { ProceduralClip } from "./vendor/media-timeline-compiler/ProceduralClip.js";
 
-import { resolveTextOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/textOverlayFragmentIntentResolver.js";
-import { resolveImageOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/imageOverlayFragmentIntentResolver.js";
+import { resolveTextOverlayFragmentIntentAtTime } from "./vendor/media-timeline-compiler/procedural/resolvers/resolvers/textOverlayFragmentIntentResolver.js";
+import { resolveImageOverlayFragmentIntentAtTime } from "./vendor/media-timeline-compiler/procedural/resolvers/resolvers/imageOverlayFragmentIntentResolver.js";
 
 import { openContainerFromMp4 } from "./vendor/native-mp4-muxer/demux/container/openContainerFromMp4.js";
 import { openContainer } from "./vendor/native-mp4-muxer/demux/container/openContainer.js";
 
 // Only import this for current preview, which is a development pscyholgoy convenience, remove this when upgrading preview
 // to future API
-import { buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.js";
+import { buildPrerenderPlanFromTimeline } from "./vendor/media-timeline-compiler/compileTimeline.js";
 
 import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
 import { drawRenderIntentsOnCanvas } from "./src/composition/composeAtTime.js";
@@ -4423,7 +4423,7 @@ async function createTimeline({ mp4Bytes, runtimeConfig }) {
     });
 }
 
-import * as TimelineCompiler from "./src/timeline/compileTimeline.js";
+import * as TimelineCompiler from "./vendor/media-timeline-compiler/compileTimeline.js";
 
 export const __test__ = {
     Timeline,

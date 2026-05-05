@@ -2,7 +2,7 @@ import { DecodedContainerBackedFragmentBatch } from "./DecodedContainerBackedFra
 import {
     PreRenderPlanFragmentKinds,
     PreRenderPlanContributorKinds
-} from "../timeline/planFragments.js";
+} from "../../vendor/media-timeline-compiler/planFragments.js";
 
 function normalizeTimestampUs(unit) {
     const clipTrackView = unit?.clip?.trackView;

@@ -42,7 +42,7 @@ import { __test__ } from "../../script.js";
 import {
     PreRenderPlanFragmentKinds,
     PreRenderPlanContributorKinds
-} from "../../src/timeline/planFragments.js";
+} from "../../vendor/media-timeline-compiler/planFragments.js";
 
 const {
     Timeline,

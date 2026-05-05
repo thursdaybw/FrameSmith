@@ -63,10 +63,10 @@ import {
 } from "../src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_preservesDecoderOrder.js";
 import { PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DETERMINISM_TESTS } from "../src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_determinism.js";
 
-import { PROCEDURAL_EXECUTION_TESTS } from "../src/timeline/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
-import { TEXT_OVERLAY_RENDERER_TESTS } from "../src/timeline/procedural/resolvers/test_textOverlayRenderer.js";
-import { IMAGE_OVERLAY_RENDERER_TESTS } from "../src/timeline/procedural/resolvers/test_imageOverlayRenderer.js";
-import { CONTAINER_DECODE_TESTS } from "../src/timeline/container/execution/test_executeAccessUnitFragmentDecode.js";
+import { PROCEDURAL_EXECUTION_TESTS } from "../vendor/media-timeline-compiler/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
+import { TEXT_OVERLAY_RENDERER_TESTS } from "../vendor/media-timeline-compiler/procedural/resolvers/test_textOverlayRenderer.js";
+import { IMAGE_OVERLAY_RENDERER_TESTS } from "../vendor/media-timeline-compiler/procedural/resolvers/test_imageOverlayRenderer.js";
+import { CONTAINER_DECODE_TESTS } from "../vendor/media-timeline-compiler/container/execution/test_executeAccessUnitFragmentDecode.js";
 
 import { PRERENDER_TIME_RESOLUTION_TESTS } from "../src/prerender/test_resolveProceduralFragmentsAtTimeFromPlan.js";
 import { INTEGRATION_TESTS } from "../src/integration/test_FrameSmith_PublicApi_EndToEnd_ExportExecutionStrategy.js";
