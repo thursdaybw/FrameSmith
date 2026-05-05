@@ -70,12 +70,6 @@ The timeline compiler owns this node runner:
 node vendor/media-timeline-compiler/run_node_tests.mjs
 ```
 
-The root compatibility wrapper is:
-
-```bash
-node run_media_timeline_compiler_node_tests.mjs
-```
-
 FrameSmith/media-engine integration tests remain at the repo root and under `test-harness/`.
 
 ## Boundary notes
