@@ -2,7 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const testsRoot = path.resolve("./src/mux/native/tests");
+const DEFAULT_NATIVE_MUXER_ROOT = "./src/mux/native";
+
+function resolveNativeMuxerRoot() {
+    const requestedRoot = process.env.NATIVE_MUXER_ROOT || DEFAULT_NATIVE_MUXER_ROOT;
+    return path.resolve(requestedRoot);
+}
+
+const nativeMuxerRoot = resolveNativeMuxerRoot();
+const testsRoot = path.join(nativeMuxerRoot, "tests");
 const indexHtmlPath = path.join(testsRoot, "index.html");
 
 function createFileFetch(baseDir) {
@@ -59,7 +67,7 @@ function createFileFetch(baseDir) {
 function extractModuleScript(html) {
     const scriptMatch = html.match(/<script\s+type="module">([\s\S]*?)<\/script>/i);
     if (!scriptMatch) {
-        throw new Error("Could not find <script type=\"module\"> in src/mux/native/tests/index.html");
+        throw new Error(`Could not find <script type="module"> in ${indexHtmlPath}`);
     }
     return scriptMatch[1];
 }
@@ -95,7 +103,7 @@ function stripComments(text) {
 function extractTestsAllList(moduleScript) {
     const testsMatch = moduleScript.match(/const\s+testsAll\s*=\s*\[([\s\S]*?)\]\s*;/m);
     if (!testsMatch) {
-        throw new Error("Could not find testsAll list in src/mux/native/tests/index.html");
+        throw new Error(`Could not find testsAll list in ${indexHtmlPath}`);
     }
 
     const cleaned = stripComments(testsMatch[1]);
@@ -122,6 +130,11 @@ function isBrowserOnlyFailure(error) {
             message.includes("navigator")
         )
     ) || message.includes("WebCodecs") || message.includes("not supported in this environment");
+}
+
+function isOptionalOracleDependencyFailure(error) {
+    const message = `${error?.message ?? error}`;
+    return message.includes("vendor/mp4box.js/dist/mp4box.all.cjs");
 }
 
 async function loadSymbolTable(imports) {
@@ -161,6 +174,7 @@ async function run() {
         const testNames = extractTestsAllList(moduleScript);
         const symbolTable = await loadSymbolTable(imports);
 
+        console.log(`NativeMuxer root: ${nativeMuxerRoot}`);
         console.log(`Running NativeMuxer index.html unit tests in Node (${testNames.length})`);
 
         for (const testName of testNames) {
@@ -195,7 +209,7 @@ async function run() {
         const nodeOnlyTests = [
             {
                 name: "test_nativeDemux_vs_mp4box_phoneFixture",
-                modulePath: path.resolve("./src/mux/native/tests/node/test_nativeDemux_vs_mp4box_phoneFixture.mjs"),
+                modulePath: path.join(testsRoot, "node/test_nativeDemux_vs_mp4box_phoneFixture.mjs"),
                 exportName: "test_nativeDemux_vs_mp4box_phoneFixture"
             }
         ];
@@ -218,6 +232,13 @@ async function run() {
                     process.stdout.write(`PASS ${nodeOnly.name}\n`);
                 }
             } catch (error) {
+                if (isOptionalOracleDependencyFailure(error)) {
+                    skipCount++;
+                    process.stdout.write(`SKIP ${nodeOnly.name}\n`);
+                    console.log(`  reason: optional mp4box.js oracle dependency is not installed`);
+                    continue;
+                }
+
                 failCount++;
                 process.stdout.write(`FAIL ${nodeOnly.name}\n`);
                 console.error(error);

@@ -2,7 +2,7 @@ import { resolveProceduralFragmentsAtTimeFromPlan } from "../resolveProceduralFr
 import { composeAtTime } from "../../composition/composeAtTime.js?v=2026-02-15-1";
 import { encodeAtTime } from "../../encode/encodeAtTime.js";
 import { adaptEncodedOutputsToMp4BuildInput } from "../../export/adaptEncodedOutputsToMp4BuildInput.js";
-import { createMp4FromInputs } from "../../mux/native/compiler/createMp4FromInputs.js";
+import { createMp4FromInputs } from "../../../vendor/native-mp4-muxer/compiler/createMp4FromInputs.js";
 
 function isAudioDataInstance(value) {
     return typeof AudioData === "function" && value instanceof AudioData;

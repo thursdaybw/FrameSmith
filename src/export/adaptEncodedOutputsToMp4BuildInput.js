@@ -1,5 +1,5 @@
-import { buildVideoTrackFromWebCodecs, buildAudioTrackFromWebCodecs } from "../mux/native/producers/webcodecsMp4Producer.js";
-import { validateMp4BuildInput } from "../mux/native/validateMp4BuildInput.js";
+import { buildVideoTrackFromWebCodecs, buildAudioTrackFromWebCodecs } from "../../vendor/native-mp4-muxer/producers/webcodecsMp4Producer.js";
+import { validateMp4BuildInput } from "../../vendor/native-mp4-muxer/validateMp4BuildInput.js";
 
 function describeValue(value) {
     const typeTag = Object.prototype.toString.call(value);

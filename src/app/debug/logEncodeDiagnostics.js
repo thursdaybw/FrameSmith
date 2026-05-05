@@ -1,4 +1,4 @@
-import { getGoldenTruthBox } from "../../mux/native/tests/goldenTruthExtractors/index.js";
+import { getGoldenTruthBox } from "../../../vendor/native-mp4-muxer/tests/goldenTruthExtractors/index.js";
 
 export function logEncodeDiagnostics({
     videoEncodedChunks,

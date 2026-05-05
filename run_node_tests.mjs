@@ -51,7 +51,7 @@ async function loadNodeSafeScriptLocalTests() {
         };
     }
 
-    const module = await import("./test_script.js");
+    const module = await import("./test-harness/test_script.js");
     if (!Array.isArray(module.SCRIPT_TESTS)) {
         throw new Error("test_script.js must export SCRIPT_TESTS for node harness usage.");
     }

@@ -27,8 +27,8 @@ import { ProceduralClip } from "./src/timeline/ProceduralClip.js";
 import { resolveTextOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/textOverlayFragmentIntentResolver.js";
 import { resolveImageOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/imageOverlayFragmentIntentResolver.js";
 
-import { openContainerFromMp4 } from "./src/mux/native/demux/container/openContainerFromMp4.js";
-import { openContainer } from "./src/mux/native/demux/container/openContainer.js";
+import { openContainerFromMp4 } from "./vendor/native-mp4-muxer/demux/container/openContainerFromMp4.js";
+import { openContainer } from "./vendor/native-mp4-muxer/demux/container/openContainer.js";
 
 // Only import this for current preview, which is a development pscyholgoy convenience, remove this when upgrading preview
 // to future API
@@ -38,7 +38,7 @@ import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolv
 import { drawRenderIntentsOnCanvas } from "./src/composition/composeAtTime.js";
 import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js?v=2026-02-15-1";
 import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/createContainerWebCodecsDecodePort.js";
-import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
+import { parseAudioSpecificConfigFromEsds } from "./vendor/native-mp4-muxer/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
 import { EncodePipelineRun } from "./src/app/encode/EncodePipelineRun.js";
 import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";

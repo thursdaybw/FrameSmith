@@ -1,0 +1,7 @@
+# Heavy/generated media fixtures copied locally for full native muxer validation.
+# Keep them on disk when available, but do not commit them in the vendored split.
+# See reference/README.md and fixtures/README.md for fixture contracts and regeneration notes.
+/reference/reference_co64.mp4
+/reference/phone_test.mp4
+/2025-08-27-083128862 (copy 1).mp4
+/framesmith.mp4
