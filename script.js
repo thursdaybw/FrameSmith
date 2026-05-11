@@ -43,6 +43,7 @@ import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
 import { EncodePipelineRun } from "./src/app/encode/EncodePipelineRun.js";
 import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";
 import { createTimelineFromPreparedAssets } from "./src/engine/createTimelineFromPreparedAssets.js";
+import { fetchJsonOrThrow } from "./src/network/fetchJsonOrThrow.js";
 import {
     buildTextOverlayItemsFromWhisperJson,
     loadTimelineImageOverlays,
@@ -848,10 +849,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         return typeof navigator !== "undefined" && navigator.onLine === false;
     }
 
-    function isHttpRetryableStatus(status) {
-        return status === 408 || status === 425 || status === 429 || status >= 500;
-    }
-
     function classifyFetchFailure(error) {
         const remote = error && typeof error === "object" ? error.remote : null;
         if (remote && typeof remote === "object") {
@@ -909,10 +906,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         const exponentialDelayMs = policy.baseDelayMs * (2 ** Math.max(0, attempt - 1));
         const jitterMs = policy.jitterMs > 0 ? Math.floor(Math.random() * policy.jitterMs) : 0;
         return Math.min(policy.maxDelayMs, exponentialDelayMs + jitterMs);
-    }
-
-    function uploadRetryDelayMilliseconds(attempt) {
-        return retryDelayMilliseconds(attempt, createRetryPolicy());
     }
 
     function formatRetryStatusMessage({
@@ -1015,60 +1008,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             attempts: policy.maxAttempts,
             lastError
         });
-    }
-
-    async function fetchJsonOrThrow(url, options) {
-        let response;
-        try {
-            response = await fetch(url, options);
-        } catch (error) {
-            const wrapped = new Error(
-                `Network request failed for ${url}. If this is cross-origin, check CORS and auth cookies. ` +
-                `Original error: ${error?.message || String(error)}`
-            );
-            wrapped.name = "RemoteTransportError";
-            wrapped.cause = error;
-            wrapped.remote = {
-                kind: isBrowserOffline() ? "offline" : "network",
-                retryable: true,
-                url
-            };
-            throw wrapped;
-        }
-        const text = await response.text();
-        let parsed = null;
-        try {
-            parsed = text.length > 0 ? JSON.parse(text) : null;
-        } catch {
-            parsed = null;
-        }
-        if (!response.ok) {
-            const error = new Error(
-                `Request failed (${response.status}) ${url}: ${parsed?.error || text || response.statusText}`
-            );
-            error.name = "RemoteHttpError";
-            error.remote = {
-                kind: "http",
-                status: response.status,
-                retryable: isHttpRetryableStatus(response.status),
-                url,
-                responseBody: text,
-                responseJson: parsed
-            };
-            throw error;
-        }
-        if (parsed === null) {
-            const error = new Error(`Expected JSON response from ${url}`);
-            error.name = "RemoteParseError";
-            error.remote = {
-                kind: "invalid_json",
-                retryable: true,
-                url,
-                responseBody: text
-            };
-            throw error;
-        }
-        return parsed;
     }
 
     async function loadWhisperJsonFromStatusPayload({
@@ -1175,6 +1114,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const WHISPER_UPLOAD_INITIAL_CHUNK_SIZE_BYTES = 256 * 1024;
     const WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES = 64 * 1024;
     const WHISPER_UPLOAD_ATTEMPTS_BEFORE_RANGE_REDUCTION = 4;
+    const WHISPER_UPLOAD_RANGE_REQUEST_TIMEOUT_MS = 30_000;
 
     function describeUploadFailure(error) {
         return describeRemoteFailure(error);
@@ -1300,10 +1240,16 @@ document.addEventListener("DOMContentLoaded", async () => {
                         size,
                         totalSize: blob.size
                     });
+                    // The upload range transport must be bounded. If the mobile
+                    // browser silently hangs instead of failing, the retry
+                    // policy never regains control and the task stays pinned in
+                    // awaiting_upload with no backend work to resume.
                     return fetchJsonOrThrow(uploadUrl.toString(), {
                         method: "POST",
                         credentials: "include",
                         body: formData
+                    }, {
+                        timeoutMs: WHISPER_UPLOAD_RANGE_REQUEST_TIMEOUT_MS
                     });
                 },
                 beforeRetry: ({ error, nextAttempt, maxAttempts: retryMaxAttempts, delayMs }) => {
