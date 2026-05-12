@@ -1768,7 +1768,11 @@ document.addEventListener("DOMContentLoaded", async () => {
             );
             console.log("[Whisper][Drupal] extended wait expired before transcription completed", result);
         } else {
-            setTranscriptionErrorStatus(String(pollResult?.statusPayload?.status || "failed"));
+            const failedStatus = String(pollResult?.statusPayload?.status || "failed");
+            const failedTask = pollResult?.statusPayload?.task || null;
+            const failureDetail = String(failedTask?.last_error || failedStatus);
+            setTranscriptionErrorStatus(failureDetail);
+            setVideoSourceStatus(`Transcription failed: ${failureDetail}`);
             console.warn("[Whisper][Drupal] transcription incomplete", result);
         }
         return result;
