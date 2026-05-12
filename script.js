@@ -45,6 +45,12 @@ import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";
 import { createTimelineFromPreparedAssets } from "./src/engine/createTimelineFromPreparedAssets.js";
 import { fetchJsonOrThrow } from "./src/network/fetchJsonOrThrow.js";
 import {
+    mergeFramesmithRecoverySnapshot,
+    hasFramesmithRecoveryTask,
+    hasFramesmithRecoveryTranscript
+} from "./src/app/recovery/FramesmithRecoverySnapshot.js";
+import { createLocalStorageFramesmithRecoveryStore } from "./src/app/recovery/LocalStorageFramesmithRecoveryStore.js";
+import {
     buildTextOverlayItemsFromWhisperJson,
     loadTimelineImageOverlays,
     loadTimelineTextOverlays,
@@ -712,9 +718,154 @@ document.addEventListener("DOMContentLoaded", async () => {
         setLatestTranscriptFromJson(fallbackJson);
     };
 
+    function readFramesmithRecoverySnapshot() {
+        return recoveryStore.readSnapshot();
+    }
+
+    function saveFramesmithRecoverySnapshot(patch) {
+        const previous = readFramesmithRecoverySnapshot();
+        const snapshot = mergeFramesmithRecoverySnapshot(previous, patch);
+        const saved = recoveryStore.saveSnapshot(snapshot) || snapshot;
+        window.__framesmithRecoverySnapshot = saved;
+        return saved;
+    }
+
+    function clearFramesmithRecoverySnapshot() {
+        recoveryStore.clearSnapshot();
+        window.__framesmithRecoverySnapshot = null;
+    }
+
+    function currentVideoSourceKey() {
+        return typeof cachedSelectedVideo?.fileKey === "string"
+            ? cachedSelectedVideo.fileKey
+            : null;
+    }
+
+    function buildBaseRecoveryPatch() {
+        return {
+            baseUrl: resolveTranscriptionBaseUrl(),
+            videoSourceKey: currentVideoSourceKey()
+        };
+    }
+
+    function saveTranscriptionRecoverySnapshot(patch = {}) {
+        return saveFramesmithRecoverySnapshot({
+            ...buildBaseRecoveryPatch(),
+            ...patch
+        });
+    }
+
+    async function restoreTranscriptArtifactsFromRecoverySnapshot(snapshot, {
+        refreshTimeline = false
+    } = {}) {
+        if (!hasFramesmithRecoveryTranscript(snapshot)) {
+            return false;
+        }
+
+        const overlayItems = Array.isArray(snapshot.overlayItems) ? snapshot.overlayItems : [];
+        const whisperJson = snapshot.whisperJson || null;
+        if (overlayItems.length > 0) {
+            setRuntimeTranscriptOverlayItems(overlayItems);
+            window.__runtimeTranscriptOverlayItems = overlayItems;
+            window.__runtimeWhisperTranscriptJson = whisperJson;
+            setLatestTranscriptFromOverlayItems(overlayItems, whisperJson);
+        } else if (whisperJson) {
+            await applyWhisperTranscriptToTimeline({
+                whisperJson,
+                sourceLabel: `recovery:${snapshot.taskId || "unknown"}`
+            });
+        } else {
+            setLatestTranscriptText(snapshot.transcriptText || "");
+        }
+
+        if (refreshTimeline && cachedSelectedVideo?.bytes instanceof Uint8Array) {
+            await initializeTimelineFromBytes(cachedSelectedVideo.bytes);
+            previewPlan = null;
+            renderPreviewOverlayAtCurrentTime();
+        }
+
+        return true;
+    }
+
+    async function restoreFramesmithRecoveryStateOnLoad() {
+        if (runtimeConfig.testing.fixtureUrl) {
+            return;
+        }
+
+        const snapshot = readFramesmithRecoverySnapshot();
+        window.__framesmithRecoverySnapshot = snapshot;
+        if (!snapshot || (!hasFramesmithRecoveryTask(snapshot) && !hasFramesmithRecoveryTranscript(snapshot))) {
+            return;
+        }
+
+        if (snapshot.taskId) {
+            window.__lastWhisperDrupalTaskId = snapshot.taskId;
+        }
+        await restoreTranscriptArtifactsFromRecoverySnapshot(snapshot);
+        if (snapshot.statusPayload) {
+            window.__lastWhisperTranscriptionPollState = {
+                taskId: snapshot.taskId,
+                recoveredAt: Date.now(),
+                status: snapshot.taskStatus || "",
+                lastStatusPayload: snapshot.statusPayload,
+                recoveryPolling: false,
+                transportFailureCount: 0
+            };
+        }
+        if (snapshot.transcriptionResult) {
+            window.__lastWhisperTranscriptionResult = snapshot.transcriptionResult;
+        }
+
+        const taskLabel = snapshot.taskId ? `task ${shortTaskId(snapshot.taskId)}` : "saved transcript";
+        if (hasFramesmithRecoveryTranscript(snapshot)) {
+            setVideoSourceStatus(
+                `Recovered ${taskLabel}. Re-select the source video to preview or export.`
+            );
+        } else {
+            setVideoSourceStatus(`Recovered transcription ${taskLabel}; checking status...`);
+        }
+
+        if (!snapshot.taskId) {
+            return;
+        }
+
+        fetchAndApplyWhisperTranscriptFromTask({
+            taskId: snapshot.taskId,
+            transcriptionBaseUrl: snapshot.baseUrl || undefined,
+            waitForJson: true
+        }).then((result) => {
+            saveTranscriptionRecoverySnapshot({
+                taskId: snapshot.taskId,
+                taskStatus: String(result?.statusPayload?.status || "completed"),
+                statusPayload: result?.statusPayload || null,
+                transcriptFetchResult: result,
+                whisperJson: result?.whisperJson || null,
+                overlayItems: window.__runtimeTranscriptOverlayItems || [],
+                transcriptText: latestTranscriptText,
+                transcriptReady: true,
+                lastError: null
+            });
+            setVideoSourceStatus(
+                cachedSelectedVideo?.bytes instanceof Uint8Array
+                    ? "Captions ready"
+                    : `Recovered captions for task ${shortTaskId(snapshot.taskId)}. Re-select the source video to preview or export.`
+            );
+        }).catch((error) => {
+            saveTranscriptionRecoverySnapshot({
+                taskId: snapshot.taskId,
+                lastError: error?.message || String(error)
+            });
+            console.warn("[Recovery] recovered transcription task could not be refreshed", error);
+        });
+    }
+
     updateTranscriptControlsState();
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const recoveryStore = createLocalStorageFramesmithRecoveryStore({
+        logger: console
+    });
+
 
     async function decodeAudioBufferFromSourceBytes(sourceBytes) {
         const AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -1059,6 +1210,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.__runtimeTranscriptOverlayItems = overlayItems;
         window.__runtimeWhisperTranscriptJson = whisperJson;
         setLatestTranscriptFromOverlayItems(overlayItems, whisperJson);
+        const recoveryPatch = {
+            whisperJson,
+            overlayItems,
+            transcriptText: latestTranscriptText,
+            transcriptReady: true,
+            lastError: null
+        };
+        if (window.__lastWhisperDrupalTaskId) {
+            recoveryPatch.taskId = window.__lastWhisperDrupalTaskId;
+        }
+        saveTranscriptionRecoverySnapshot(recoveryPatch);
 
         console.log("[Timeline][text-overlay] applied runtime transcript overlay items", {
             sourceLabel,
@@ -1387,6 +1549,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                     lastUploadedSize: rangeUpload.size,
                     lastRangeAttempts: rangeUpload.attempts
                 };
+                saveTranscriptionRecoverySnapshot({
+                    taskId,
+                    taskStatus: autoLaunch ? "uploaded" : "uploading",
+                    uploadProgress: window.__lastWhisperUploadProgress,
+                    uploadAdaptiveState: window.__lastWhisperUploadAdaptiveState
+                });
                 if (autoLaunch) {
                     finalResult = rangeResult;
                 }
@@ -1406,6 +1574,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                     failedOffset: error.offset,
                     restartReason: describeUploadFailure(error)
                 };
+                saveTranscriptionRecoverySnapshot({
+                    taskId,
+                    taskStatus: "upload_retrying",
+                    uploadAdaptiveState: window.__lastWhisperUploadAdaptiveState,
+                    lastError: describeUploadFailure(error)
+                });
                 setAdaptiveUploadStatus({
                     uploadedBytes,
                     totalBytes: blob.size,
@@ -1473,6 +1647,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (taskId.length === 0) {
             throw new Error("Transcription task init response did not include task_id.");
         }
+        saveTranscriptionRecoverySnapshot({
+            baseUrl: resolvedBaseUrl,
+            videoId: resolvedVideoId,
+            taskId,
+            taskStatus: String(taskInit.status || "created"),
+            taskInit,
+            statusPayload: taskInit,
+            audioMeta: whisperAudio.meta,
+            transcriptReady: false,
+            lastError: null
+        });
 
         setVideoSourceStatus("Uploading audio to transcription service...");
         setTranscriptionStageStatus("upload_audio");
@@ -1495,6 +1680,19 @@ document.addEventListener("DOMContentLoaded", async () => {
             audioMeta: whisperAudio.meta
         };
         window.__lastWhisperDrupalResult = result;
+        saveTranscriptionRecoverySnapshot({
+            baseUrl: resolvedBaseUrl,
+            videoId: resolvedVideoId,
+            taskId,
+            taskStatus: String(uploadResult?.status || "uploaded"),
+            uploadResult,
+            provisionResult,
+            statusPayload: uploadResult,
+            uploadProgress: uploadResult?.upload_progress || window.__lastWhisperUploadProgress || null,
+            audioMeta: whisperAudio.meta,
+            transcriptReady: false,
+            lastError: null
+        });
         setVideoSourceStatus("Transcription queued");
         console.log("[Whisper][Drupal] upload complete", result);
         return result;
@@ -1634,6 +1832,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             lastStatusPayload = statusPayload;
 
             const status = String(statusPayload?.status || "").toLowerCase();
+            saveTranscriptionRecoverySnapshot({
+                taskId,
+                taskStatus: status || null,
+                statusPayload,
+                transcriptReady: statusPayload?.transcript_ready === true,
+                lastError: statusPayload?.task?.last_error || null
+            });
             setTranscriptionStageStatus("polling", status || "working");
             const transcriptReady = statusPayload?.transcript_ready === true;
             if (transcriptReady || status === "completed") {
@@ -1755,6 +1960,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         window.__lastWhisperTranscriptionResult = result;
+        saveTranscriptionRecoverySnapshot({
+            taskId: uploadAndQueueResult.taskId,
+            taskStatus: String(pollResult?.statusPayload?.status || ""),
+            statusPayload: pollResult?.statusPayload || null,
+            transcriptionResult: result,
+            transcriptReady: pollResult.ok === true,
+            lastError: pollResult.ok ? null : pollResult?.statusPayload?.task?.last_error || null
+        });
         if (pollResult.ok) {
             setTranscriptionStageStatus("done");
             console.log("[Whisper][Drupal] transcription complete", result);
@@ -1837,6 +2050,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             overlayItemCount: overlayItems.length
         };
         window.__lastWhisperTranscriptFetchResult = result;
+        saveTranscriptionRecoverySnapshot({
+            taskId,
+            taskStatus: String(statusPayload?.status || "completed"),
+            statusPayload,
+            transcriptFetchResult: result,
+            whisperJson,
+            overlayItems,
+            transcriptText: latestTranscriptText,
+            transcriptReady: true,
+            lastError: null
+        });
         return result;
     }
 
@@ -2044,6 +2268,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         lastExportBlob = null;
         exportBtn.disabled = true;
 
+        const existingRecoverySnapshot = readFramesmithRecoverySnapshot();
+        const shouldRestoreRecoveredTranscript =
+            existingRecoverySnapshot?.videoSourceKey === fileKey &&
+            hasFramesmithRecoveryTranscript(existingRecoverySnapshot);
         cachedSelectedVideo = {
             fileKey,
             bytes
@@ -2058,6 +2286,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.__lastWhisperAudioBytes = null;
         window.__lastWhisperAudioMeta = null;
         lastWhisperAudioSourceKey = null;
+        if (shouldRestoreRecoveredTranscript) {
+            await restoreTranscriptArtifactsFromRecoverySnapshot(existingRecoverySnapshot);
+        } else {
+            setLatestTranscriptText("");
+            clearFramesmithRecoverySnapshot();
+        }
         setTranscriptionRunBadge({
             visible: false,
             message: "Transcribe…",
@@ -4277,6 +4511,12 @@ async function normalizeUnsupportedSourceToWorkingSet({
     window.__pollWhisperTranscriptionStatus = pollWhisperTranscriptionStatus;
     window.__startWhisperTranscriptionAndPoll = startWhisperTranscriptionAndPoll;
     window.__fetchAndApplyWhisperTranscriptFromTask = fetchAndApplyWhisperTranscriptFromTask;
+    window.__framesmithRecoveryStore = recoveryStore;
+    window.__framesmithRestoreRecoveryState = restoreFramesmithRecoveryStateOnLoad;
+
+    restoreFramesmithRecoveryStateOnLoad().catch((error) => {
+        console.warn("[Recovery] startup restore failed", error);
+    });
 
     if (runtimeConfig.testing.fixtureUrl) {
         try {
