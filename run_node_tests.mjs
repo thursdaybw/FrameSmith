@@ -22,6 +22,7 @@ import { AUDIO_ENCODE_PCM16_WAV_TESTS } from "./src/audio/test_encodePcm16Wav.js
 import { EXPORT_ADAPTER_TESTS } from "./src/export/test_adaptEncodedOutputsToMp4BuildInput.js";
 import { INTEGRATION_TESTS } from "./src/integration/test_FrameSmith_PublicApi_EndToEnd_ExportExecutionStrategy.js";
 import { FRAMESMITH_RECOVERY_TESTS } from "./src/app/recovery/test_FramesmithRecoverySnapshot.js";
+import { ENCODE_CAPACITY_PROFILE_TESTS } from "./src/app/encode/test_EncodeCapacityProfile.js";
 
 const COLORS = {
     blue: "\x1b[34m",
@@ -77,7 +78,8 @@ const CORE_NODE_TESTS = [
     ...AUDIO_ENCODE_PCM16_WAV_TESTS,
     ...EXPORT_ADAPTER_TESTS,
     ...INTEGRATION_TESTS,
-    ...FRAMESMITH_RECOVERY_TESTS
+    ...FRAMESMITH_RECOVERY_TESTS,
+    ...ENCODE_CAPACITY_PROFILE_TESTS
 ];
 
 async function runNodeTests() {

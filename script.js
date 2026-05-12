@@ -41,6 +41,11 @@ import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
 import { EncodePipelineRun } from "./src/app/encode/EncodePipelineRun.js";
+import {
+    createEncodeCapacityProfile,
+    readEncodeCapacityEnvironment,
+    resolveDecodeChunkSecondsForCapacityProfile
+} from "./src/app/encode/EncodeCapacityProfile.js";
 import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";
 import { createTimelineFromPreparedAssets } from "./src/engine/createTimelineFromPreparedAssets.js";
 import { fetchJsonOrThrow } from "./src/network/fetchJsonOrThrow.js";
@@ -58,6 +63,10 @@ import {
     setRuntimeTranscriptOverlayItems,
     clearRuntimeTranscriptOverlayItems
 } from "./src/engine/engineOverlays.js";
+
+const DEFAULT_OUTPUT_WIDTH = 720;
+const DEFAULT_OUTPUT_HEIGHT = 1280;
+const DEFAULT_PRE_RENDER_FPS = 30;
 
 function summarizeTrackViewKeys(trackView) {
     const summary = {
@@ -342,15 +351,17 @@ function readRuntimeConfig() {
         searchParams.get("transcriptionVideoId") ||
         searchParams.get("videoId") ||
         "";
-    const outputWidth = 720;
-    const outputHeight = 1280;
+    const forcedEncodeCapacityProfile =
+        searchParams.get("encodeCapacityProfile") ||
+        searchParams.get("encodeProfile") ||
+        "";
     return {
         demux: {
             videoDemuxer
         },
         output: {
-            width: outputWidth,
-            height: outputHeight
+            width: DEFAULT_OUTPUT_WIDTH,
+            height: DEFAULT_OUTPUT_HEIGHT
         },
         testing: {
             fixtureUrl,
@@ -362,6 +373,9 @@ function readRuntimeConfig() {
         },
         debug: {
             enableEncodeDiagnostics: searchParams.get("encodeDiagnostics") !== "0"
+        },
+        encodeCapacity: {
+            forcedProfile: forcedEncodeCapacityProfile
         }
     };
 }
@@ -375,7 +389,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // -------------------------------------------------
     // Pre-render timing configuration
     // -------------------------------------------------
-    const PRE_RENDER_FPS = 30;
+    const PRE_RENDER_FPS = DEFAULT_PRE_RENDER_FPS;
     const PRE_RENDER_FRAME_DURATION_US = Math.floor(1_000_000 / PRE_RENDER_FPS);
     const ENCODE_STAGE_PROGRESS = Object.freeze({
         validate: { label: "Validating…", percent: 2 },
@@ -422,6 +436,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     let isEncodeInProgress = false;
     let isTranscribeInProgress = false;
     let currentEncodeStageName = "init";
+    let currentEncodeCapacityProfile = null;
+    let lastEncodedVideoProgressChunkCount = 0;
+    let lastEncodedAudioProgressChunkCount = 0;
     let previewAnimationFrameId = null;
     let previewPlan = null;
     let lastWhisperAudioSourceKey = null;
@@ -484,6 +501,106 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         appendEncodeDiagnosticsPanelLine(label, payload);
     };
+
+    function summarizeCurrentSourceForEncodeProfile(exportRange, exportFps) {
+        const durationSeconds = Number(exportRange?.endSeconds) - Number(exportRange?.startSeconds);
+        return {
+            sourceBytes: Number.isFinite(cachedSelectedVideo?.bytes?.length)
+                ? cachedSelectedVideo.bytes.length
+                : null,
+            sourceDurationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? Number(durationSeconds.toFixed(3))
+                : null,
+            estimatedOutputFrames: Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? Math.ceil(durationSeconds * exportFps)
+                : null
+        };
+    }
+
+    function selectEncodeCapacityProfileForCurrentRun() {
+        const environment = readEncodeCapacityEnvironment({
+            navigatorRef: navigator,
+            matchMediaRef: window.matchMedia?.bind(window)
+        });
+        const profile = createEncodeCapacityProfile({
+            environment,
+            defaults: {
+                outputWidth: DEFAULT_OUTPUT_WIDTH,
+                outputHeight: DEFAULT_OUTPUT_HEIGHT,
+                fps: PRE_RENDER_FPS,
+                decodeChunkSeconds: null
+            },
+            forcedProfile: runtimeConfig.encodeCapacity.forcedProfile
+        });
+
+        currentEncodeCapacityProfile = profile;
+        runtimeConfig.output.width = profile.outputWidth;
+        runtimeConfig.output.height = profile.outputHeight;
+
+        const exportRange = timeline ? deriveExportRangeFromTimeline(timeline) : null;
+        const sourceSummary = summarizeCurrentSourceForEncodeProfile(exportRange, profile.fps);
+        emitEncodeSignal({
+            label: "[Encode][CAPACITY_PROFILE]",
+            payload: {
+                name: profile.name,
+                reason: profile.reason,
+                outputWidth: profile.outputWidth,
+                outputHeight: profile.outputHeight,
+                fps: profile.fps,
+                decodeChunkSeconds: profile.decodeChunkSeconds,
+                ...sourceSummary,
+                ...profile.diagnostics
+            }
+        });
+        return profile;
+    }
+
+    function buildEncodeCapacityProfileSummary() {
+        if (!currentEncodeCapacityProfile) {
+            return null;
+        }
+        return {
+            name: currentEncodeCapacityProfile.name,
+            reason: currentEncodeCapacityProfile.reason,
+            outputWidth: currentEncodeCapacityProfile.outputWidth,
+            outputHeight: currentEncodeCapacityProfile.outputHeight,
+            fps: currentEncodeCapacityProfile.fps,
+            decodeChunkSeconds: currentEncodeCapacityProfile.decodeChunkSeconds
+        };
+    }
+
+    function maybeEmitEncodedChunkProgress({
+        videoEncodedChunks,
+        audioEncodedChunks
+    }) {
+        const videoChunkCount = videoEncodedChunks.length;
+        const audioChunkCount = audioEncodedChunks.length;
+        const shouldEmitForVideo =
+            videoChunkCount > lastEncodedVideoProgressChunkCount &&
+            videoChunkCount > 0 &&
+            videoChunkCount % 60 === 0;
+        const shouldEmitForAudio =
+            audioChunkCount > lastEncodedAudioProgressChunkCount &&
+            audioChunkCount > 0 &&
+            audioChunkCount % 120 === 0;
+        if (!shouldEmitForVideo && !shouldEmitForAudio) {
+            return;
+        }
+        if (shouldEmitForVideo) {
+            lastEncodedVideoProgressChunkCount = videoChunkCount;
+        }
+        if (shouldEmitForAudio) {
+            lastEncodedAudioProgressChunkCount = audioChunkCount;
+        }
+        emitEncodeSignal({
+            label: "[Encode][CHUNKS]",
+            payload: {
+                stage: currentEncodeStageName,
+                videoChunkCount,
+                audioChunkCount
+            }
+        });
+    }
 
     const setWorkflowEnabled = (enabled) => {
         const disabled = !enabled || isEncodeInProgress || isTranscribeInProgress;
@@ -3721,6 +3838,9 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 ok: true,
                 failedStage: null,
                 elapsedMs: Math.round(performance.now() - encodeStartedAt),
+                encodeCapacityProfile: buildEncodeCapacityProfileSummary(),
+                encodedVideoChunkCount: videoEncodedChunks.length,
+                encodedAudioChunkCount: audioEncodedChunks.length,
                 decodePathMode,
                 stageTimingSeconds: stageTimingSummary.stageTimingSeconds,
                 executeBreakdownSeconds: executeBreakdownSummary.executeBreakdownSeconds
@@ -3837,11 +3957,13 @@ async function normalizeUnsupportedSourceToWorkingSet({
      * Build the export range and prerender plan from the current timeline.
      */
     function buildEncodePlanContext(timeline) {
-        const exportFps = PRE_RENDER_FPS;
+        const encodeCapacityProfile = selectEncodeCapacityProfileForCurrentRun();
+        const exportFps = currentEncodeCapacityProfile?.fps ?? PRE_RENDER_FPS;
         const exportRange = deriveExportRangeFromTimeline(timeline);
         let executionTimeline = timeline;
         let prerenderPlan = buildPrerenderPlanFromTimeline({ timeline: executionTimeline });
         return {
+            encodeCapacityProfile,
             exportFps,
             exportRange,
             executionTimeline,
@@ -4031,6 +4153,10 @@ async function normalizeUnsupportedSourceToWorkingSet({
         const videoEncoder = new VideoEncoder({
             output(chunk, metadata) {
                 videoEncodedChunks.push(chunk);
+                maybeEmitEncodedChunkProgress({
+                    videoEncodedChunks,
+                    audioEncodedChunks
+                });
                 if (metadata?.decoderConfig) {
                     setVideoDecoderConfig(metadata.decoderConfig);
                 }
@@ -4050,6 +4176,10 @@ async function normalizeUnsupportedSourceToWorkingSet({
         const audioEncoder = new AudioEncoder({
             output(chunk, metadata) {
                 audioEncodedChunks.push(chunk);
+                maybeEmitEncodedChunkProgress({
+                    videoEncodedChunks,
+                    audioEncodedChunks
+                });
                 if (metadata?.decoderConfig) {
                     setAudioDecoderConfig(metadata.decoderConfig);
                 }
@@ -4164,7 +4294,11 @@ async function normalizeUnsupportedSourceToWorkingSet({
             exportFps,
             configuredVideoEncoderConfig,
             videoTrackView,
-            decodeChunkSeconds: resolveDecodeChunkSecondsForExportRange(exportRange),
+            decodeChunkSeconds: resolveDecodeChunkSecondsForCapacityProfile({
+                profile: currentEncodeCapacityProfile,
+                exportRange,
+                defaultResolver: resolveDecodeChunkSecondsForExportRange
+            }),
             onVideoProgress: ({ frameIndex, totalFrames }) => {
                 if (!isEncodeInProgress) {
                     return;
@@ -4260,6 +4394,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 ok: false,
                 failedStage: encodePipelineRunState.currentPipelineStage,
                 elapsedMs: Math.round(performance.now() - encodePipelineRunState.encodeStartedAt),
+                encodeCapacityProfile: buildEncodeCapacityProfileSummary(),
                 errorName: error?.name ?? "Error",
                 errorMessage: error?.message ?? String(error),
                 decodePathMode,
@@ -4451,6 +4586,9 @@ async function normalizeUnsupportedSourceToWorkingSet({
     encodeBtn.onclick = async () => {
 
         if (!tryStartEncodeRun())  return;
+        currentEncodeCapacityProfile = null;
+        lastEncodedVideoProgressChunkCount = 0;
+        lastEncodedAudioProgressChunkCount = 0;
         setEncodeRunUiState(true);
         setEncodeRunStageStatus("validate");
         setWorkflowEnabled(!!timeline);

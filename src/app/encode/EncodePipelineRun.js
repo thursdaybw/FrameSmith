@@ -211,11 +211,30 @@ export class EncodePipelineRun {
             this.planContext.executionTimeline = this.trackContext.executionTimeline;
             this.planContext.prerenderPlan = this.trackContext.prerenderPlan;
             if (Number.isFinite(this.trackContext.recommendedExportFps)) {
-                this.planContext.exportFps = this.trackContext.recommendedExportFps;
+                this.planContext.exportFps = this.resolveRecommendedExportFpsForCapacityProfile(
+                    this.trackContext.recommendedExportFps
+                );
             }
         } finally {
             this.endStage(stageName);
         }
+    }
+
+    /**
+     * Normalization may reveal the source cadence after the profile has already capped
+     * the export. On constrained devices the cap wins because a higher recovered FPS
+     * can put the browser back into the memory pressure path the profile is avoiding.
+     */
+    resolveRecommendedExportFpsForCapacityProfile(recommendedExportFps) {
+        const profileFps = this.planContext?.encodeCapacityProfile?.fps;
+        if (
+            this.planContext?.encodeCapacityProfile?.name === "mobile-safe" &&
+            Number.isFinite(profileFps) &&
+            profileFps > 0
+        ) {
+            return Math.min(recommendedExportFps, profileFps);
+        }
+        return recommendedExportFps;
     }
 
     /**
