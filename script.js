@@ -755,13 +755,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function buildBaseRecoveryPatch() {
         const source = currentVideoSourceDescriptor();
-        return {
-            baseUrl: resolveTranscriptionBaseUrl(),
-            videoSourceKey: source.key,
-            videoSourceName: source.name,
-            videoSourceSize: source.size,
-            videoSourceLastModified: source.lastModified
+        const patch = {
+            baseUrl: resolveTranscriptionBaseUrl()
         };
+        if (source.key || source.name || source.size !== null || source.lastModified !== null) {
+            patch.videoSourceKey = source.key;
+            patch.videoSourceName = source.name;
+            patch.videoSourceSize = source.size;
+            patch.videoSourceLastModified = source.lastModified;
+        }
+        return patch;
     }
 
     function saveTranscriptionRecoverySnapshot(patch = {}) {
@@ -769,6 +772,26 @@ document.addEventListener("DOMContentLoaded", async () => {
             ...buildBaseRecoveryPatch(),
             ...patch
         });
+    }
+
+    function recoverySnapshotHasSourceDescriptor(snapshot) {
+        return typeof snapshot?.videoSourceKey === "string" ||
+            typeof snapshot?.videoSourceName === "string" ||
+            Number.isFinite(snapshot?.videoSourceSize) ||
+            Number.isFinite(snapshot?.videoSourceLastModified);
+    }
+
+    function shouldRestoreRecoveredTranscriptForSource(snapshot, source) {
+        if (!hasFramesmithRecoveryTranscript(snapshot)) {
+            return false;
+        }
+        if (matchesFramesmithRecoverySource(snapshot, source)) {
+            return true;
+        }
+        // Older recovery saves could lose the source fingerprint during startup
+        // refresh. Keep the transcript recoverable instead of clearing the only
+        // durable result before the user can preview or export it.
+        return !recoverySnapshotHasSourceDescriptor(snapshot);
     }
 
     async function restoreTranscriptArtifactsFromRecoverySnapshot(snapshot, {
@@ -2288,14 +2311,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         exportBtn.disabled = true;
 
         const existingRecoverySnapshot = readFramesmithRecoverySnapshot();
-        const shouldRestoreRecoveredTranscript =
-            matchesFramesmithRecoverySource(existingRecoverySnapshot, {
+        const shouldRestoreRecoveredTranscript = shouldRestoreRecoveredTranscriptForSource(
+            existingRecoverySnapshot,
+            {
                 key: fileKey,
                 name: fileName,
                 size: fileSize,
                 lastModified: fileLastModified
-            }) &&
-            hasFramesmithRecoveryTranscript(existingRecoverySnapshot);
+            }
+        );
         cachedSelectedVideo = {
             fileKey,
             fileName,
