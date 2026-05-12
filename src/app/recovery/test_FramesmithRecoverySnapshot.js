@@ -3,7 +3,9 @@ import {
     mergeFramesmithRecoverySnapshot,
     normalizeFramesmithRecoverySnapshot,
     hasFramesmithRecoveryTask,
-    hasFramesmithRecoveryTranscript
+    hasFramesmithRecoveryTranscript,
+    extractFramesmithRecoverySourceDescriptor,
+    matchesFramesmithRecoverySource
 } from "./FramesmithRecoverySnapshot.js";
 import { createLocalStorageFramesmithRecoveryStore } from "./LocalStorageFramesmithRecoveryStore.js";
 
@@ -46,6 +48,9 @@ export function test_framesmithRecoverySnapshot_mergesAndNormalizesDurableState(
         baseUrl: " https://example.test ",
         videoId: " video-1 ",
         videoSourceKey: " clip.mp4:123:456 ",
+        videoSourceName: " clip.mp4 ",
+        videoSourceSize: "123",
+        videoSourceLastModified: "456",
         taskId: " task-1 ",
         taskStatus: " completed ",
         statusPayload: { status: "completed", transcript_ready: true },
@@ -59,6 +64,9 @@ export function test_framesmithRecoverySnapshot_mergesAndNormalizesDurableState(
     assert(snapshot.baseUrl === "https://example.test", "baseUrl must be trimmed");
     assert(snapshot.videoId === "video-1", "videoId must be trimmed");
     assert(snapshot.videoSourceKey === "clip.mp4:123:456", "source key must be retained");
+    assert(snapshot.videoSourceName === "clip.mp4", "source name must be retained");
+    assert(snapshot.videoSourceSize === 123, "source size must be retained");
+    assert(snapshot.videoSourceLastModified === 456, "source modified time must be retained");
     assert(snapshot.taskId === "task-1", "task ID must be trimmed");
     assert(snapshot.taskStatus === "completed", "task status must be retained");
     assert(snapshot.lastError === null, "blank last error must normalize to null");
@@ -111,6 +119,34 @@ export function test_framesmithRecoverySnapshot_normalizesMalformedInput() {
     assert(snapshot.transcriptText === "", "bad transcript text must normalize empty");
 }
 
+export function test_framesmithRecoverySnapshot_extractsSourceDescriptorFromLegacyKey() {
+    const descriptor = extractFramesmithRecoverySourceDescriptor({
+        videoSourceKey: "folder:clip.mp4:123:456"
+    });
+
+    assert(descriptor.key === "folder:clip.mp4:123:456", "descriptor must preserve raw key");
+    assert(descriptor.name === "folder:clip.mp4", "descriptor must recover name from legacy key");
+    assert(descriptor.size === 123, "descriptor must recover size from legacy key");
+    assert(descriptor.lastModified === 456, "descriptor must recover modified time from legacy key");
+}
+
+export function test_framesmithRecoverySnapshot_matchesSameFileWhenLastModifiedChanges() {
+    const snapshot = mergeFramesmithRecoverySnapshot(null, {
+        videoSourceKey: "clip.mp4:123:456",
+        transcriptText: "Recovered transcript"
+    }, { now: () => 4500 });
+
+    assert(
+        matchesFramesmithRecoverySource(snapshot, {
+            key: "clip.mp4:123:789",
+            name: "clip.mp4",
+            size: 123,
+            lastModified: 789
+        }),
+        "same name and size must still restore transcript state"
+    );
+}
+
 export function test_localStorageFramesmithRecoveryStore_roundTripsSnapshot() {
     const storage = createMemoryStorage();
     const store = createLocalStorageFramesmithRecoveryStore({
@@ -150,6 +186,8 @@ export const FRAMESMITH_RECOVERY_TESTS = [
     test_framesmithRecoverySnapshot_mergesAndNormalizesDurableState,
     test_framesmithRecoverySnapshot_dropsUnserializablePatchValues,
     test_framesmithRecoverySnapshot_normalizesMalformedInput,
+    test_framesmithRecoverySnapshot_extractsSourceDescriptorFromLegacyKey,
+    test_framesmithRecoverySnapshot_matchesSameFileWhenLastModifiedChanges,
     test_localStorageFramesmithRecoveryStore_roundTripsSnapshot,
     test_localStorageFramesmithRecoveryStore_toleratesInvalidJson
 ];

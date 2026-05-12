@@ -47,7 +47,8 @@ import { fetchJsonOrThrow } from "./src/network/fetchJsonOrThrow.js";
 import {
     mergeFramesmithRecoverySnapshot,
     hasFramesmithRecoveryTask,
-    hasFramesmithRecoveryTranscript
+    hasFramesmithRecoveryTranscript,
+    matchesFramesmithRecoverySource
 } from "./src/app/recovery/FramesmithRecoverySnapshot.js";
 import { createLocalStorageFramesmithRecoveryStore } from "./src/app/recovery/LocalStorageFramesmithRecoveryStore.js";
 import {
@@ -735,16 +736,31 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.__framesmithRecoverySnapshot = null;
     }
 
-    function currentVideoSourceKey() {
-        return typeof cachedSelectedVideo?.fileKey === "string"
-            ? cachedSelectedVideo.fileKey
-            : null;
+    function currentVideoSourceDescriptor() {
+        return {
+            key: typeof cachedSelectedVideo?.fileKey === "string"
+                ? cachedSelectedVideo.fileKey
+                : null,
+            name: typeof cachedSelectedVideo?.fileName === "string"
+                ? cachedSelectedVideo.fileName
+                : null,
+            size: Number.isFinite(cachedSelectedVideo?.fileSize)
+                ? cachedSelectedVideo.fileSize
+                : null,
+            lastModified: Number.isFinite(cachedSelectedVideo?.fileLastModified)
+                ? cachedSelectedVideo.fileLastModified
+                : null
+        };
     }
 
     function buildBaseRecoveryPatch() {
+        const source = currentVideoSourceDescriptor();
         return {
             baseUrl: resolveTranscriptionBaseUrl(),
-            videoSourceKey: currentVideoSourceKey()
+            videoSourceKey: source.key,
+            videoSourceName: source.name,
+            videoSourceSize: source.size,
+            videoSourceLastModified: source.lastModified
         };
     }
 
@@ -2255,7 +2271,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     async function applyLoadedVideoSourceBytes({
         bytes,
         fileKey,
-        mimeType
+        mimeType,
+        fileName = null,
+        fileSize = null,
+        fileLastModified = null
     }) {
         if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
             throw new Error("Loaded video bytes are empty.");
@@ -2270,10 +2289,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const existingRecoverySnapshot = readFramesmithRecoverySnapshot();
         const shouldRestoreRecoveredTranscript =
-            existingRecoverySnapshot?.videoSourceKey === fileKey &&
+            matchesFramesmithRecoverySource(existingRecoverySnapshot, {
+                key: fileKey,
+                name: fileName,
+                size: fileSize,
+                lastModified: fileLastModified
+            }) &&
             hasFramesmithRecoveryTranscript(existingRecoverySnapshot);
         cachedSelectedVideo = {
             fileKey,
+            fileName,
+            fileSize,
+            fileLastModified,
             bytes
         };
         clearRuntimeTranscriptOverlayItems();
@@ -4477,6 +4504,9 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 await applyLoadedVideoSourceBytes({
                     bytes,
                     fileKey: `${selectedFile.name}:${selectedFile.size}:${selectedFile.lastModified}`,
+                    fileName: selectedFile.name,
+                    fileSize: selectedFile.size,
+                    fileLastModified: selectedFile.lastModified,
                     mimeType: selectedFile.type || "video/mp4"
                 });
             } catch (error) {

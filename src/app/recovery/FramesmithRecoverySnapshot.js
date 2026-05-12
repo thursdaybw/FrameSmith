@@ -25,8 +25,19 @@ function cleanNullableString(value) {
 }
 
 function cleanNumber(value) {
+    if (value === null || value === undefined || value === "") {
+        return null;
+    }
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
+}
+
+function cleanInteger(value) {
+    const number = cleanNumber(value);
+    if (number === null) {
+        return null;
+    }
+    return Number.isInteger(number) ? number : Math.trunc(number);
 }
 
 function cleanArray(value) {
@@ -45,6 +56,9 @@ export function createEmptyFramesmithRecoverySnapshot({ now = Date.now } = {}) {
         baseUrl: null,
         videoId: null,
         videoSourceKey: null,
+        videoSourceName: null,
+        videoSourceSize: null,
+        videoSourceLastModified: null,
         taskId: null,
         taskStatus: null,
         transcriptReady: false,
@@ -74,6 +88,9 @@ export function normalizeFramesmithRecoverySnapshot(input, { now = Date.now } = 
         baseUrl: cleanNullableString(source.baseUrl),
         videoId: cleanNullableString(source.videoId),
         videoSourceKey: cleanNullableString(source.videoSourceKey),
+        videoSourceName: cleanNullableString(source.videoSourceName),
+        videoSourceSize: cleanInteger(source.videoSourceSize),
+        videoSourceLastModified: cleanInteger(source.videoSourceLastModified),
         taskId: cleanNullableString(source.taskId),
         taskStatus: cleanNullableString(source.taskStatus),
         transcriptReady: source.transcriptReady === true,
@@ -115,6 +132,59 @@ export function hasFramesmithRecoveryTranscript(snapshot) {
     ) || (
         Array.isArray(snapshot?.overlayItems) && snapshot.overlayItems.length > 0
     ) || isPlainObject(snapshot?.whisperJson);
+}
+
+export function extractFramesmithRecoverySourceDescriptor(snapshot) {
+    const explicitName = cleanNullableString(snapshot?.videoSourceName);
+    const explicitSize = cleanInteger(snapshot?.videoSourceSize);
+    const explicitLastModified = cleanInteger(snapshot?.videoSourceLastModified);
+    const key = cleanNullableString(snapshot?.videoSourceKey);
+    if (!key) {
+        return {
+            key: null,
+            name: explicitName,
+            size: explicitSize,
+            lastModified: explicitLastModified
+        };
+    }
+
+    const parts = key.split(":");
+    const parsedLastModified = cleanInteger(parts.pop());
+    const parsedSize = cleanInteger(parts.pop());
+    const parsedName = cleanNullableString(parts.join(":"));
+    return {
+        key,
+        name: explicitName || parsedName,
+        size: explicitSize ?? parsedSize,
+        lastModified: explicitLastModified ?? parsedLastModified
+    };
+}
+
+export function matchesFramesmithRecoverySource(snapshot, source) {
+    const recovered = extractFramesmithRecoverySourceDescriptor(snapshot);
+    const candidate = {
+        key: cleanNullableString(source?.key),
+        name: cleanNullableString(source?.name),
+        size: cleanInteger(source?.size),
+        lastModified: cleanInteger(source?.lastModified)
+    };
+
+    if (recovered.key && candidate.key && recovered.key === candidate.key) {
+        return true;
+    }
+
+    if (
+        recovered.name &&
+        candidate.name &&
+        recovered.size !== null &&
+        candidate.size !== null &&
+        recovered.name === candidate.name &&
+        recovered.size === candidate.size
+    ) {
+        return true;
+    }
+
+    return false;
 }
 
 export const __test__ = {
