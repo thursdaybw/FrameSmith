@@ -21,6 +21,8 @@ import { ENCODE_TESTS } from "./src/encode/test_encodeAtTime.js";
 import { AUDIO_ENCODE_PCM16_WAV_TESTS } from "./src/audio/test_encodePcm16Wav.js";
 import { EXPORT_ADAPTER_TESTS } from "./src/export/test_adaptEncodedOutputsToMp4BuildInput.js";
 import { INTEGRATION_TESTS } from "./src/integration/test_FrameSmith_PublicApi_EndToEnd_ExportExecutionStrategy.js";
+import { FRAMESMITH_RECOVERY_TESTS } from "./src/app/recovery/test_FramesmithRecoverySnapshot.js";
+import { ENCODE_CAPACITY_PROFILE_TESTS } from "./src/app/encode/test_EncodeCapacityProfile.js";
 
 const COLORS = {
     blue: "\x1b[34m",
@@ -51,7 +53,7 @@ async function loadNodeSafeScriptLocalTests() {
         };
     }
 
-    const module = await import("./test_script.js");
+    const module = await import("./test-harness/test_script.js");
     if (!Array.isArray(module.SCRIPT_TESTS)) {
         throw new Error("test_script.js must export SCRIPT_TESTS for node harness usage.");
     }
@@ -75,7 +77,9 @@ const CORE_NODE_TESTS = [
     ...ENCODE_TESTS,
     ...AUDIO_ENCODE_PCM16_WAV_TESTS,
     ...EXPORT_ADAPTER_TESTS,
-    ...INTEGRATION_TESTS
+    ...INTEGRATION_TESTS,
+    ...FRAMESMITH_RECOVERY_TESTS,
+    ...ENCODE_CAPACITY_PROFILE_TESTS
 ];
 
 async function runNodeTests() {

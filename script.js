@@ -41,8 +41,21 @@ import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/
 import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
 import { EncodePipelineRun } from "./src/app/encode/EncodePipelineRun.js";
+import {
+    createEncodeCapacityProfile,
+    readEncodeCapacityEnvironment,
+    resolveDecodeChunkSecondsForCapacityProfile
+} from "./src/app/encode/EncodeCapacityProfile.js";
 import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";
 import { createTimelineFromPreparedAssets } from "./src/engine/createTimelineFromPreparedAssets.js";
+import { fetchJsonOrThrow } from "./src/network/fetchJsonOrThrow.js";
+import {
+    mergeFramesmithRecoverySnapshot,
+    hasFramesmithRecoveryTask,
+    hasFramesmithRecoveryTranscript,
+    matchesFramesmithRecoverySource
+} from "./src/app/recovery/FramesmithRecoverySnapshot.js";
+import { createLocalStorageFramesmithRecoveryStore } from "./src/app/recovery/LocalStorageFramesmithRecoveryStore.js";
 import {
     buildTextOverlayItemsFromWhisperJson,
     loadTimelineImageOverlays,
@@ -50,6 +63,10 @@ import {
     setRuntimeTranscriptOverlayItems,
     clearRuntimeTranscriptOverlayItems
 } from "./src/engine/engineOverlays.js";
+
+const DEFAULT_OUTPUT_WIDTH = 720;
+const DEFAULT_OUTPUT_HEIGHT = 1280;
+const DEFAULT_PRE_RENDER_FPS = 30;
 
 function summarizeTrackViewKeys(trackView) {
     const summary = {
@@ -334,15 +351,17 @@ function readRuntimeConfig() {
         searchParams.get("transcriptionVideoId") ||
         searchParams.get("videoId") ||
         "";
-    const outputWidth = 720;
-    const outputHeight = 1280;
+    const forcedEncodeCapacityProfile =
+        searchParams.get("encodeCapacityProfile") ||
+        searchParams.get("encodeProfile") ||
+        "";
     return {
         demux: {
             videoDemuxer
         },
         output: {
-            width: outputWidth,
-            height: outputHeight
+            width: DEFAULT_OUTPUT_WIDTH,
+            height: DEFAULT_OUTPUT_HEIGHT
         },
         testing: {
             fixtureUrl,
@@ -354,6 +373,9 @@ function readRuntimeConfig() {
         },
         debug: {
             enableEncodeDiagnostics: searchParams.get("encodeDiagnostics") !== "0"
+        },
+        encodeCapacity: {
+            forcedProfile: forcedEncodeCapacityProfile
         }
     };
 }
@@ -367,7 +389,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // -------------------------------------------------
     // Pre-render timing configuration
     // -------------------------------------------------
-    const PRE_RENDER_FPS = 30;
+    const PRE_RENDER_FPS = DEFAULT_PRE_RENDER_FPS;
     const PRE_RENDER_FRAME_DURATION_US = Math.floor(1_000_000 / PRE_RENDER_FPS);
     const ENCODE_STAGE_PROGRESS = Object.freeze({
         validate: { label: "Validating…", percent: 2 },
@@ -414,6 +436,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     let isEncodeInProgress = false;
     let isTranscribeInProgress = false;
     let currentEncodeStageName = "init";
+    let currentEncodeCapacityProfile = null;
+    let lastEncodedVideoProgressChunkCount = 0;
+    let lastEncodedAudioProgressChunkCount = 0;
     let previewAnimationFrameId = null;
     let previewPlan = null;
     let lastWhisperAudioSourceKey = null;
@@ -476,6 +501,106 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         appendEncodeDiagnosticsPanelLine(label, payload);
     };
+
+    function summarizeCurrentSourceForEncodeProfile(exportRange, exportFps) {
+        const durationSeconds = Number(exportRange?.endSeconds) - Number(exportRange?.startSeconds);
+        return {
+            sourceBytes: Number.isFinite(cachedSelectedVideo?.bytes?.length)
+                ? cachedSelectedVideo.bytes.length
+                : null,
+            sourceDurationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? Number(durationSeconds.toFixed(3))
+                : null,
+            estimatedOutputFrames: Number.isFinite(durationSeconds) && durationSeconds > 0
+                ? Math.ceil(durationSeconds * exportFps)
+                : null
+        };
+    }
+
+    function selectEncodeCapacityProfileForCurrentRun() {
+        const environment = readEncodeCapacityEnvironment({
+            navigatorRef: navigator,
+            matchMediaRef: window.matchMedia?.bind(window)
+        });
+        const profile = createEncodeCapacityProfile({
+            environment,
+            defaults: {
+                outputWidth: DEFAULT_OUTPUT_WIDTH,
+                outputHeight: DEFAULT_OUTPUT_HEIGHT,
+                fps: PRE_RENDER_FPS,
+                decodeChunkSeconds: null
+            },
+            forcedProfile: runtimeConfig.encodeCapacity.forcedProfile
+        });
+
+        currentEncodeCapacityProfile = profile;
+        runtimeConfig.output.width = profile.outputWidth;
+        runtimeConfig.output.height = profile.outputHeight;
+
+        const exportRange = timeline ? deriveExportRangeFromTimeline(timeline) : null;
+        const sourceSummary = summarizeCurrentSourceForEncodeProfile(exportRange, profile.fps);
+        emitEncodeSignal({
+            label: "[Encode][CAPACITY_PROFILE]",
+            payload: {
+                name: profile.name,
+                reason: profile.reason,
+                outputWidth: profile.outputWidth,
+                outputHeight: profile.outputHeight,
+                fps: profile.fps,
+                decodeChunkSeconds: profile.decodeChunkSeconds,
+                ...sourceSummary,
+                ...profile.diagnostics
+            }
+        });
+        return profile;
+    }
+
+    function buildEncodeCapacityProfileSummary() {
+        if (!currentEncodeCapacityProfile) {
+            return null;
+        }
+        return {
+            name: currentEncodeCapacityProfile.name,
+            reason: currentEncodeCapacityProfile.reason,
+            outputWidth: currentEncodeCapacityProfile.outputWidth,
+            outputHeight: currentEncodeCapacityProfile.outputHeight,
+            fps: currentEncodeCapacityProfile.fps,
+            decodeChunkSeconds: currentEncodeCapacityProfile.decodeChunkSeconds
+        };
+    }
+
+    function maybeEmitEncodedChunkProgress({
+        videoEncodedChunks,
+        audioEncodedChunks
+    }) {
+        const videoChunkCount = videoEncodedChunks.length;
+        const audioChunkCount = audioEncodedChunks.length;
+        const shouldEmitForVideo =
+            videoChunkCount > lastEncodedVideoProgressChunkCount &&
+            videoChunkCount > 0 &&
+            videoChunkCount % 60 === 0;
+        const shouldEmitForAudio =
+            audioChunkCount > lastEncodedAudioProgressChunkCount &&
+            audioChunkCount > 0 &&
+            audioChunkCount % 120 === 0;
+        if (!shouldEmitForVideo && !shouldEmitForAudio) {
+            return;
+        }
+        if (shouldEmitForVideo) {
+            lastEncodedVideoProgressChunkCount = videoChunkCount;
+        }
+        if (shouldEmitForAudio) {
+            lastEncodedAudioProgressChunkCount = audioChunkCount;
+        }
+        emitEncodeSignal({
+            label: "[Encode][CHUNKS]",
+            payload: {
+                stage: currentEncodeStageName,
+                videoChunkCount,
+                audioChunkCount
+            }
+        });
+    }
 
     const setWorkflowEnabled = (enabled) => {
         const disabled = !enabled || isEncodeInProgress || isTranscribeInProgress;
@@ -711,9 +836,192 @@ document.addEventListener("DOMContentLoaded", async () => {
         setLatestTranscriptFromJson(fallbackJson);
     };
 
+    function readFramesmithRecoverySnapshot() {
+        return recoveryStore.readSnapshot();
+    }
+
+    function saveFramesmithRecoverySnapshot(patch) {
+        const previous = readFramesmithRecoverySnapshot();
+        const snapshot = mergeFramesmithRecoverySnapshot(previous, patch);
+        const saved = recoveryStore.saveSnapshot(snapshot) || snapshot;
+        window.__framesmithRecoverySnapshot = saved;
+        return saved;
+    }
+
+    function clearFramesmithRecoverySnapshot() {
+        recoveryStore.clearSnapshot();
+        window.__framesmithRecoverySnapshot = null;
+    }
+
+    function currentVideoSourceDescriptor() {
+        return {
+            key: typeof cachedSelectedVideo?.fileKey === "string"
+                ? cachedSelectedVideo.fileKey
+                : null,
+            name: typeof cachedSelectedVideo?.fileName === "string"
+                ? cachedSelectedVideo.fileName
+                : null,
+            size: Number.isFinite(cachedSelectedVideo?.fileSize)
+                ? cachedSelectedVideo.fileSize
+                : null,
+            lastModified: Number.isFinite(cachedSelectedVideo?.fileLastModified)
+                ? cachedSelectedVideo.fileLastModified
+                : null
+        };
+    }
+
+    function buildBaseRecoveryPatch() {
+        const source = currentVideoSourceDescriptor();
+        const patch = {
+            baseUrl: resolveTranscriptionBaseUrl()
+        };
+        if (source.key || source.name || source.size !== null || source.lastModified !== null) {
+            patch.videoSourceKey = source.key;
+            patch.videoSourceName = source.name;
+            patch.videoSourceSize = source.size;
+            patch.videoSourceLastModified = source.lastModified;
+        }
+        return patch;
+    }
+
+    function saveTranscriptionRecoverySnapshot(patch = {}) {
+        return saveFramesmithRecoverySnapshot({
+            ...buildBaseRecoveryPatch(),
+            ...patch
+        });
+    }
+
+    function recoverySnapshotHasSourceDescriptor(snapshot) {
+        return typeof snapshot?.videoSourceKey === "string" ||
+            typeof snapshot?.videoSourceName === "string" ||
+            Number.isFinite(snapshot?.videoSourceSize) ||
+            Number.isFinite(snapshot?.videoSourceLastModified);
+    }
+
+    function shouldRestoreRecoveredTranscriptForSource(snapshot, source) {
+        if (!hasFramesmithRecoveryTranscript(snapshot)) {
+            return false;
+        }
+        if (matchesFramesmithRecoverySource(snapshot, source)) {
+            return true;
+        }
+        // Older recovery saves could lose the source fingerprint during startup
+        // refresh. Keep the transcript recoverable instead of clearing the only
+        // durable result before the user can preview or export it.
+        return !recoverySnapshotHasSourceDescriptor(snapshot);
+    }
+
+    async function restoreTranscriptArtifactsFromRecoverySnapshot(snapshot, {
+        refreshTimeline = false
+    } = {}) {
+        if (!hasFramesmithRecoveryTranscript(snapshot)) {
+            return false;
+        }
+
+        const overlayItems = Array.isArray(snapshot.overlayItems) ? snapshot.overlayItems : [];
+        const whisperJson = snapshot.whisperJson || null;
+        if (overlayItems.length > 0) {
+            setRuntimeTranscriptOverlayItems(overlayItems);
+            window.__runtimeTranscriptOverlayItems = overlayItems;
+            window.__runtimeWhisperTranscriptJson = whisperJson;
+            setLatestTranscriptFromOverlayItems(overlayItems, whisperJson);
+        } else if (whisperJson) {
+            await applyWhisperTranscriptToTimeline({
+                whisperJson,
+                sourceLabel: `recovery:${snapshot.taskId || "unknown"}`
+            });
+        } else {
+            setLatestTranscriptText(snapshot.transcriptText || "");
+        }
+
+        if (refreshTimeline && cachedSelectedVideo?.bytes instanceof Uint8Array) {
+            await initializeTimelineFromBytes(cachedSelectedVideo.bytes);
+            previewPlan = null;
+            renderPreviewOverlayAtCurrentTime();
+        }
+
+        return true;
+    }
+
+    async function restoreFramesmithRecoveryStateOnLoad() {
+        if (runtimeConfig.testing.fixtureUrl) {
+            return;
+        }
+
+        const snapshot = readFramesmithRecoverySnapshot();
+        window.__framesmithRecoverySnapshot = snapshot;
+        if (!snapshot || (!hasFramesmithRecoveryTask(snapshot) && !hasFramesmithRecoveryTranscript(snapshot))) {
+            return;
+        }
+
+        if (snapshot.taskId) {
+            window.__lastWhisperDrupalTaskId = snapshot.taskId;
+        }
+        await restoreTranscriptArtifactsFromRecoverySnapshot(snapshot);
+        if (snapshot.statusPayload) {
+            window.__lastWhisperTranscriptionPollState = {
+                taskId: snapshot.taskId,
+                recoveredAt: Date.now(),
+                status: snapshot.taskStatus || "",
+                lastStatusPayload: snapshot.statusPayload,
+                recoveryPolling: false,
+                transportFailureCount: 0
+            };
+        }
+        if (snapshot.transcriptionResult) {
+            window.__lastWhisperTranscriptionResult = snapshot.transcriptionResult;
+        }
+
+        const taskLabel = snapshot.taskId ? `task ${shortTaskId(snapshot.taskId)}` : "saved transcript";
+        if (hasFramesmithRecoveryTranscript(snapshot)) {
+            setVideoSourceStatus(
+                `Recovered ${taskLabel}. Re-select the source video to preview or export.`
+            );
+        } else {
+            setVideoSourceStatus(`Recovered transcription ${taskLabel}; checking status...`);
+        }
+
+        if (!snapshot.taskId) {
+            return;
+        }
+
+        fetchAndApplyWhisperTranscriptFromTask({
+            taskId: snapshot.taskId,
+            transcriptionBaseUrl: snapshot.baseUrl || undefined,
+            waitForJson: true
+        }).then((result) => {
+            saveTranscriptionRecoverySnapshot({
+                taskId: snapshot.taskId,
+                taskStatus: String(result?.statusPayload?.status || "completed"),
+                statusPayload: result?.statusPayload || null,
+                transcriptFetchResult: result,
+                whisperJson: result?.whisperJson || null,
+                overlayItems: window.__runtimeTranscriptOverlayItems || [],
+                transcriptText: latestTranscriptText,
+                transcriptReady: true,
+                lastError: null
+            });
+            setVideoSourceStatus(
+                cachedSelectedVideo?.bytes instanceof Uint8Array
+                    ? "Captions ready"
+                    : `Recovered captions for task ${shortTaskId(snapshot.taskId)}. Re-select the source video to preview or export.`
+            );
+        }).catch((error) => {
+            saveTranscriptionRecoverySnapshot({
+                taskId: snapshot.taskId,
+                lastError: error?.message || String(error)
+            });
+            console.warn("[Recovery] recovered transcription task could not be refreshed", error);
+        });
+    }
+
     updateTranscriptControlsState();
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const recoveryStore = createLocalStorageFramesmithRecoveryStore({
+        logger: console
+    });
+
 
     async function decodeAudioBufferFromSourceBytes(sourceBytes) {
         const AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -848,10 +1156,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         return typeof navigator !== "undefined" && navigator.onLine === false;
     }
 
-    function isHttpRetryableStatus(status) {
-        return status === 408 || status === 425 || status === 429 || status >= 500;
-    }
-
     function classifyFetchFailure(error) {
         const remote = error && typeof error === "object" ? error.remote : null;
         if (remote && typeof remote === "object") {
@@ -909,10 +1213,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         const exponentialDelayMs = policy.baseDelayMs * (2 ** Math.max(0, attempt - 1));
         const jitterMs = policy.jitterMs > 0 ? Math.floor(Math.random() * policy.jitterMs) : 0;
         return Math.min(policy.maxDelayMs, exponentialDelayMs + jitterMs);
-    }
-
-    function uploadRetryDelayMilliseconds(attempt) {
-        return retryDelayMilliseconds(attempt, createRetryPolicy());
     }
 
     function formatRetryStatusMessage({
@@ -1017,60 +1317,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
-    async function fetchJsonOrThrow(url, options) {
-        let response;
-        try {
-            response = await fetch(url, options);
-        } catch (error) {
-            const wrapped = new Error(
-                `Network request failed for ${url}. If this is cross-origin, check CORS and auth cookies. ` +
-                `Original error: ${error?.message || String(error)}`
-            );
-            wrapped.name = "RemoteTransportError";
-            wrapped.cause = error;
-            wrapped.remote = {
-                kind: isBrowserOffline() ? "offline" : "network",
-                retryable: true,
-                url
-            };
-            throw wrapped;
-        }
-        const text = await response.text();
-        let parsed = null;
-        try {
-            parsed = text.length > 0 ? JSON.parse(text) : null;
-        } catch {
-            parsed = null;
-        }
-        if (!response.ok) {
-            const error = new Error(
-                `Request failed (${response.status}) ${url}: ${parsed?.error || text || response.statusText}`
-            );
-            error.name = "RemoteHttpError";
-            error.remote = {
-                kind: "http",
-                status: response.status,
-                retryable: isHttpRetryableStatus(response.status),
-                url,
-                responseBody: text,
-                responseJson: parsed
-            };
-            throw error;
-        }
-        if (parsed === null) {
-            const error = new Error(`Expected JSON response from ${url}`);
-            error.name = "RemoteParseError";
-            error.remote = {
-                kind: "invalid_json",
-                retryable: true,
-                url,
-                responseBody: text
-            };
-            throw error;
-        }
-        return parsed;
-    }
-
     async function loadWhisperJsonFromStatusPayload({
         transcriptionBaseUrl,
         statusPayload,
@@ -1120,6 +1366,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.__runtimeTranscriptOverlayItems = overlayItems;
         window.__runtimeWhisperTranscriptJson = whisperJson;
         setLatestTranscriptFromOverlayItems(overlayItems, whisperJson);
+        const recoveryPatch = {
+            whisperJson,
+            overlayItems,
+            transcriptText: latestTranscriptText,
+            transcriptReady: true,
+            lastError: null
+        };
+        if (window.__lastWhisperDrupalTaskId) {
+            recoveryPatch.taskId = window.__lastWhisperDrupalTaskId;
+        }
+        saveTranscriptionRecoverySnapshot(recoveryPatch);
 
         console.log("[Timeline][text-overlay] applied runtime transcript overlay items", {
             sourceLabel,
@@ -1175,6 +1432,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const WHISPER_UPLOAD_INITIAL_CHUNK_SIZE_BYTES = 256 * 1024;
     const WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES = 64 * 1024;
     const WHISPER_UPLOAD_ATTEMPTS_BEFORE_RANGE_REDUCTION = 4;
+    const WHISPER_UPLOAD_RANGE_REQUEST_TIMEOUT_MS = 30_000;
 
     function describeUploadFailure(error) {
         return describeRemoteFailure(error);
@@ -1300,10 +1558,16 @@ document.addEventListener("DOMContentLoaded", async () => {
                         size,
                         totalSize: blob.size
                     });
+                    // The upload range transport must be bounded. If the mobile
+                    // browser silently hangs instead of failing, the retry
+                    // policy never regains control and the task stays pinned in
+                    // awaiting_upload with no backend work to resume.
                     return fetchJsonOrThrow(uploadUrl.toString(), {
                         method: "POST",
                         credentials: "include",
                         body: formData
+                    }, {
+                        timeoutMs: WHISPER_UPLOAD_RANGE_REQUEST_TIMEOUT_MS
                     });
                 },
                 beforeRetry: ({ error, nextAttempt, maxAttempts: retryMaxAttempts, delayMs }) => {
@@ -1441,6 +1705,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                     lastUploadedSize: rangeUpload.size,
                     lastRangeAttempts: rangeUpload.attempts
                 };
+                saveTranscriptionRecoverySnapshot({
+                    taskId,
+                    taskStatus: autoLaunch ? "uploaded" : "uploading",
+                    uploadProgress: window.__lastWhisperUploadProgress,
+                    uploadAdaptiveState: window.__lastWhisperUploadAdaptiveState
+                });
                 if (autoLaunch) {
                     finalResult = rangeResult;
                 }
@@ -1460,6 +1730,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                     failedOffset: error.offset,
                     restartReason: describeUploadFailure(error)
                 };
+                saveTranscriptionRecoverySnapshot({
+                    taskId,
+                    taskStatus: "upload_retrying",
+                    uploadAdaptiveState: window.__lastWhisperUploadAdaptiveState,
+                    lastError: describeUploadFailure(error)
+                });
                 setAdaptiveUploadStatus({
                     uploadedBytes,
                     totalBytes: blob.size,
@@ -1527,6 +1803,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (taskId.length === 0) {
             throw new Error("Transcription task init response did not include task_id.");
         }
+        saveTranscriptionRecoverySnapshot({
+            baseUrl: resolvedBaseUrl,
+            videoId: resolvedVideoId,
+            taskId,
+            taskStatus: String(taskInit.status || "created"),
+            taskInit,
+            statusPayload: taskInit,
+            audioMeta: whisperAudio.meta,
+            transcriptReady: false,
+            lastError: null
+        });
 
         setVideoSourceStatus("Uploading audio to transcription service...");
         setTranscriptionStageStatus("upload_audio");
@@ -1549,6 +1836,19 @@ document.addEventListener("DOMContentLoaded", async () => {
             audioMeta: whisperAudio.meta
         };
         window.__lastWhisperDrupalResult = result;
+        saveTranscriptionRecoverySnapshot({
+            baseUrl: resolvedBaseUrl,
+            videoId: resolvedVideoId,
+            taskId,
+            taskStatus: String(uploadResult?.status || "uploaded"),
+            uploadResult,
+            provisionResult,
+            statusPayload: uploadResult,
+            uploadProgress: uploadResult?.upload_progress || window.__lastWhisperUploadProgress || null,
+            audioMeta: whisperAudio.meta,
+            transcriptReady: false,
+            lastError: null
+        });
         setVideoSourceStatus("Transcription queued");
         console.log("[Whisper][Drupal] upload complete", result);
         return result;
@@ -1608,6 +1908,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         taskId,
         pollIntervalMs = 3_000,
         timeoutMs = 10 * 60 * 1_000,
+        softTimeoutMs = timeoutMs,
+        hardTimeoutMs = Math.max(softTimeoutMs, 30 * 60 * 1_000),
+        slowPollIntervalMs = 15_000,
         statusRetryPolicy = createRetryPolicy({
             maxAttempts: 4,
             baseDelayMs: 1_000,
@@ -1621,8 +1924,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         let lastStatusPayload = null;
         let lastTransportFailure = null;
         let transportFailureCount = 0;
+        let recoveryPolling = false;
 
-        while (Date.now() - startedAt <= timeoutMs) {
+        while (Date.now() - startedAt <= hardTimeoutMs) {
+            const elapsedMs = Date.now() - startedAt;
+            if (!recoveryPolling && elapsedMs > softTimeoutMs) {
+                recoveryPolling = true;
+                setTranscriptionStageStatus("polling", "still watching");
+                setVideoSourceStatus(
+                    `Transcription is taking longer than usual for task ${shortTaskId(taskId)}. ` +
+                    "Still checking the same task; please keep this tab open."
+                );
+            }
+            const currentPollIntervalMs = recoveryPolling ? slowPollIntervalMs : pollIntervalMs;
             let statusPayload = null;
             try {
                 const operation = await fetchTranscriptionStatusWithResilience({
@@ -1666,7 +1980,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     `Poor network while checking transcription status for task ${shortTaskId(taskId)}. ` +
                     `Still waiting; this does not mean transcription failed. Please keep this tab open.`
                 );
-                await sleep(pollIntervalMs);
+                await sleep(currentPollIntervalMs);
                 continue;
             }
 
@@ -1674,6 +1988,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             lastStatusPayload = statusPayload;
 
             const status = String(statusPayload?.status || "").toLowerCase();
+            saveTranscriptionRecoverySnapshot({
+                taskId,
+                taskStatus: status || null,
+                statusPayload,
+                transcriptReady: statusPayload?.transcript_ready === true,
+                lastError: statusPayload?.task?.last_error || null
+            });
             setTranscriptionStageStatus("polling", status || "working");
             const transcriptReady = statusPayload?.transcript_ready === true;
             if (transcriptReady || status === "completed") {
@@ -1697,8 +2018,23 @@ document.addEventListener("DOMContentLoaded", async () => {
                 };
             }
 
-            setVideoSourceStatus(`Transcription status: ${status || "working"}...`);
-            await sleep(pollIntervalMs);
+            if (recoveryPolling) {
+                setVideoSourceStatus(
+                    `Still waiting for transcription task ${shortTaskId(taskId)}. ` +
+                    `Latest backend status: ${status || "working"}.`
+                );
+            } else {
+                setVideoSourceStatus(`Transcription status: ${status || "working"}...`);
+            }
+            window.__lastWhisperTranscriptionPollState = {
+                taskId,
+                elapsedMs: Date.now() - startedAt,
+                recoveryPolling,
+                status,
+                transportFailureCount,
+                lastStatusPayload
+            };
+            await sleep(currentPollIntervalMs);
         }
 
         return {
@@ -1707,11 +2043,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             statusPayload: lastStatusPayload,
             history,
             timeout: true,
+            softTimeoutMs,
+            hardTimeoutMs,
+            recoveryPolling,
             transportFailure: lastTransportFailure,
             transportFailureCount,
             reason: lastTransportFailure
-                ? "timeout_waiting_for_framesmith_transcription_after_status_transport_failures"
-                : "timeout_waiting_for_framesmith_transcription"
+                ? "hard_timeout_waiting_for_framesmith_transcription_after_status_transport_failures"
+                : "hard_timeout_waiting_for_framesmith_transcription"
         };
     }
 
@@ -1725,7 +2064,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         targetSampleRate = 16_000,
         targetChannels = 1,
         pollIntervalMs = 3_000,
-        timeoutMs = 10 * 60 * 1_000
+        timeoutMs = 10 * 60 * 1_000,
+        hardTimeoutMs = Math.max(timeoutMs, 30 * 60 * 1_000),
+        slowPollIntervalMs = 15_000
     } = {}) {
         const uploadAndQueueResult = await sendWhisperAudioToDrupal({
             transcriptionBaseUrl,
@@ -1738,7 +2079,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             transcriptionBaseUrl: uploadAndQueueResult.baseUrl,
             taskId: uploadAndQueueResult.taskId,
             pollIntervalMs,
-            timeoutMs
+            timeoutMs,
+            softTimeoutMs: timeoutMs,
+            hardTimeoutMs,
+            slowPollIntervalMs
         });
 
         const result = {
@@ -1772,20 +2116,32 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         window.__lastWhisperTranscriptionResult = result;
+        saveTranscriptionRecoverySnapshot({
+            taskId: uploadAndQueueResult.taskId,
+            taskStatus: String(pollResult?.statusPayload?.status || ""),
+            statusPayload: pollResult?.statusPayload || null,
+            transcriptionResult: result,
+            transcriptReady: pollResult.ok === true,
+            lastError: pollResult.ok ? null : pollResult?.statusPayload?.task?.last_error || null
+        });
         if (pollResult.ok) {
             setTranscriptionStageStatus("done");
             console.log("[Whisper][Drupal] transcription complete", result);
             return result;
         }
         if (pollResult.timeout) {
-            setTranscriptionStageStatus("polling", pollResult.transportFailure ? "status unknown" : "queued");
+            setTranscriptionStageStatus("polling", pollResult.transportFailure ? "status unknown" : "timeout");
             setVideoSourceStatus(
-                `Transcription is still pending or status is unknown for task ${shortTaskId(uploadAndQueueResult.taskId)}. ` +
-                "Keep this tab open, or retry/reconnect by task ID instead of starting over."
+                `Stopped watching transcription task ${shortTaskId(uploadAndQueueResult.taskId)} after the extended wait window. ` +
+                "Retry/reconnect by task ID instead of starting over."
             );
-            console.log("[Whisper][Drupal] queued/status unknown; waiting for worker/transcription", result);
+            console.log("[Whisper][Drupal] extended wait expired before transcription completed", result);
         } else {
-            setTranscriptionErrorStatus(String(pollResult?.statusPayload?.status || "failed"));
+            const failedStatus = String(pollResult?.statusPayload?.status || "failed");
+            const failedTask = pollResult?.statusPayload?.task || null;
+            const failureDetail = String(failedTask?.last_error || failedStatus);
+            setTranscriptionErrorStatus(failureDetail);
+            setVideoSourceStatus(`Transcription failed: ${failureDetail}`);
             console.warn("[Whisper][Drupal] transcription incomplete", result);
         }
         return result;
@@ -1850,6 +2206,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             overlayItemCount: overlayItems.length
         };
         window.__lastWhisperTranscriptFetchResult = result;
+        saveTranscriptionRecoverySnapshot({
+            taskId,
+            taskStatus: String(statusPayload?.status || "completed"),
+            statusPayload,
+            transcriptFetchResult: result,
+            whisperJson,
+            overlayItems,
+            transcriptText: latestTranscriptText,
+            transcriptReady: true,
+            lastError: null
+        });
         return result;
     }
 
@@ -2044,7 +2411,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     async function applyLoadedVideoSourceBytes({
         bytes,
         fileKey,
-        mimeType
+        mimeType,
+        fileName = null,
+        fileSize = null,
+        fileLastModified = null
     }) {
         if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
             throw new Error("Loaded video bytes are empty.");
@@ -2057,8 +2427,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         lastExportBlob = null;
         exportBtn.disabled = true;
 
+        const existingRecoverySnapshot = readFramesmithRecoverySnapshot();
+        const shouldRestoreRecoveredTranscript = shouldRestoreRecoveredTranscriptForSource(
+            existingRecoverySnapshot,
+            {
+                key: fileKey,
+                name: fileName,
+                size: fileSize,
+                lastModified: fileLastModified
+            }
+        );
         cachedSelectedVideo = {
             fileKey,
+            fileName,
+            fileSize,
+            fileLastModified,
             bytes
         };
         clearRuntimeTranscriptOverlayItems();
@@ -2071,6 +2454,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.__lastWhisperAudioBytes = null;
         window.__lastWhisperAudioMeta = null;
         lastWhisperAudioSourceKey = null;
+        if (shouldRestoreRecoveredTranscript) {
+            await restoreTranscriptArtifactsFromRecoverySnapshot(existingRecoverySnapshot);
+        } else {
+            setLatestTranscriptText("");
+            clearFramesmithRecoverySnapshot();
+        }
         setTranscriptionRunBadge({
             visible: false,
             message: "Transcribe…",
@@ -3449,6 +3838,9 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 ok: true,
                 failedStage: null,
                 elapsedMs: Math.round(performance.now() - encodeStartedAt),
+                encodeCapacityProfile: buildEncodeCapacityProfileSummary(),
+                encodedVideoChunkCount: videoEncodedChunks.length,
+                encodedAudioChunkCount: audioEncodedChunks.length,
                 decodePathMode,
                 stageTimingSeconds: stageTimingSummary.stageTimingSeconds,
                 executeBreakdownSeconds: executeBreakdownSummary.executeBreakdownSeconds
@@ -3565,11 +3957,13 @@ async function normalizeUnsupportedSourceToWorkingSet({
      * Build the export range and prerender plan from the current timeline.
      */
     function buildEncodePlanContext(timeline) {
-        const exportFps = PRE_RENDER_FPS;
+        const encodeCapacityProfile = selectEncodeCapacityProfileForCurrentRun();
+        const exportFps = currentEncodeCapacityProfile?.fps ?? PRE_RENDER_FPS;
         const exportRange = deriveExportRangeFromTimeline(timeline);
         let executionTimeline = timeline;
         let prerenderPlan = buildPrerenderPlanFromTimeline({ timeline: executionTimeline });
         return {
+            encodeCapacityProfile,
             exportFps,
             exportRange,
             executionTimeline,
@@ -3759,6 +4153,10 @@ async function normalizeUnsupportedSourceToWorkingSet({
         const videoEncoder = new VideoEncoder({
             output(chunk, metadata) {
                 videoEncodedChunks.push(chunk);
+                maybeEmitEncodedChunkProgress({
+                    videoEncodedChunks,
+                    audioEncodedChunks
+                });
                 if (metadata?.decoderConfig) {
                     setVideoDecoderConfig(metadata.decoderConfig);
                 }
@@ -3778,6 +4176,10 @@ async function normalizeUnsupportedSourceToWorkingSet({
         const audioEncoder = new AudioEncoder({
             output(chunk, metadata) {
                 audioEncodedChunks.push(chunk);
+                maybeEmitEncodedChunkProgress({
+                    videoEncodedChunks,
+                    audioEncodedChunks
+                });
                 if (metadata?.decoderConfig) {
                     setAudioDecoderConfig(metadata.decoderConfig);
                 }
@@ -3892,7 +4294,11 @@ async function normalizeUnsupportedSourceToWorkingSet({
             exportFps,
             configuredVideoEncoderConfig,
             videoTrackView,
-            decodeChunkSeconds: resolveDecodeChunkSecondsForExportRange(exportRange),
+            decodeChunkSeconds: resolveDecodeChunkSecondsForCapacityProfile({
+                profile: currentEncodeCapacityProfile,
+                exportRange,
+                defaultResolver: resolveDecodeChunkSecondsForExportRange
+            }),
             onVideoProgress: ({ frameIndex, totalFrames }) => {
                 if (!isEncodeInProgress) {
                     return;
@@ -3988,6 +4394,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 ok: false,
                 failedStage: encodePipelineRunState.currentPipelineStage,
                 elapsedMs: Math.round(performance.now() - encodePipelineRunState.encodeStartedAt),
+                encodeCapacityProfile: buildEncodeCapacityProfileSummary(),
                 errorName: error?.name ?? "Error",
                 errorMessage: error?.message ?? String(error),
                 decodePathMode,
@@ -4179,6 +4586,9 @@ async function normalizeUnsupportedSourceToWorkingSet({
     encodeBtn.onclick = async () => {
 
         if (!tryStartEncodeRun())  return;
+        currentEncodeCapacityProfile = null;
+        lastEncodedVideoProgressChunkCount = 0;
+        lastEncodedAudioProgressChunkCount = 0;
         setEncodeRunUiState(true);
         setEncodeRunStageStatus("validate");
         setWorkflowEnabled(!!timeline);
@@ -4256,6 +4666,9 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 await applyLoadedVideoSourceBytes({
                     bytes,
                     fileKey: `${selectedFile.name}:${selectedFile.size}:${selectedFile.lastModified}`,
+                    fileName: selectedFile.name,
+                    fileSize: selectedFile.size,
+                    fileLastModified: selectedFile.lastModified,
                     mimeType: selectedFile.type || "video/mp4"
                 });
             } catch (error) {
@@ -4290,6 +4703,12 @@ async function normalizeUnsupportedSourceToWorkingSet({
     window.__pollWhisperTranscriptionStatus = pollWhisperTranscriptionStatus;
     window.__startWhisperTranscriptionAndPoll = startWhisperTranscriptionAndPoll;
     window.__fetchAndApplyWhisperTranscriptFromTask = fetchAndApplyWhisperTranscriptFromTask;
+    window.__framesmithRecoveryStore = recoveryStore;
+    window.__framesmithRestoreRecoveryState = restoreFramesmithRecoveryStateOnLoad;
+
+    restoreFramesmithRecoveryStateOnLoad().catch((error) => {
+        console.warn("[Recovery] startup restore failed", error);
+    });
 
     if (runtimeConfig.testing.fixtureUrl) {
         try {
