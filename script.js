@@ -49,6 +49,10 @@ import {
 import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";
 import { createTimelineFromPreparedAssets } from "./src/engine/createTimelineFromPreparedAssets.js";
 import { fetchJsonOrThrow } from "./src/network/fetchJsonOrThrow.js";
+import { readBrowserTranscriptionCapabilities } from "./src/transcription/readBrowserTranscriptionCapabilities.js";
+import { selectTranscriptionClient } from "./src/transcription/selectTranscriptionClient.js";
+import { createServerWhisperTranscriptionClient } from "./src/transcription/server/createServerWhisperTranscriptionClient.js";
+import { createLocalBrowserTranscriptionClient } from "./src/transcription/local/createLocalBrowserTranscriptionClient.js";
 import {
     mergeFramesmithRecoverySnapshot,
     hasFramesmithRecoveryTask,
@@ -347,6 +351,7 @@ function readRuntimeConfig() {
         searchParams.get("fixtureAutoEncode") === "1" ||
         searchParams.get("autoEncode") === "1";
     const transcriptionBaseUrl = searchParams.get("transcriptionBaseUrl") || "";
+    const transcriptionMode = searchParams.get("transcriptionMode") || "auto";
     const transcriptionVideoId =
         searchParams.get("transcriptionVideoId") ||
         searchParams.get("videoId") ||
@@ -369,7 +374,8 @@ function readRuntimeConfig() {
         },
         transcription: {
             baseUrl: transcriptionBaseUrl,
-            videoId: transcriptionVideoId
+            videoId: transcriptionVideoId,
+            mode: transcriptionMode
         },
         debug: {
             enableEncodeDiagnostics: searchParams.get("encodeDiagnostics") !== "0"
@@ -673,6 +679,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             queue: { percent: 55, label: "Queueing job" },
             polling: { percent: 70, label: "Waiting for worker" },
             apply_transcript: { percent: 92, label: "Applying captions" },
+            local_transcription: { percent: 55, label: "Running local transcription" },
+            server_transcription: { percent: 55, label: "Running server transcription" },
             done: { percent: 100, label: "Captions ready" }
         };
         const view = stageMap[stage];
@@ -1154,6 +1162,46 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function isBrowserOffline() {
         return typeof navigator !== "undefined" && navigator.onLine === false;
+    }
+
+    function createCurrentTranscriptionClient() {
+        const capabilities = readBrowserTranscriptionCapabilities({
+            navigatorRef: navigator
+        });
+
+        return selectTranscriptionClient({
+            preferredMode: runtimeConfig.transcription.mode,
+            capabilities,
+            createLocalClient: createLocalBrowserTranscriptionClient,
+            createServerClient: () => createServerWhisperTranscriptionClient({
+                startServerTranscriptionAndPoll: startWhisperTranscriptionAndPoll
+            })
+        });
+    }
+
+    async function startTranscription({
+        transcriptionBaseUrl,
+        videoId,
+        targetSampleRate = 16_000,
+        targetChannels = 1
+    } = {}) {
+        const transcriptionClient = createCurrentTranscriptionClient();
+
+        setVideoSourceStatus(transcriptionClient.statusMessage);
+        setTranscriptionStageStatus(transcriptionClient.stageName);
+
+        const result = await transcriptionClient.transcribe({
+            transcriptionBaseUrl,
+            videoId,
+            targetSampleRate,
+            targetChannels
+        });
+
+        return {
+            ...result,
+            transcriptionMode: transcriptionClient.mode,
+            transcriptionSourceLabel: transcriptionClient.sourceLabel
+        };
     }
 
     function classifyFetchFailure(error) {
@@ -4509,7 +4557,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
             setWorkflowEnabled(!!timeline);
 
             try {
-                const result = await startWhisperTranscriptionAndPoll();
+                const result = await startTranscription();
                 if (result?.pollResult?.ok) {
                     setVideoSourceStatus("Captions ready");
                 } else if (result?.taskId) {
@@ -4702,6 +4750,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
     window.__sendWhisperAudioToDrupal = sendWhisperAudioToDrupal;
     window.__pollWhisperTranscriptionStatus = pollWhisperTranscriptionStatus;
     window.__startWhisperTranscriptionAndPoll = startWhisperTranscriptionAndPoll;
+    window.__startTranscription = startTranscription;
+    window.__createCurrentTranscriptionClient = createCurrentTranscriptionClient;
     window.__fetchAndApplyWhisperTranscriptFromTask = fetchAndApplyWhisperTranscriptFromTask;
     window.__framesmithRecoveryStore = recoveryStore;
     window.__framesmithRestoreRecoveryState = restoreFramesmithRecoveryStateOnLoad;
