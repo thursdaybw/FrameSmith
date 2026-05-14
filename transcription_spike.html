@@ -130,27 +130,30 @@
             <label>
                 Model
                 <select id="modelSelect">
-                    <option value="Xenova/whisper-tiny.en">Xenova/whisper-tiny.en</option>
-                    <option value="onnx-community/whisper-tiny.en">onnx-community/whisper-tiny.en</option>
-                    <option value="Xenova/whisper-base.en">Xenova/whisper-base.en</option>
+                    <option value="Xenova/whisper-tiny.en">Xenova tiny — word timestamps — proven</option>
+                    <option value="Xenova/whisper-base.en">Xenova base — word timestamps — proven</option>
+                    <option value="onnx-community/whisper-tiny.en_timestamped">ONNX Community tiny timestamped — word timestamps candidate</option>
+                    <option value="onnx-community/whisper-base_timestamped">ONNX Community base timestamped — word timestamps candidate</option>
+                    <option value="onnx-community/whisper-tiny.en">ONNX Community tiny — chunk timestamps only</option>
+                    <option value="onnx-community/whisper-base.en">ONNX Community base — chunk timestamps only</option>
                 </select>
             </label>
 
             <label>
                 Device
                 <select id="deviceSelect">
-                    <option value="auto">Auto</option>
-                    <option value="webgpu">WebGPU</option>
-                    <option value="wasm">WASM CPU</option>
+                    <option value="auto">Auto: WebGPU then CPU fallback</option>
+                    <option value="webgpu">WebGPU only</option>
+                    <option value="wasm">CPU / WASM only</option>
                 </select>
             </label>
 
             <label>
                 Timestamps
                 <select id="timestampSelect">
-                    <option value="word">Word</option>
-                    <option value="chunk">Chunk</option>
-                    <option value="none">None</option>
+                    <option value="none">No timestamps</option>
+                    <option value="chunk">Chunk timestamps</option>
+                    <option value="word">Word timestamps</option>
                 </select>
             </label>
         </div>

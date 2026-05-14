@@ -49,14 +49,12 @@ async function transcribeSelectedAudioFile() {
 
     try {
         const model = modelSelect.value;
-        const device = resolveDevice(deviceSelect.value);
         const timestampMode = timestampSelect.value;
         const audioUrl = selectedAudioObjectUrl || URL.createObjectURL(file);
 
-        setStatus(`Loading ${model} on ${device}...`);
-        const transcriber = await loadTranscriber({
+        const { transcriber, device } = await loadFirstAvailableTranscriber({
             model,
-            device
+            selectedDevice: deviceSelect.value
         });
 
         const options = createTranscriptionOptions({
@@ -85,19 +83,81 @@ async function transcribeSelectedAudioFile() {
     }
 }
 
+async function loadFirstAvailableTranscriber({ model, selectedDevice }) {
+    const deviceCandidates = await resolveDeviceCandidates(selectedDevice);
+    let lastError = null;
+
+    for (const device of deviceCandidates) {
+        try {
+            setStatus(`Loading ${model} using ${device}...`);
+
+            const transcriber = await loadTranscriber({
+                model,
+                device
+            });
+
+            return {
+                transcriber,
+                device
+            };
+        } catch (error) {
+            lastError = error;
+            transcriberCache.delete(createTranscriberCacheKey({
+                model,
+                device
+            }));
+            console.warn(`[TranscriptionSpike] Failed to load ${device} backend`, error);
+
+            if (deviceCandidates.length > 1) {
+                setStatus(`${device} failed; trying fallback backend...`);
+            }
+        }
+    }
+
+    throw lastError || new Error("No local transcription backend could be loaded.");
+}
+
 async function loadTranscriber({ model, device }) {
-    const cacheKey = `${model}::${device}`;
+    const cacheKey = createTranscriberCacheKey({
+        model,
+        device
+    });
     const cached = transcriberCache.get(cacheKey);
     if (cached) {
         return await cached;
     }
 
-    const promise = pipeline("automatic-speech-recognition", model, {
-        device,
-        progress_callback: reportModelLoadProgress
-    });
+    const promise = pipeline(
+        "automatic-speech-recognition",
+        model,
+        createPipelineOptions({
+            device
+        })
+    );
     transcriberCache.set(cacheKey, promise);
     return await promise;
+}
+
+function createTranscriberCacheKey({ model, device }) {
+    return `${model}::${device}`;
+}
+
+function createPipelineOptions({ device }) {
+    const options = {
+        progress_callback: reportModelLoadProgress
+    };
+
+    if (device === "webgpu") {
+        options.device = "webgpu";
+        options.dtype = "q4";
+        return options;
+    }
+
+    // CPU / WASM path: prefer the safest model graph over the default
+    // quantized graph that can fail with missing MatMulNBits scale tensors.
+    options.dtype = "fp32";
+
+    return options;
 }
 
 function reportModelLoadProgress(event) {
@@ -113,20 +173,34 @@ function reportModelLoadProgress(event) {
     setStatus(`Loading ${file}: ${status}`);
 }
 
-function resolveDevice(selectedDevice) {
+async function resolveDeviceCandidates(selectedDevice) {
     if (selectedDevice === "webgpu") {
-        return "webgpu";
+        return ["webgpu"];
     }
 
     if (selectedDevice === "wasm") {
-        return "wasm";
+        return ["wasm"];
     }
 
-    if (navigator.gpu) {
-        return "webgpu";
+    if (await canRequestWebGpuAdapter()) {
+        return ["webgpu", "wasm"];
     }
 
-    return "wasm";
+    return ["wasm"];
+}
+
+async function canRequestWebGpuAdapter() {
+    if (!navigator.gpu || typeof navigator.gpu.requestAdapter !== "function") {
+        return false;
+    }
+
+    try {
+        const adapter = await navigator.gpu.requestAdapter();
+        return Boolean(adapter);
+    } catch (error) {
+        console.warn("[TranscriptionSpike] WebGPU adapter probe failed", error);
+        return false;
+    }
 }
 
 function createTranscriptionOptions({ timestampMode }) {
@@ -135,8 +209,7 @@ function createTranscriptionOptions({ timestampMode }) {
         stride_length_s: 5
     };
 
-    if (timestampMode === "word") {
-        options.return_timestamps = "word";
+    if (timestampMode === "none") {
         return options;
     }
 
@@ -145,9 +218,13 @@ function createTranscriptionOptions({ timestampMode }) {
         return options;
     }
 
-    return {};
-}
+    if (timestampMode === "word") {
+        options.return_timestamps = "word";
+        return options;
+    }
 
+    return options;
+}
 function renderResult({
     result,
     elapsedSeconds,
@@ -196,12 +273,13 @@ function createCell(text) {
     return cell;
 }
 
-function renderCapabilitySummary() {
-    const webGpuStatus = navigator.gpu ? "available" : "not available";
+async function renderCapabilitySummary() {
+    const webGpuApiStatus = navigator.gpu ? "API available" : "API not available";
+    const webGpuAdapterStatus = await canRequestWebGpuAdapter() ? "adapter available" : "adapter not available";
     const memory = Number(navigator.deviceMemory);
     const memoryText = Number.isFinite(memory) ? `${memory} GB reported device memory` : "device memory not reported";
 
-    capabilitySummary.textContent = `WebGPU: ${webGpuStatus}; ${memoryText}. Auto uses WebGPU when available, otherwise WASM CPU.`;
+    capabilitySummary.textContent = `WebGPU: ${webGpuApiStatus}, ${webGpuAdapterStatus}; ${memoryText}. Auto tries WebGPU first only when an adapter is available, then falls back to CPU / WASM.`;
 }
 
 function clearOutputs() {
