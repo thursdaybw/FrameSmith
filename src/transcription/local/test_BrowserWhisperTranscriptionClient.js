@@ -46,7 +46,7 @@ export async function test_browserWhisperTranscriptionClient_returnsNormalizedWo
 
     assert(client.kind === TRANSCRIPTION_CLIENT_KIND.LOCAL_BROWSER, "local client kind must be exposed");
     assert(result.ok === true, "local client result must be ok on success");
-    assert(result.model === BROWSER_WHISPER_MODEL.TINY_TIMESTAMPED, "local client must default to tiny timestamped model");
+    assert(result.model === BROWSER_WHISPER_MODEL.BASE_TIMESTAMPED, "local client must default to base timestamped model");
     assert(result.device === "webgpu", "local client must report selected runtime device");
     assert(result.text === "hello world", "local client must expose normalized transcript text");
     assert(result.words.length === 2, "local client must expose normalized words");

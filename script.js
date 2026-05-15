@@ -71,7 +71,6 @@ import {
     createTranscriptionClient
 } from "./src/transcription/TranscriptionClient.js";
 import { createBrowserWhisperTranscriptionClient } from "./src/transcription/local/BrowserWhisperTranscriptionClient.js";
-import { canRequestWebGpuAdapter } from "./src/transcription/local/BrowserWhisperBackendProbe.js";
 
 const DEFAULT_OUTPUT_WIDTH = 720;
 const DEFAULT_OUTPUT_HEIGHT = 1280;
@@ -416,6 +415,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const previewBtn = document.getElementById("previewBtn");
     const transcribeBtn = document.getElementById("transcribeBtn");
     const transcriptionModeSelect = document.getElementById("transcriptionModeSelect");
+    const transcriptionModelSelect = document.getElementById("transcriptionModelSelect");
     const showTranscriptBtn = document.getElementById("showTranscriptBtn");
     const encodeBtn = document.getElementById("encodeBtn");
     const exportBtn = document.getElementById("exportBtn");
@@ -621,6 +621,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         previewBtn.disabled = disabled;
         if (transcriptionModeSelect) {
             transcriptionModeSelect.disabled = disabled;
+        }
+        if (transcriptionModelSelect) {
+            transcriptionModelSelect.disabled = disabled;
         }
         if (transcribeBtn) {
             transcribeBtn.disabled = disabled;
@@ -2099,6 +2102,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         return TRANSCRIPTION_MODE.AUTO;
     }
 
+    function readSelectedLocalTranscriptionModel() {
+        const value = typeof transcriptionModelSelect?.value === "string"
+            ? transcriptionModelSelect.value.trim()
+            : "";
+
+        return value || "onnx-community/whisper-base_timestamped";
+    }
+
     function revokeLocalTranscriptionMediaObjectUrl() {
         if (!localTranscriptionMediaObjectUrl) {
             return;
@@ -2122,11 +2133,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     async function canUseLocalBrowserTranscription() {
-        if (!(cachedSelectedVideo?.bytes instanceof Uint8Array) || cachedSelectedVideo.bytes.length === 0) {
-            return false;
-        }
-
-        return await canRequestWebGpuAdapter();
+        return cachedSelectedVideo?.bytes instanceof Uint8Array && cachedSelectedVideo.bytes.length > 0;
     }
 
     async function applyTranscriptionUseCaseResult({ result, client }) {
@@ -2183,6 +2190,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                 if (stage === "apply_transcript") {
                     setTranscriptionStageStatus("apply_transcript");
                     setVideoSourceStatus("Applying transcript to captions...");
+                    return;
+                }
+
+                if (stage === "incomplete") {
+                    setTranscriptionStageStatus("polling", "incomplete");
                     return;
                 }
 
@@ -4574,6 +4586,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
                     mediaSourceUrl: mode === TRANSCRIPTION_MODE.SERVER
                         ? ""
                         : createLocalTranscriptionMediaSourceUrl(),
+                    localModel: readSelectedLocalTranscriptionModel(),
                     timestampMode: "word",
                     localDevice: "auto"
                 });

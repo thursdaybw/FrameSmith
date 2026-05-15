@@ -11,8 +11,7 @@ export const TRANSCRIPTION_MODE = Object.freeze({
  */
 export async function selectTranscriptionClientCandidates({
     mode = TRANSCRIPTION_MODE.AUTO,
-    clients,
-    canUseLocal = async () => false
+    clients
 }) {
     const selectedMode = normalizeTranscriptionMode(mode);
     const availableClients = clients || {};
@@ -21,21 +20,10 @@ export async function selectTranscriptionClientCandidates({
         return requireClientList([availableClients.server], "server transcription client is required");
     }
 
-    if (selectedMode === TRANSCRIPTION_MODE.LOCAL) {
-        return requireClientList([availableClients.local], "local transcription client is required");
-    }
-
-    if (await canUseLocal()) {
-        return requireClientList(
-            [availableClients.local, availableClients.server],
-            "auto transcription requires at least one transcription client"
-        );
-    }
-
-    return requireClientList(
-        [availableClients.server],
-        "auto transcription requires server transcription client when local is unavailable"
-    );
+    // Auto is intentionally local-browser transcription. The local adapter owns
+    // WebGPU -> CPU/WASM fallback. Server transcription is expensive remote
+    // infrastructure and should only run when the user explicitly selects it.
+    return requireClientList([availableClients.local], "local transcription client is required");
 }
 
 export function normalizeTranscriptionMode(mode) {

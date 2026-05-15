@@ -41,6 +41,23 @@ export function createRunTranscriptionUseCase({
                     });
 
                     const result = await client.transcribe(request);
+                    const completed = isCompletedTranscriptionResult(result);
+
+                    if (!completed) {
+                        reporter.stage?.("incomplete", {
+                            mode,
+                            clientKind: client.kind,
+                            result
+                        });
+
+                        return {
+                            ...result,
+                            completed: false,
+                            selectedClientKind: client.kind,
+                            attemptedClientKinds: candidates.slice(0, index + 1).map((candidate) => candidate.kind),
+                            fallbackUsed: isFallbackAttempt
+                        };
+                    }
 
                     reporter.stage?.("apply_transcript", {
                         mode,
@@ -60,6 +77,7 @@ export function createRunTranscriptionUseCase({
 
                     return {
                         ...result,
+                        completed: true,
                         appliedResult,
                         selectedClientKind: client.kind,
                         attemptedClientKinds: candidates.slice(0, index + 1).map((candidate) => candidate.kind),
@@ -83,6 +101,18 @@ export function createRunTranscriptionUseCase({
             throw lastError || new Error("No transcription client could run.");
         }
     };
+}
+
+function isCompletedTranscriptionResult(result) {
+    if (result?.ok === true) {
+        return true;
+    }
+
+    if (result?.pollResult) {
+        return result.pollResult.ok === true;
+    }
+
+    return Boolean(result?.whisperJson);
 }
 
 export function createNullTranscriptionReporter() {

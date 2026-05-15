@@ -375,6 +375,10 @@
               <option value="local">Local</option>
               <option value="server">Server</option>
             </select>
+            <select id="transcriptionModelSelect" class="action-btn" aria-label="Local transcription model">
+              <option value="onnx-community/whisper-base_timestamped">Base</option>
+              <option value="onnx-community/whisper-tiny.en_timestamped">Tiny</option>
+            </select>
             <button id="transcribeBtn" class="action-btn">Transcribe</button>
             <button id="showTranscriptBtn" class="action-btn" disabled type="button">Transcript</button>
             <button id="encodeBtn" class="action-btn">Encode</button>

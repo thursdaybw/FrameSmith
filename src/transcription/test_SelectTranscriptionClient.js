@@ -45,7 +45,7 @@ export async function test_selectTranscriptionClientCandidates_explicitLocal() {
     assert(candidates[0].kind === "local-browser", "local mode must select local client even before capability policy");
 }
 
-export async function test_selectTranscriptionClientCandidates_autoWithLocalUsesLocalThenServer() {
+export async function test_selectTranscriptionClientCandidates_autoUsesLocalClient() {
     const candidates = await selectTranscriptionClientCandidates({
         mode: "auto",
         clients: {
@@ -55,12 +55,11 @@ export async function test_selectTranscriptionClientCandidates_autoWithLocalUses
         canUseLocal: async () => true
     });
 
-    assert(candidates.length === 2, "auto with local capability must return fallback order");
-    assert(candidates[0].kind === "local-browser", "auto must prefer local when credible");
-    assert(candidates[1].kind === "server", "auto must keep server fallback");
+    assert(candidates.length === 1, "auto must select local browser transcription only");
+    assert(candidates[0].kind === "local-browser", "auto must use local browser transcription");
 }
 
-export async function test_selectTranscriptionClientCandidates_autoWithoutLocalUsesServer() {
+export async function test_selectTranscriptionClientCandidates_autoIgnoresCapabilityProbe() {
     const candidates = await selectTranscriptionClientCandidates({
         mode: "auto",
         clients: {
@@ -70,8 +69,8 @@ export async function test_selectTranscriptionClientCandidates_autoWithoutLocalU
         canUseLocal: async () => false
     });
 
-    assert(candidates.length === 1, "auto without local capability must select one client");
-    assert(candidates[0].kind === "server", "auto without local capability must select server");
+    assert(candidates.length === 1, "auto must not switch to server when WebGPU probe fails");
+    assert(candidates[0].kind === "local-browser", "auto must still use local because local owns WASM fallback");
 }
 
 export function test_normalizeTranscriptionMode_defaultsToAuto() {
@@ -82,7 +81,7 @@ export function test_normalizeTranscriptionMode_defaultsToAuto() {
 export const SELECT_TRANSCRIPTION_CLIENT_TESTS = [
     test_selectTranscriptionClientCandidates_explicitServer,
     test_selectTranscriptionClientCandidates_explicitLocal,
-    test_selectTranscriptionClientCandidates_autoWithLocalUsesLocalThenServer,
-    test_selectTranscriptionClientCandidates_autoWithoutLocalUsesServer,
+    test_selectTranscriptionClientCandidates_autoUsesLocalClient,
+    test_selectTranscriptionClientCandidates_autoIgnoresCapabilityProbe,
     test_normalizeTranscriptionMode_defaultsToAuto
 ];

@@ -77,7 +77,38 @@ export async function test_runTranscriptionUseCase_fallsBackToSecondClient() {
     assert(failures[0].willFallback === true, "first failure must report fallback");
 }
 
+export async function test_runTranscriptionUseCase_doesNotMarkIncompleteServerResultDone() {
+    const events = [];
+    const useCase = createRunTranscriptionUseCase({
+        clients: {},
+        selectCandidates: async () => [
+            client("server", async () => ({
+                taskId: "task-1",
+                pollResult: { ok: false, timeout: true }
+            }))
+        ],
+        applyResult: async () => {
+            throw new Error("incomplete server result must not be applied");
+        },
+        reporter: {
+            stage(stage, payload) {
+                events.push({ stage, payload });
+            },
+            failure() {}
+        }
+    });
+
+    const result = await useCase.run({ mode: "server" });
+
+    assert(result.completed === false, "incomplete server result must be returned as incomplete");
+    assert(result.selectedClientKind === "server", "server client must still be reported");
+    assert(events.some((event) => event.stage === "incomplete"), "incomplete stage must be reported");
+    assert(!events.some((event) => event.stage === "done"), "incomplete result must not report done");
+    assert(!events.some((event) => event.stage === "apply_transcript"), "incomplete result must not apply transcript");
+}
+
 export const RUN_TRANSCRIPTION_USE_CASE_TESTS = [
     test_runTranscriptionUseCase_usesSelectedClientAndAppliesResult,
-    test_runTranscriptionUseCase_fallsBackToSecondClient
+    test_runTranscriptionUseCase_fallsBackToSecondClient,
+    test_runTranscriptionUseCase_doesNotMarkIncompleteServerResultDone
 ];
