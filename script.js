@@ -64,6 +64,10 @@ import {
 } from "./src/engine/engineOverlays.js";
 import { buildTranscriptTextFromWhisperJson } from "./src/transcription/buildTranscriptTextFromWhisperJson.js";
 import { createDrupalWhisperTranscriptionClient } from "./src/transcription/server/DrupalWhisperTranscriptionClient.js";
+import {
+    TRANSCRIPTION_CLIENT_KIND,
+    createTranscriptionClient
+} from "./src/transcription/TranscriptionClient.js";
 
 const DEFAULT_OUTPUT_WIDTH = 720;
 const DEFAULT_OUTPUT_HEIGHT = 1280;
@@ -2060,6 +2064,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         return result;
     }
+
+    const serverWhisperTranscriptionClient = createTranscriptionClient({
+        kind: TRANSCRIPTION_CLIENT_KIND.SERVER,
+        transcribe: startWhisperTranscriptionAndPoll
+    });
 
     async function fetchAndApplyWhisperTranscriptFromTask({
         taskId,
@@ -4421,7 +4430,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
             setWorkflowEnabled(!!timeline);
 
             try {
-                const result = await startWhisperTranscriptionAndPoll();
+                const result = await serverWhisperTranscriptionClient.transcribe();
                 if (result?.pollResult?.ok) {
                     setVideoSourceStatus("Captions ready");
                 } else if (result?.taskId) {
@@ -4614,6 +4623,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
     window.__sendWhisperAudioToDrupal = sendWhisperAudioToDrupal;
     window.__pollWhisperTranscriptionStatus = pollWhisperTranscriptionStatus;
     window.__startWhisperTranscriptionAndPoll = startWhisperTranscriptionAndPoll;
+    window.__serverWhisperTranscriptionClient = serverWhisperTranscriptionClient;
     window.__fetchAndApplyWhisperTranscriptFromTask = fetchAndApplyWhisperTranscriptFromTask;
     window.__framesmithRecoveryStore = recoveryStore;
     window.__framesmithRestoreRecoveryState = restoreFramesmithRecoveryStateOnLoad;
