@@ -68,10 +68,12 @@ import {
     TRANSCRIPTION_CLIENT_KIND,
     createTranscriptionClient
 } from "./src/transcription/TranscriptionClient.js";
+import { createBrowserWhisperTranscriptionClient } from "./src/transcription/local/BrowserWhisperTranscriptionClient.js";
 
 const DEFAULT_OUTPUT_WIDTH = 720;
 const DEFAULT_OUTPUT_HEIGHT = 1280;
 const drupalWhisperTranscriptionClient = createDrupalWhisperTranscriptionClient();
+const browserWhisperTranscriptionClient = createBrowserWhisperTranscriptionClient();
 const DEFAULT_PRE_RENDER_FPS = 30;
 
 function summarizeTrackViewKeys(trackView) {
@@ -4624,6 +4626,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
     window.__pollWhisperTranscriptionStatus = pollWhisperTranscriptionStatus;
     window.__startWhisperTranscriptionAndPoll = startWhisperTranscriptionAndPoll;
     window.__serverWhisperTranscriptionClient = serverWhisperTranscriptionClient;
+    window.__browserWhisperTranscriptionClient = browserWhisperTranscriptionClient;
     window.__fetchAndApplyWhisperTranscriptFromTask = fetchAndApplyWhisperTranscriptFromTask;
     window.__framesmithRecoveryStore = recoveryStore;
     window.__framesmithRestoreRecoveryState = restoreFramesmithRecoveryStateOnLoad;

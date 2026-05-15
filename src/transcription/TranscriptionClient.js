@@ -54,6 +54,7 @@ export function normalizeTranscriptionRequest(request = {}) {
         timeoutMs: normalizePositiveInteger(source.timeoutMs, 10 * 60 * 1_000),
         hardTimeoutMs: normalizeOptionalPositiveInteger(source.hardTimeoutMs),
         slowPollIntervalMs: normalizePositiveInteger(source.slowPollIntervalMs, 15_000),
+        mediaSourceUrl: normalizeOptionalString(source.mediaSourceUrl),
         localModel: normalizeOptionalString(source.localModel),
         localDevice: normalizeOptionalString(source.localDevice),
         timestampMode: normalizeOptionalString(source.timestampMode)

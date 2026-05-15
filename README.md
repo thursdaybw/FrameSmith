@@ -176,6 +176,31 @@ Deferred intentionally:
 - Do not bury model artifact provisioning in bevansbench.com Ansible unless it becomes urgent before FrameSmith is split into its own repo/domain/deployment.
 ```
 
+### Production browser transcription adapter status
+
+The production implementation branch now has a local browser Whisper adapter boundary:
+
+```text
+src/transcription/local/BrowserWhisperBackendProbe.js
+src/transcription/local/TransformersBrowserWhisperRuntime.js
+src/transcription/local/BrowserWhisperTranscriptionClient.js
+```
+
+Responsibilities are split deliberately:
+
+```text
+BrowserWhisperBackendProbe
+  WebGPU adapter probing and device candidate order.
+
+TransformersBrowserWhisperRuntime
+  Transformers.js pipeline loading, backend options, and transcriber cache.
+
+BrowserWhisperTranscriptionClient
+  Shared TranscriptionClient port adapter that returns normalized transcription results.
+```
+
+The real UI is not wired to local transcription yet. UI selection and fallback policy belong to the later selection/use-case item, not the infrastructure adapter.
+
 ### Current vendor spike result
 
 The vendor spike currently proves local runtime assets plus remote Hugging Face model files.

@@ -26,6 +26,9 @@ import { ENCODE_CAPACITY_PROFILE_TESTS } from "./src/app/encode/test_EncodeCapac
 import { TRANSCRIPTION_MAPPING_TESTS } from "./src/transcription/test_transcriptionMapping.js";
 import { TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/test_TranscriptionClient.js";
 import { DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/server/test_DrupalWhisperTranscriptionClient.js";
+import { BROWSER_WHISPER_BACKEND_PROBE_TESTS } from "./src/transcription/local/test_BrowserWhisperBackendProbe.js";
+import { TRANSFORMERS_BROWSER_WHISPER_RUNTIME_TESTS } from "./src/transcription/local/test_TransformersBrowserWhisperRuntime.js";
+import { BROWSER_WHISPER_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/local/test_BrowserWhisperTranscriptionClient.js";
 
 const COLORS = {
     blue: "\x1b[34m",
@@ -85,7 +88,10 @@ const CORE_NODE_TESTS = [
     ...ENCODE_CAPACITY_PROFILE_TESTS,
     ...TRANSCRIPTION_MAPPING_TESTS,
     ...TRANSCRIPTION_CLIENT_TESTS,
-    ...DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS
+    ...DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS,
+    ...BROWSER_WHISPER_BACKEND_PROBE_TESTS,
+    ...TRANSFORMERS_BROWSER_WHISPER_RUNTIME_TESTS,
+    ...BROWSER_WHISPER_TRANSCRIPTION_CLIENT_TESTS
 ];
 
 async function runNodeTests() {

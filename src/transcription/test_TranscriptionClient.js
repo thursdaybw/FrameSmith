@@ -25,6 +25,7 @@ export function test_normalizeTranscriptionRequest_trimsOptionalStrings() {
     const request = normalizeTranscriptionRequest({
         transcriptionBaseUrl: " https://example.test ",
         videoId: " video-1 ",
+        mediaSourceUrl: " blob:https://example.test/source ",
         localModel: " tiny ",
         localDevice: " webgpu ",
         timestampMode: " word "
@@ -32,6 +33,7 @@ export function test_normalizeTranscriptionRequest_trimsOptionalStrings() {
 
     assert(request.transcriptionBaseUrl === "https://example.test", "base URL must be trimmed");
     assert(request.videoId === "video-1", "video ID must be trimmed");
+    assert(request.mediaSourceUrl === "blob:https://example.test/source", "media source URL must be trimmed");
     assert(request.localModel === "tiny", "local model must be trimmed");
     assert(request.localDevice === "webgpu", "local device must be trimmed");
     assert(request.timestampMode === "word", "timestamp mode must be trimmed");
