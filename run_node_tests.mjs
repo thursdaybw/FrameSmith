@@ -29,6 +29,8 @@ import { DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/s
 import { BROWSER_WHISPER_BACKEND_PROBE_TESTS } from "./src/transcription/local/test_BrowserWhisperBackendProbe.js";
 import { TRANSFORMERS_BROWSER_WHISPER_RUNTIME_TESTS } from "./src/transcription/local/test_TransformersBrowserWhisperRuntime.js";
 import { BROWSER_WHISPER_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/local/test_BrowserWhisperTranscriptionClient.js";
+import { SELECT_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/test_SelectTranscriptionClient.js";
+import { RUN_TRANSCRIPTION_USE_CASE_TESTS } from "./src/transcription/test_RunTranscriptionUseCase.js";
 
 const COLORS = {
     blue: "\x1b[34m",
@@ -91,7 +93,9 @@ const CORE_NODE_TESTS = [
     ...DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS,
     ...BROWSER_WHISPER_BACKEND_PROBE_TESTS,
     ...TRANSFORMERS_BROWSER_WHISPER_RUNTIME_TESTS,
-    ...BROWSER_WHISPER_TRANSCRIPTION_CLIENT_TESTS
+    ...BROWSER_WHISPER_TRANSCRIPTION_CLIENT_TESTS,
+    ...SELECT_TRANSCRIPTION_CLIENT_TESTS,
+    ...RUN_TRANSCRIPTION_USE_CASE_TESTS
 ];
 
 async function runNodeTests() {
