@@ -23,6 +23,14 @@ import { EXPORT_ADAPTER_TESTS } from "./src/export/test_adaptEncodedOutputsToMp4
 import { INTEGRATION_TESTS } from "./src/integration/test_FrameSmith_PublicApi_EndToEnd_ExportExecutionStrategy.js";
 import { FRAMESMITH_RECOVERY_TESTS } from "./src/app/recovery/test_FramesmithRecoverySnapshot.js";
 import { ENCODE_CAPACITY_PROFILE_TESTS } from "./src/app/encode/test_EncodeCapacityProfile.js";
+import { TRANSCRIPTION_MAPPING_TESTS } from "./src/transcription/test_transcriptionMapping.js";
+import { TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/test_TranscriptionClient.js";
+import { DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/server/test_DrupalWhisperTranscriptionClient.js";
+import { BROWSER_WHISPER_BACKEND_PROBE_TESTS } from "./src/transcription/local/test_BrowserWhisperBackendProbe.js";
+import { TRANSFORMERS_BROWSER_WHISPER_RUNTIME_TESTS } from "./src/transcription/local/test_TransformersBrowserWhisperRuntime.js";
+import { BROWSER_WHISPER_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/local/test_BrowserWhisperTranscriptionClient.js";
+import { SELECT_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/test_SelectTranscriptionClient.js";
+import { RUN_TRANSCRIPTION_USE_CASE_TESTS } from "./src/transcription/test_RunTranscriptionUseCase.js";
 
 const COLORS = {
     blue: "\x1b[34m",
@@ -79,7 +87,15 @@ const CORE_NODE_TESTS = [
     ...EXPORT_ADAPTER_TESTS,
     ...INTEGRATION_TESTS,
     ...FRAMESMITH_RECOVERY_TESTS,
-    ...ENCODE_CAPACITY_PROFILE_TESTS
+    ...ENCODE_CAPACITY_PROFILE_TESTS,
+    ...TRANSCRIPTION_MAPPING_TESTS,
+    ...TRANSCRIPTION_CLIENT_TESTS,
+    ...DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS,
+    ...BROWSER_WHISPER_BACKEND_PROBE_TESTS,
+    ...TRANSFORMERS_BROWSER_WHISPER_RUNTIME_TESTS,
+    ...BROWSER_WHISPER_TRANSCRIPTION_CLIENT_TESTS,
+    ...SELECT_TRANSCRIPTION_CLIENT_TESTS,
+    ...RUN_TRANSCRIPTION_USE_CASE_TESTS
 ];
 
 async function runNodeTests() {

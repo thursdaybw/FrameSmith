@@ -48,7 +48,6 @@ import {
 } from "./src/app/encode/EncodeCapacityProfile.js";
 import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";
 import { createTimelineFromPreparedAssets } from "./src/engine/createTimelineFromPreparedAssets.js";
-import { fetchJsonOrThrow } from "./src/network/fetchJsonOrThrow.js";
 import {
     mergeFramesmithRecoverySnapshot,
     hasFramesmithRecoveryTask,
@@ -63,9 +62,20 @@ import {
     setRuntimeTranscriptOverlayItems,
     clearRuntimeTranscriptOverlayItems
 } from "./src/engine/engineOverlays.js";
+import { buildTranscriptTextFromWhisperJson } from "./src/transcription/buildTranscriptTextFromWhisperJson.js";
+import { createRunTranscriptionUseCase } from "./src/transcription/RunTranscriptionUseCase.js";
+import { TRANSCRIPTION_MODE } from "./src/transcription/SelectTranscriptionClient.js";
+import { createDrupalWhisperTranscriptionClient } from "./src/transcription/server/DrupalWhisperTranscriptionClient.js";
+import {
+    TRANSCRIPTION_CLIENT_KIND,
+    createTranscriptionClient
+} from "./src/transcription/TranscriptionClient.js";
+import { createBrowserWhisperTranscriptionClient } from "./src/transcription/local/BrowserWhisperTranscriptionClient.js";
 
 const DEFAULT_OUTPUT_WIDTH = 720;
 const DEFAULT_OUTPUT_HEIGHT = 1280;
+const drupalWhisperTranscriptionClient = createDrupalWhisperTranscriptionClient();
+const browserWhisperTranscriptionClient = createBrowserWhisperTranscriptionClient();
 const DEFAULT_PRE_RENDER_FPS = 30;
 
 function summarizeTrackViewKeys(trackView) {
@@ -404,6 +414,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const previewBtn = document.getElementById("previewBtn");
     const transcribeBtn = document.getElementById("transcribeBtn");
+    const transcriptionModeSelect = document.getElementById("transcriptionModeSelect");
+    const transcriptionModelSelect = document.getElementById("transcriptionModelSelect");
     const showTranscriptBtn = document.getElementById("showTranscriptBtn");
     const encodeBtn = document.getElementById("encodeBtn");
     const exportBtn = document.getElementById("exportBtn");
@@ -433,6 +445,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     let lastExportBlob = null;
     let lastExportUrl = null;
     let cachedSelectedVideo = null;
+    let localTranscriptionMediaObjectUrl = null;
+    let selectedVideoFile = null;
     let isEncodeInProgress = false;
     let isTranscribeInProgress = false;
     let currentEncodeStageName = "init";
@@ -605,6 +619,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const setWorkflowEnabled = (enabled) => {
         const disabled = !enabled || isEncodeInProgress || isTranscribeInProgress;
         previewBtn.disabled = disabled;
+        if (transcriptionModeSelect) {
+            transcriptionModeSelect.disabled = disabled;
+        }
+        if (transcriptionModelSelect) {
+            transcriptionModelSelect.disabled = disabled;
+        }
         if (transcribeBtn) {
             transcribeBtn.disabled = disabled;
         }
@@ -667,6 +687,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const setTranscriptionStageStatus = (stage, detail = "") => {
         const stageMap = {
+            select_client: { percent: 5, label: "Selecting mode" },
+            transcribe: { percent: 65, label: "Transcribing" },
             prepare_audio: { percent: 10, label: "Preparing audio" },
             create_task: { percent: 25, label: "Creating task" },
             upload_audio: { percent: 45, label: "Uploading audio" },
@@ -777,30 +799,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateTranscriptPanelDisplayText(latestTranscriptText);
         updateTranscriptControlsState();
     };
-
-    function buildTranscriptTextFromWhisperJson(whisperJson) {
-        if (!whisperJson || !Array.isArray(whisperJson.segments)) {
-            return "";
-        }
-        const lines = [];
-        for (const segment of whisperJson.segments) {
-            const trimmed = typeof segment?.text === "string" ? segment.text.trim() : "";
-            if (trimmed.length > 0) {
-                lines.push(trimmed);
-                continue;
-            }
-            if (Array.isArray(segment?.words)) {
-                const wordLine = segment.words
-                    .map((word) => (typeof word?.word === "string" ? word.word.trim() : ""))
-                    .filter(Boolean)
-                    .join(" ");
-                if (wordLine.length > 0) {
-                    lines.push(wordLine);
-                }
-            }
-        }
-        return lines.join("\n");
-    }
 
     const setLatestTranscriptFromJson = (whisperJson) => {
         if (!whisperJson) {
@@ -1322,39 +1320,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         statusPayload,
         taskId = ""
     }) {
-        const inlineJson = statusPayload?.task?.result?.json;
-        if (inlineJson && typeof inlineJson === "object") {
-            return inlineJson;
-        }
-
-        const jsonUrlValue = String(
-            statusPayload?.json_url ||
-            statusPayload?.task?.result?.json_url ||
-            ""
-        ).trim();
-        const resolvedBaseUrl = resolveTranscriptionBaseUrl(transcriptionBaseUrl);
-
-        if (jsonUrlValue.length > 0) {
-            const resolvedJsonUrl = new URL(jsonUrlValue, resolvedBaseUrl).toString();
-            return fetchJsonOrThrow(resolvedJsonUrl, {
-                method: "GET",
-                credentials: "include"
-            });
-        }
-
-        const resolvedTaskId = String(taskId || statusPayload?.task_id || statusPayload?.task?.task_id || "").trim();
-        if (resolvedTaskId.length === 0) {
-            return null;
-        }
-
-        const resultUrl = new URL("/api/framesmith/transcription/result", resolvedBaseUrl);
-        resultUrl.searchParams.set("task_id", resolvedTaskId);
-        const resultPayload = await fetchJsonOrThrow(resultUrl.toString(), {
-            method: "GET",
-            credentials: "include"
+        return drupalWhisperTranscriptionClient.loadResultJson({
+            baseUrl: resolveTranscriptionBaseUrl(transcriptionBaseUrl),
+            statusPayload,
+            taskId
         });
-        const resultJson = resultPayload?.result?.json;
-        return resultJson && typeof resultJson === "object" ? resultJson : null;
     }
 
     async function applyWhisperTranscriptToTimeline({
@@ -1485,23 +1455,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         );
     }
 
-    function createWhisperRangeUploadUrl({
-        resolvedBaseUrl,
-        taskId,
-        uploadId,
-        offset,
-        size,
-        totalSize
-    }) {
-        const uploadUrl = new URL("/api/framesmith/transcription/upload", resolvedBaseUrl);
-        uploadUrl.searchParams.set("task_id", taskId);
-        uploadUrl.searchParams.set("upload_id", uploadId);
-        uploadUrl.searchParams.set("offset", String(offset));
-        uploadUrl.searchParams.set("size", String(size));
-        uploadUrl.searchParams.set("total_size", String(totalSize));
-        return uploadUrl;
-    }
-
     function createWhisperUploadRangeFailure({
         error,
         offset,
@@ -1550,23 +1503,18 @@ document.addEventListener("DOMContentLoaded", async () => {
                         taskId,
                         autoLaunch
                     });
-                    const uploadUrl = createWhisperRangeUploadUrl({
-                        resolvedBaseUrl,
-                        taskId,
-                        uploadId,
-                        offset,
-                        size,
-                        totalSize: blob.size
-                    });
                     // The upload range transport must be bounded. If the mobile
                     // browser silently hangs instead of failing, the retry
                     // policy never regains control and the task stays pinned in
                     // awaiting_upload with no backend work to resume.
-                    return fetchJsonOrThrow(uploadUrl.toString(), {
-                        method: "POST",
-                        credentials: "include",
-                        body: formData
-                    }, {
+                    return drupalWhisperTranscriptionClient.uploadAudioRange({
+                        baseUrl: resolvedBaseUrl,
+                        taskId,
+                        uploadId,
+                        offset,
+                        size,
+                        totalSize: blob.size,
+                        body: formData,
                         timeoutMs: WHISPER_UPLOAD_RANGE_REQUEST_TIMEOUT_MS
                     });
                 },
@@ -1620,7 +1568,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         failure,
         message
     }) {
-        const failureUrl = new URL("/api/framesmith/transcription/upload-failure", resolvedBaseUrl);
         const payload = {
             task_id: taskId,
             upload_id: uploadId,
@@ -1630,13 +1577,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             attempts: typeof failure.attempts === "number" ? failure.attempts : null
         };
         try {
-            const result = await fetchJsonOrThrow(failureUrl.toString(), {
-                method: "POST",
-                credentials: "include",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
+            const result = await drupalWhisperTranscriptionClient.reportUploadFailure({
+                baseUrl: resolvedBaseUrl,
+                payload
             });
             window.__lastWhisperUploadFailureReport = result;
             return result;
@@ -1787,16 +1730,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         setVideoSourceStatus("Creating transcription task...");
         setTranscriptionStageStatus("create_task");
-        const initUrl = new URL("/api/framesmith/transcription/start", resolvedBaseUrl);
-        const taskInit = await fetchJsonOrThrow(initUrl.toString(), {
-            method: "POST",
-            credentials: "include",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                video_id: resolvedVideoId
-            })
+        const taskInit = await drupalWhisperTranscriptionClient.startTask({
+            baseUrl: resolvedBaseUrl,
+            videoId: resolvedVideoId
         });
         const taskId = String(taskInit.task_id || "");
         window.__lastWhisperDrupalTaskId = taskId;
@@ -1865,17 +1801,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         retryPolicy,
         operationName = "whisper_transcription_status_poll"
     }) {
-        const statusUrl = new URL("/api/framesmith/transcription/status", resolvedBaseUrl);
-        statusUrl.searchParams.set("task_id", taskId);
         return runRetryingRemoteOperation({
             operationName,
             retryPolicy,
             beforeAttempt: () => waitForBrowserOnline({
                 message: `Network appears offline; waiting before checking transcription status for task ${shortTaskId(taskId)}.`
             }),
-            request: () => fetchJsonOrThrow(statusUrl.toString(), {
-                method: "GET",
-                credentials: "include"
+            request: () => drupalWhisperTranscriptionClient.fetchStatus({
+                baseUrl: resolvedBaseUrl,
+                taskId
             }),
             beforeRetry: ({ error, nextAttempt, maxAttempts, delayMs }) => {
                 const failure = {
@@ -2147,6 +2081,144 @@ document.addEventListener("DOMContentLoaded", async () => {
         return result;
     }
 
+    const serverWhisperTranscriptionClient = createTranscriptionClient({
+        kind: TRANSCRIPTION_CLIENT_KIND.SERVER,
+        transcribe: startWhisperTranscriptionAndPoll
+    });
+
+    function readSelectedTranscriptionMode() {
+        const value = typeof transcriptionModeSelect?.value === "string"
+            ? transcriptionModeSelect.value.trim().toLowerCase()
+            : "";
+
+        if (value === TRANSCRIPTION_MODE.LOCAL) {
+            return TRANSCRIPTION_MODE.LOCAL;
+        }
+
+        if (value === TRANSCRIPTION_MODE.SERVER) {
+            return TRANSCRIPTION_MODE.SERVER;
+        }
+
+        return TRANSCRIPTION_MODE.AUTO;
+    }
+
+    function readSelectedLocalTranscriptionModel() {
+        const value = typeof transcriptionModelSelect?.value === "string"
+            ? transcriptionModelSelect.value.trim()
+            : "";
+
+        return value || "onnx-community/whisper-base_timestamped";
+    }
+
+    function revokeLocalTranscriptionMediaObjectUrl() {
+        if (!localTranscriptionMediaObjectUrl) {
+            return;
+        }
+
+        URL.revokeObjectURL(localTranscriptionMediaObjectUrl);
+        localTranscriptionMediaObjectUrl = null;
+    }
+
+    function createLocalTranscriptionMediaSourceUrl() {
+        if (!(cachedSelectedVideo?.bytes instanceof Uint8Array) || cachedSelectedVideo.bytes.length === 0) {
+            throw new Error("Load a video before running local transcription.");
+        }
+
+        revokeLocalTranscriptionMediaObjectUrl();
+        const sourceBlob = new Blob([cachedSelectedVideo.bytes], {
+            type: cachedSelectedVideo.mimeType || "video/mp4"
+        });
+        localTranscriptionMediaObjectUrl = URL.createObjectURL(sourceBlob);
+        return localTranscriptionMediaObjectUrl;
+    }
+
+    async function canUseLocalBrowserTranscription() {
+        return cachedSelectedVideo?.bytes instanceof Uint8Array && cachedSelectedVideo.bytes.length > 0;
+    }
+
+    async function applyTranscriptionUseCaseResult({ result, client }) {
+        if (client?.kind !== TRANSCRIPTION_CLIENT_KIND.LOCAL_BROWSER) {
+            return result;
+        }
+
+        if (!result?.whisperJson) {
+            throw new Error("Local transcription did not return whisperJson.");
+        }
+
+        const overlayItems = await applyWhisperTranscriptToTimeline({
+            whisperJson: result.whisperJson,
+            sourceLabel: "local-browser-transcription"
+        });
+
+        return {
+            overlayItemCount: overlayItems.length,
+            whisperJson: result.whisperJson
+        };
+    }
+
+    const runTranscriptionUseCase = createRunTranscriptionUseCase({
+        clients: {
+            local: browserWhisperTranscriptionClient,
+            server: serverWhisperTranscriptionClient
+        },
+        canUseLocal: canUseLocalBrowserTranscription,
+        applyResult: applyTranscriptionUseCaseResult,
+        reporter: {
+            stage(stage, payload = {}) {
+                if (stage === "select_client") {
+                    setTranscriptionStageStatus("select_client", payload.mode || TRANSCRIPTION_MODE.AUTO);
+                    setVideoSourceStatus("Selecting transcription client...");
+                    return;
+                }
+
+                if (stage === "transcribe") {
+                    const isLocal = payload.clientKind === TRANSCRIPTION_CLIENT_KIND.LOCAL_BROWSER;
+                    setTranscriptionStageStatus("transcribe", isLocal ? "local" : "server");
+                    if (isLocal) {
+                        setVideoSourceStatus(payload.fallback
+                            ? "Retrying transcription locally..."
+                            : "Running local browser transcription...");
+                        return;
+                    }
+
+                    setVideoSourceStatus(payload.fallback
+                        ? "Falling back to server transcription..."
+                        : "Preparing server transcription...");
+                    return;
+                }
+
+                if (stage === "apply_transcript") {
+                    setTranscriptionStageStatus("apply_transcript");
+                    setVideoSourceStatus("Applying transcript to captions...");
+                    return;
+                }
+
+                if (stage === "incomplete") {
+                    setTranscriptionStageStatus("polling", "incomplete");
+                    return;
+                }
+
+                if (stage === "done") {
+                    setTranscriptionStageStatus("done");
+                }
+            },
+            failure({ clientKind, error, willFallback }) {
+                const detail = error?.message || String(error);
+                if (willFallback) {
+                    setTranscriptionStageStatus("transcribe", "fallback");
+                    setVideoSourceStatus(
+                        clientKind === TRANSCRIPTION_CLIENT_KIND.LOCAL_BROWSER
+                            ? `Local transcription failed; falling back to server (${detail}).`
+                            : `Transcription attempt failed; trying fallback (${detail}).`
+                    );
+                    return;
+                }
+
+                setTranscriptionErrorStatus(detail);
+            }
+        }
+    });
+
     async function fetchAndApplyWhisperTranscriptFromTask({
         taskId,
         transcriptionBaseUrl,
@@ -2163,11 +2235,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         let whisperJson = null;
 
         while (Date.now() - startedAt <= timeoutMs) {
-            const statusUrl = new URL("/api/framesmith/transcription/status", resolvedBaseUrl);
-            statusUrl.searchParams.set("task_id", taskId);
-            statusPayload = await fetchJsonOrThrow(statusUrl.toString(), {
-                method: "GET",
-                credentials: "include"
+            statusPayload = await drupalWhisperTranscriptionClient.fetchStatus({
+                baseUrl: resolvedBaseUrl,
+                taskId
             });
 
             whisperJson = await loadWhisperJsonFromStatusPayload({
@@ -2442,6 +2512,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             fileName,
             fileSize,
             fileLastModified,
+            mimeType,
             bytes
         };
         clearRuntimeTranscriptOverlayItems();
@@ -4509,8 +4580,21 @@ async function normalizeUnsupportedSourceToWorkingSet({
             setWorkflowEnabled(!!timeline);
 
             try {
-                const result = await startWhisperTranscriptionAndPoll();
-                if (result?.pollResult?.ok) {
+                const mode = readSelectedTranscriptionMode();
+                const result = await runTranscriptionUseCase.run({
+                    mode,
+                    mediaSourceUrl: mode === TRANSCRIPTION_MODE.SERVER
+                        ? ""
+                        : createLocalTranscriptionMediaSourceUrl(),
+                    localModel: readSelectedLocalTranscriptionModel(),
+                    timestampMode: "word",
+                    localDevice: "auto"
+                });
+                if (result?.selectedClientKind === TRANSCRIPTION_CLIENT_KIND.LOCAL_BROWSER) {
+                    setVideoSourceStatus("Captions ready from local transcription");
+                } else if (result?.pollResult?.ok && result?.fallbackUsed) {
+                    setVideoSourceStatus("Captions ready from server fallback");
+                } else if (result?.pollResult?.ok) {
                     setVideoSourceStatus("Captions ready");
                 } else if (result?.taskId) {
                     setVideoSourceStatus(`Transcription queued (task ${result.taskId.slice(0, 8)}…)`);
@@ -4523,6 +4607,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
                 setTranscriptionErrorStatus(error?.message || String(error));
                 console.error("[Whisper][Drupal] transcription failed", error);
             } finally {
+                revokeLocalTranscriptionMediaObjectUrl();
                 isTranscribeInProgress = false;
                 transcribeBtn.textContent = "Transcribe";
                 setWorkflowEnabled(!!timeline);
@@ -4644,6 +4729,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
         videoFileInput.onchange = async () => {
             const selectedFile = videoFileInput.files?.[0];
             cachedSelectedVideo = null;
+            selectedVideoFile = null;
             previewPlan = null;
             stopPreviewLoop();
             setPreviewModeUiState(false);
@@ -4654,6 +4740,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
             }
 
             try {
+                selectedVideoFile = selectedFile;
                 setWorkflowEnabled(false);
                 setVideoSourceStatus("Loading selected video...");
                 if (lastExportUrl) {
@@ -4702,6 +4789,9 @@ async function normalizeUnsupportedSourceToWorkingSet({
     window.__sendWhisperAudioToDrupal = sendWhisperAudioToDrupal;
     window.__pollWhisperTranscriptionStatus = pollWhisperTranscriptionStatus;
     window.__startWhisperTranscriptionAndPoll = startWhisperTranscriptionAndPoll;
+    window.__serverWhisperTranscriptionClient = serverWhisperTranscriptionClient;
+    window.__browserWhisperTranscriptionClient = browserWhisperTranscriptionClient;
+    window.__runTranscriptionUseCase = runTranscriptionUseCase;
     window.__fetchAndApplyWhisperTranscriptFromTask = fetchAndApplyWhisperTranscriptFromTask;
     window.__framesmithRecoveryStore = recoveryStore;
     window.__framesmithRestoreRecoveryState = restoreFramesmithRecoveryStateOnLoad;
