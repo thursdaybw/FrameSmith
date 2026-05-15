@@ -24,6 +24,7 @@ import { INTEGRATION_TESTS } from "./src/integration/test_FrameSmith_PublicApi_E
 import { FRAMESMITH_RECOVERY_TESTS } from "./src/app/recovery/test_FramesmithRecoverySnapshot.js";
 import { ENCODE_CAPACITY_PROFILE_TESTS } from "./src/app/encode/test_EncodeCapacityProfile.js";
 import { TRANSCRIPTION_MAPPING_TESTS } from "./src/transcription/test_transcriptionMapping.js";
+import { DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/server/test_DrupalWhisperTranscriptionClient.js";
 
 const COLORS = {
     blue: "\x1b[34m",
@@ -81,7 +82,8 @@ const CORE_NODE_TESTS = [
     ...INTEGRATION_TESTS,
     ...FRAMESMITH_RECOVERY_TESTS,
     ...ENCODE_CAPACITY_PROFILE_TESTS,
-    ...TRANSCRIPTION_MAPPING_TESTS
+    ...TRANSCRIPTION_MAPPING_TESTS,
+    ...DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS
 ];
 
 async function runNodeTests() {
