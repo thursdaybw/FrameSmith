@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FrameSmith Vendored Transcription Spike</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 24px;
+            background: Canvas;
+            color: CanvasText;
+        }
+
+        main {
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 28px;
+        }
+
+        .lede {
+            margin: 0 0 24px;
+            color: color-mix(in srgb, CanvasText 72%, transparent);
+        }
+
+        .panel {
+            border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+            border-radius: 12px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+
+        label {
+            display: grid;
+            gap: 6px;
+            font-weight: 700;
+        }
+
+        input,
+        select,
+        button {
+            font: inherit;
+        }
+
+        input,
+        select {
+            padding: 8px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 999px;
+            padding: 10px 16px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+
+        audio {
+            width: 100%;
+            margin-top: 12px;
+        }
+
+        pre {
+            overflow: auto;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            padding: 12px;
+            border-radius: 8px;
+            background: color-mix(in srgb, CanvasText 8%, transparent);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            text-align: left;
+            border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+            padding: 8px;
+            vertical-align: top;
+        }
+
+        .status {
+            min-height: 24px;
+            font-weight: 700;
+        }
+
+        .muted {
+            color: color-mix(in srgb, CanvasText 62%, transparent);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Vendored transcription spike</h1>
+    <p class="lede">
+        Isolated browser-only Whisper test. This page does not use the FrameSmith transcription server path.
+    </p>
+
+    <section class="panel">
+        <div class="controls">
+            <label>
+                Audio file
+                <input id="audioFileInput" type="file" accept="audio/*,video/*" />
+            </label>
+
+            <label>
+                Model
+                <select id="modelSelect">
+                    <option value="onnx-community/whisper-tiny.en_timestamped">ONNX Community tiny timestamped — fast word timestamps</option>
+                    <option value="onnx-community/whisper-base_timestamped">ONNX Community base timestamped — quality word timestamps</option>
+                </select>
+            </label>
+
+            <label>
+                Device
+                <select id="deviceSelect">
+                    <option value="auto">Auto: WebGPU then CPU fallback</option>
+                    <option value="webgpu">WebGPU only</option>
+                    <option value="wasm">CPU / WASM only</option>
+                </select>
+            </label>
+
+            <label>
+                Timestamps
+                <select id="timestampSelect">
+                    <option value="word">Word timestamps</option>
+                    <option value="none">No timestamps</option>
+                    <option value="chunk">Chunk timestamps</option>
+                </select>
+            </label>
+        </div>
+
+        <audio id="audioPreview" controls></audio>
+
+        <p class="muted" id="capabilitySummary"></p>
+        <p class="status" id="statusText">Choose an audio file.</p>
+
+        <button id="transcribeButton" type="button" disabled>Transcribe locally</button>
+    </section>
+
+    <section class="panel">
+        <h2>Transcript</h2>
+        <pre id="transcriptOutput">No transcript yet.</pre>
+    </section>
+
+    <section class="panel">
+        <h2>Timestamp chunks</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Start</th>
+                <th>End</th>
+                <th>Text</th>
+            </tr>
+            </thead>
+            <tbody id="chunkTableBody">
+            <tr><td colspan="3">No chunks yet.</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Raw result</h2>
+        <pre id="rawOutput">No result yet.</pre>
+    </section>
+</main>
+
+<script type="importmap">
+{
+    "imports": {
+        "onnxruntime-web/webgpu": "./vendor/onnxruntime-web/1.25.0-dev.20260327-722743c0e2/dist/ort.webgpu.bundle.min.mjs",
+        "onnxruntime-web/wasm": "./vendor/onnxruntime-web/1.25.0-dev.20260327-722743c0e2/dist/ort.wasm.bundle.min.mjs",
+        "onnxruntime-web": "./vendor/onnxruntime-web/1.25.0-dev.20260327-722743c0e2/dist/ort.webgpu.bundle.min.mjs",
+        "onnxruntime-common": "./vendor/onnxruntime-common/1.24.0-dev.20251116-b39e144322/dist/esm/index.js"
+    }
+}
+</script>
+<script type="module" src="./transcription_vendor_spike.js"></script>
+</body>
+</html>
