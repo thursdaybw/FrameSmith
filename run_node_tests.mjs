@@ -23,6 +23,7 @@ import { EXPORT_ADAPTER_TESTS } from "./src/export/test_adaptEncodedOutputsToMp4
 import { INTEGRATION_TESTS } from "./src/integration/test_FrameSmith_PublicApi_EndToEnd_ExportExecutionStrategy.js";
 import { FRAMESMITH_RECOVERY_TESTS } from "./src/app/recovery/test_FramesmithRecoverySnapshot.js";
 import { ENCODE_CAPACITY_PROFILE_TESTS } from "./src/app/encode/test_EncodeCapacityProfile.js";
+import { TRANSCRIPTION_MAPPING_TESTS } from "./src/transcription/test_transcriptionMapping.js";
 
 const COLORS = {
     blue: "\x1b[34m",
@@ -79,7 +80,8 @@ const CORE_NODE_TESTS = [
     ...EXPORT_ADAPTER_TESTS,
     ...INTEGRATION_TESTS,
     ...FRAMESMITH_RECOVERY_TESTS,
-    ...ENCODE_CAPACITY_PROFILE_TESTS
+    ...ENCODE_CAPACITY_PROFILE_TESTS,
+    ...TRANSCRIPTION_MAPPING_TESTS
 ];
 
 async function runNodeTests() {

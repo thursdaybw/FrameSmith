@@ -63,6 +63,7 @@ import {
     setRuntimeTranscriptOverlayItems,
     clearRuntimeTranscriptOverlayItems
 } from "./src/engine/engineOverlays.js";
+import { buildTranscriptTextFromWhisperJson } from "./src/transcription/buildTranscriptTextFromWhisperJson.js";
 
 const DEFAULT_OUTPUT_WIDTH = 720;
 const DEFAULT_OUTPUT_HEIGHT = 1280;
@@ -777,30 +778,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateTranscriptPanelDisplayText(latestTranscriptText);
         updateTranscriptControlsState();
     };
-
-    function buildTranscriptTextFromWhisperJson(whisperJson) {
-        if (!whisperJson || !Array.isArray(whisperJson.segments)) {
-            return "";
-        }
-        const lines = [];
-        for (const segment of whisperJson.segments) {
-            const trimmed = typeof segment?.text === "string" ? segment.text.trim() : "";
-            if (trimmed.length > 0) {
-                lines.push(trimmed);
-                continue;
-            }
-            if (Array.isArray(segment?.words)) {
-                const wordLine = segment.words
-                    .map((word) => (typeof word?.word === "string" ? word.word.trim() : ""))
-                    .filter(Boolean)
-                    .join(" ");
-                if (wordLine.length > 0) {
-                    lines.push(wordLine);
-                }
-            }
-        }
-        return lines.join("\n");
-    }
 
     const setLatestTranscriptFromJson = (whisperJson) => {
         if (!whisperJson) {
