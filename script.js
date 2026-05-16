@@ -65,16 +65,13 @@ import {
 import { buildTranscriptTextFromWhisperJson } from "./src/transcription/buildTranscriptTextFromWhisperJson.js";
 import { createRunTranscriptionUseCase } from "./src/transcription/RunTranscriptionUseCase.js";
 import { TRANSCRIPTION_MODE } from "./src/transcription/SelectTranscriptionClient.js";
-import { createDrupalWhisperTranscriptionClient } from "./src/transcription/server/DrupalWhisperTranscriptionClient.js";
 import {
-    TRANSCRIPTION_CLIENT_KIND,
-    createTranscriptionClient
+    TRANSCRIPTION_CLIENT_KIND
 } from "./src/transcription/TranscriptionClient.js";
 import { createBrowserWhisperTranscriptionClient } from "./src/transcription/local/BrowserWhisperTranscriptionClient.js";
 
 const DEFAULT_OUTPUT_WIDTH = 720;
 const DEFAULT_OUTPUT_HEIGHT = 1280;
-const drupalWhisperTranscriptionClient = createDrupalWhisperTranscriptionClient();
 const browserWhisperTranscriptionClient = createBrowserWhisperTranscriptionClient();
 const DEFAULT_PRE_RENDER_FPS = 30;
 
@@ -414,7 +411,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const previewBtn = document.getElementById("previewBtn");
     const transcribeBtn = document.getElementById("transcribeBtn");
-    const transcriptionModeSelect = document.getElementById("transcriptionModeSelect");
     const transcriptionModelSelect = document.getElementById("transcriptionModelSelect");
     const showTranscriptBtn = document.getElementById("showTranscriptBtn");
     const encodeBtn = document.getElementById("encodeBtn");
@@ -619,9 +615,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const setWorkflowEnabled = (enabled) => {
         const disabled = !enabled || isEncodeInProgress || isTranscribeInProgress;
         previewBtn.disabled = disabled;
-        if (transcriptionModeSelect) {
-            transcriptionModeSelect.disabled = disabled;
-        }
         if (transcriptionModelSelect) {
             transcriptionModelSelect.disabled = disabled;
         }
@@ -2081,27 +2074,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         return result;
     }
 
-    const serverWhisperTranscriptionClient = createTranscriptionClient({
-        kind: TRANSCRIPTION_CLIENT_KIND.SERVER,
-        transcribe: startWhisperTranscriptionAndPoll
-    });
-
-    function readSelectedTranscriptionMode() {
-        const value = typeof transcriptionModeSelect?.value === "string"
-            ? transcriptionModeSelect.value.trim().toLowerCase()
-            : "";
-
-        if (value === TRANSCRIPTION_MODE.LOCAL) {
-            return TRANSCRIPTION_MODE.LOCAL;
-        }
-
-        if (value === TRANSCRIPTION_MODE.SERVER) {
-            return TRANSCRIPTION_MODE.SERVER;
-        }
-
-        return TRANSCRIPTION_MODE.AUTO;
-    }
-
     function readSelectedLocalTranscriptionModel() {
         const value = typeof transcriptionModelSelect?.value === "string"
             ? transcriptionModelSelect.value.trim()
@@ -2158,8 +2130,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const runTranscriptionUseCase = createRunTranscriptionUseCase({
         clients: {
-            local: browserWhisperTranscriptionClient,
-            server: serverWhisperTranscriptionClient
+            local: browserWhisperTranscriptionClient
         },
         canUseLocal: canUseLocalBrowserTranscription,
         applyResult: applyTranscriptionUseCaseResult,
@@ -4580,24 +4551,15 @@ async function normalizeUnsupportedSourceToWorkingSet({
             setWorkflowEnabled(!!timeline);
 
             try {
-                const mode = readSelectedTranscriptionMode();
                 const result = await runTranscriptionUseCase.run({
-                    mode,
-                    mediaSourceUrl: mode === TRANSCRIPTION_MODE.SERVER
-                        ? ""
-                        : createLocalTranscriptionMediaSourceUrl(),
+                    mode: TRANSCRIPTION_MODE.AUTO,
+                    mediaSourceUrl: createLocalTranscriptionMediaSourceUrl(),
                     localModel: readSelectedLocalTranscriptionModel(),
                     timestampMode: "word",
                     localDevice: "auto"
                 });
                 if (result?.selectedClientKind === TRANSCRIPTION_CLIENT_KIND.LOCAL_BROWSER) {
                     setVideoSourceStatus("Captions ready from local transcription");
-                } else if (result?.pollResult?.ok && result?.fallbackUsed) {
-                    setVideoSourceStatus("Captions ready from server fallback");
-                } else if (result?.pollResult?.ok) {
-                    setVideoSourceStatus("Captions ready");
-                } else if (result?.taskId) {
-                    setVideoSourceStatus(`Transcription queued (task ${result.taskId.slice(0, 8)}…)`);
                 }
             } catch (error) {
                 setVideoSourceStatus(
@@ -4785,14 +4747,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
     });
     setHasLoadedSourceUiState(false);
     setPreviewModeUiState(false);
-    window.__extractWhisperAudio = extractWhisperReadyAudioFromLoadedSource;
-    window.__sendWhisperAudioToDrupal = sendWhisperAudioToDrupal;
-    window.__pollWhisperTranscriptionStatus = pollWhisperTranscriptionStatus;
-    window.__startWhisperTranscriptionAndPoll = startWhisperTranscriptionAndPoll;
-    window.__serverWhisperTranscriptionClient = serverWhisperTranscriptionClient;
     window.__browserWhisperTranscriptionClient = browserWhisperTranscriptionClient;
     window.__runTranscriptionUseCase = runTranscriptionUseCase;
-    window.__fetchAndApplyWhisperTranscriptFromTask = fetchAndApplyWhisperTranscriptFromTask;
     window.__framesmithRecoveryStore = recoveryStore;
     window.__framesmithRestoreRecoveryState = restoreFramesmithRecoveryStateOnLoad;
 
