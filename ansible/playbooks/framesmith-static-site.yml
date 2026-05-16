@@ -1,19 +1,9 @@
 ---
 - name: Provision FrameSmith static site
   hosts: framesmith_static_hosts
-  become: true
-  gather_facts: true
+  gather_facts: false
 
   tasks:
-    - name: Ensure nginx and certbot are installed
-      ansible.builtin.apt:
-        name:
-          - nginx
-          - certbot
-        state: present
-        update_cache: true
-      when: ansible_facts.os_family == "Debian"
-
     - name: Ensure FrameSmith checkout directory exists
       ansible.builtin.file:
         path: "{{ framesmith_repo_dir }}"
@@ -23,19 +13,57 @@
         mode: "0755"
 
     - name: Check whether FrameSmith TLS certificate already exists
-      ansible.builtin.stat:
-        path: "{{ framesmith_letsencrypt_live_dir }}/fullchain.pem"
+      ansible.builtin.command:
+        argv:
+          - sudo
+          - certbot
+          - certificates
+          - -d
+          - "{{ framesmith_domain }}"
       register: framesmith_tls_certificate_before
+      changed_when: false
+      failed_when: false
 
-    - name: Install HTTP nginx site for initial certificate challenge
-      ansible.builtin.template:
-        src: ../templates/framesmith-nginx.conf.j2
-        dest: "{{ framesmith_site_config_path }}"
-        owner: root
-        group: root
-        mode: "0644"
+    - name: Remember whether FrameSmith TLS certificate already exists
+      ansible.builtin.set_fact:
+        framesmith_tls_certificate_exists_before: >-
+          {{ ('Certificate Name: ' ~ framesmith_domain) in framesmith_tls_certificate_before.stdout }}
+
+    - name: Render initial nginx site locally
+      ansible.builtin.set_fact:
+        framesmith_rendered_nginx_site: "{{ lookup('template', '../templates/framesmith-nginx.conf.j2') }}"
       vars:
-        framesmith_tls_certificate_exists: "{{ framesmith_tls_certificate_before.stat.exists }}"
+        framesmith_tls_certificate_exists: "{{ framesmith_tls_certificate_exists_before }}"
+
+    - name: Read existing nginx site config if present
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -c
+          - "test -f {{ framesmith_site_available_path | quote }} && cat {{ framesmith_site_available_path | quote }} || true"
+      register: framesmith_existing_nginx_site
+      changed_when: false
+
+    - name: Install initial nginx site through constrained sudo tee
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cat <<'FRAMESMITH_NGINX_CONFIG' | sudo tee {{ framesmith_site_available_path | quote }} >/dev/null
+        {{ framesmith_rendered_nginx_site }}
+        FRAMESMITH_NGINX_CONFIG
+      args:
+        executable: /bin/bash
+      when: framesmith_existing_nginx_site.stdout != framesmith_rendered_nginx_site
+      notify: Reload nginx safely
+
+    - name: Enable FrameSmith nginx site through constrained sudo ln
+      ansible.builtin.command:
+        argv:
+          - sudo
+          - ln
+          - -sfn
+          - "{{ framesmith_site_available_path }}"
+          - "{{ framesmith_site_enabled_path }}"
+      changed_when: false
       notify: Reload nginx safely
 
     - name: Flush nginx handlers before certificate request
@@ -51,39 +79,74 @@
           {{ ['--staging'] if framesmith_certbot_staging else [] }}
         framesmith_certbot_command: >-
           {{
-            ['certbot', 'certonly', '--webroot', '-w', framesmith_web_root,
+            ['sudo', 'certbot', 'certonly', '--webroot', '-w', framesmith_web_root,
              '-d', framesmith_domain, '--agree-tos', '--non-interactive']
             + framesmith_certbot_email_arguments
             + framesmith_certbot_staging_arguments
           }}
       when:
         - framesmith_manage_tls | bool
-        - not framesmith_tls_certificate_before.stat.exists
+        - not framesmith_tls_certificate_exists_before
+        - not ansible_check_mode
 
     - name: Check whether FrameSmith TLS certificate exists after request
-      ansible.builtin.stat:
-        path: "{{ framesmith_letsencrypt_live_dir }}/fullchain.pem"
+      ansible.builtin.command:
+        argv:
+          - sudo
+          - certbot
+          - certificates
+          - -d
+          - "{{ framesmith_domain }}"
       register: framesmith_tls_certificate_after
+      changed_when: false
+      failed_when: false
 
-    - name: Install final nginx site
-      ansible.builtin.template:
-        src: ../templates/framesmith-nginx.conf.j2
-        dest: "{{ framesmith_site_config_path }}"
-        owner: root
-        group: root
-        mode: "0644"
+    - name: Remember whether FrameSmith TLS certificate exists after request
+      ansible.builtin.set_fact:
+        framesmith_tls_certificate_exists_after: >-
+          {{ ('Certificate Name: ' ~ framesmith_domain) in framesmith_tls_certificate_after.stdout }}
+
+    - name: Render final nginx site locally
+      ansible.builtin.set_fact:
+        framesmith_final_rendered_nginx_site: "{{ lookup('template', '../templates/framesmith-nginx.conf.j2') }}"
       vars:
-        framesmith_tls_certificate_exists: "{{ framesmith_tls_certificate_after.stat.exists }}"
+        framesmith_tls_certificate_exists: "{{ framesmith_tls_certificate_exists_after }}"
+
+    - name: Read existing nginx site config before final install
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -c
+          - "test -f {{ framesmith_site_available_path | quote }} && cat {{ framesmith_site_available_path | quote }} || true"
+      register: framesmith_existing_final_nginx_site
+      changed_when: false
+
+    - name: Install final nginx site through constrained sudo tee
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cat <<'FRAMESMITH_NGINX_CONFIG' | sudo tee {{ framesmith_site_available_path | quote }} >/dev/null
+        {{ framesmith_final_rendered_nginx_site }}
+        FRAMESMITH_NGINX_CONFIG
+      args:
+        executable: /bin/bash
+      when: framesmith_existing_final_nginx_site.stdout != framesmith_final_rendered_nginx_site
       notify: Reload nginx safely
 
   handlers:
     - name: Test nginx configuration
-      ansible.builtin.command: nginx -t
+      ansible.builtin.command:
+        argv:
+          - sudo
+          - nginx
+          - -t
       changed_when: false
       listen: Reload nginx safely
 
     - name: Reload nginx
-      ansible.builtin.service:
-        name: nginx
-        state: reloaded
+      ansible.builtin.command:
+        argv:
+          - sudo
+          - systemctl
+          - reload
+          - nginx
       listen: Reload nginx safely
