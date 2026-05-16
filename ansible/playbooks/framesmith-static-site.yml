@@ -4,7 +4,7 @@
   gather_facts: false
 
   tasks:
-    - name: Ensure FrameSmith checkout directory exists
+    - name: Ensure FrameSmith web root directory exists
       ansible.builtin.file:
         path: "{{ framesmith_repo_dir }}"
         state: directory
