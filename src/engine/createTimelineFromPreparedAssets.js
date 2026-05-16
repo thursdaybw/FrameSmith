@@ -1,7 +1,7 @@
-import { Timeline } from '../timeline/Timeline.js';
-import { Track } from '../timeline/Track.js';
-import { Clip } from '../timeline/Clip.js';
-import { ProceduralClip } from '../timeline/ProceduralClip.js';
+import { Timeline } from '../../vendor/media-timeline-compiler/Timeline.js';
+import { Track } from '../../vendor/media-timeline-compiler/Track.js';
+import { Clip } from '../../vendor/media-timeline-compiler/Clip.js';
+import { ProceduralClip } from '../../vendor/media-timeline-compiler/ProceduralClip.js';
 
 const DEFAULT_TEXT_OVERLAY_STYLE = Object.freeze({
     // Mirrors Drupal caption style: bevan_s_bench_portrait

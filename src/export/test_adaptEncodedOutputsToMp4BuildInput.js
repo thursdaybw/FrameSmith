@@ -1,5 +1,5 @@
 import { adaptEncodedOutputsToMp4BuildInput } from "./adaptEncodedOutputsToMp4BuildInput.js";
-import { validateMp4BuildInput } from "../mux/native/validateMp4BuildInput.js";
+import { validateMp4BuildInput } from "../../vendor/native-mp4-muxer/validateMp4BuildInput.js";
 
 function assert(condition, message) {
     if (!condition) {

@@ -19,26 +19,26 @@
  * - Keep deep architecture narrative out of this file.
  */
 
-import { Timeline } from "./src/timeline/Timeline.js";
-import { Track } from "./src/timeline/Track.js";
-import { Clip } from "./src/timeline/Clip.js";
-import { ProceduralClip } from "./src/timeline/ProceduralClip.js";
+import { Timeline } from "./vendor/media-timeline-compiler/Timeline.js";
+import { Track } from "./vendor/media-timeline-compiler/Track.js";
+import { Clip } from "./vendor/media-timeline-compiler/Clip.js";
+import { ProceduralClip } from "./vendor/media-timeline-compiler/ProceduralClip.js";
 
-import { resolveTextOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/textOverlayFragmentIntentResolver.js";
-import { resolveImageOverlayFragmentIntentAtTime } from "./src/timeline/procedural/resolvers/resolvers/imageOverlayFragmentIntentResolver.js";
+import { resolveTextOverlayFragmentIntentAtTime } from "./vendor/media-timeline-compiler/procedural/resolvers/resolvers/textOverlayFragmentIntentResolver.js";
+import { resolveImageOverlayFragmentIntentAtTime } from "./vendor/media-timeline-compiler/procedural/resolvers/resolvers/imageOverlayFragmentIntentResolver.js";
 
-import { openContainerFromMp4 } from "./src/mux/native/demux/container/openContainerFromMp4.js";
-import { openContainer } from "./src/mux/native/demux/container/openContainer.js";
+import { openContainerFromMp4 } from "./vendor/native-mp4-muxer/demux/container/openContainerFromMp4.js";
+import { openContainer } from "./vendor/native-mp4-muxer/demux/container/openContainer.js";
 
 // Only import this for current preview, which is a development pscyholgoy convenience, remove this when upgrading preview
 // to future API
-import { buildPrerenderPlanFromTimeline } from "./src/timeline/compileTimeline.js";
+import { buildPrerenderPlanFromTimeline } from "./vendor/media-timeline-compiler/compileTimeline.js";
 
 import { resolveProceduralFragmentsAtTimeFromPlan } from "./src/prerender/resolveProceduralFragmentsAtTimeFromPlan.js";
 import { drawRenderIntentsOnCanvas } from "./src/composition/composeAtTime.js";
 import { ExportExecutionStrategy } from "./src/prerender/strategies/ExportExecutionStrategy.js?v=2026-02-15-1";
 import { createContainerWebCodecsDecodePort } from "./src/prerender/decodePorts/createContainerWebCodecsDecodePort.js";
-import { parseAudioSpecificConfigFromEsds } from "./src/mux/native/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
+import { parseAudioSpecificConfigFromEsds } from "./vendor/native-mp4-muxer/codec-introspection/mp4a/parseAudioSpecificConfigFromEsds.js";
 import { logEncodeDiagnostics } from "./src/app/debug/logEncodeDiagnostics.js";
 import { EncodePipelineRun } from "./src/app/encode/EncodePipelineRun.js";
 import {
@@ -46,11 +46,9 @@ import {
     readEncodeCapacityEnvironment,
     resolveDecodeChunkSecondsForCapacityProfile
 } from "./src/app/encode/EncodeCapacityProfile.js";
-import { encodePcm16WavFromAudioBuffer } from "./src/audio/encodePcm16Wav.js";
 import { createTimelineFromPreparedAssets } from "./src/engine/createTimelineFromPreparedAssets.js";
 import {
     mergeFramesmithRecoverySnapshot,
-    hasFramesmithRecoveryTask,
     hasFramesmithRecoveryTranscript,
     matchesFramesmithRecoverySource
 } from "./src/app/recovery/FramesmithRecoverySnapshot.js";
@@ -65,16 +63,13 @@ import {
 import { buildTranscriptTextFromWhisperJson } from "./src/transcription/buildTranscriptTextFromWhisperJson.js";
 import { createRunTranscriptionUseCase } from "./src/transcription/RunTranscriptionUseCase.js";
 import { TRANSCRIPTION_MODE } from "./src/transcription/SelectTranscriptionClient.js";
-import { createDrupalWhisperTranscriptionClient } from "./src/transcription/server/DrupalWhisperTranscriptionClient.js";
 import {
-    TRANSCRIPTION_CLIENT_KIND,
-    createTranscriptionClient
+    TRANSCRIPTION_CLIENT_KIND
 } from "./src/transcription/TranscriptionClient.js";
 import { createBrowserWhisperTranscriptionClient } from "./src/transcription/local/BrowserWhisperTranscriptionClient.js";
 
 const DEFAULT_OUTPUT_WIDTH = 720;
 const DEFAULT_OUTPUT_HEIGHT = 1280;
-const drupalWhisperTranscriptionClient = createDrupalWhisperTranscriptionClient();
 const browserWhisperTranscriptionClient = createBrowserWhisperTranscriptionClient();
 const DEFAULT_PRE_RENDER_FPS = 30;
 
@@ -356,11 +351,6 @@ function readRuntimeConfig() {
     const fixtureAutoEncodeOnLoad =
         searchParams.get("fixtureAutoEncode") === "1" ||
         searchParams.get("autoEncode") === "1";
-    const transcriptionBaseUrl = searchParams.get("transcriptionBaseUrl") || "";
-    const transcriptionVideoId =
-        searchParams.get("transcriptionVideoId") ||
-        searchParams.get("videoId") ||
-        "";
     const forcedEncodeCapacityProfile =
         searchParams.get("encodeCapacityProfile") ||
         searchParams.get("encodeProfile") ||
@@ -376,10 +366,6 @@ function readRuntimeConfig() {
         testing: {
             fixtureUrl,
             fixtureAutoEncodeOnLoad
-        },
-        transcription: {
-            baseUrl: transcriptionBaseUrl,
-            videoId: transcriptionVideoId
         },
         debug: {
             enableEncodeDiagnostics: searchParams.get("encodeDiagnostics") !== "0"
@@ -414,7 +400,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const previewBtn = document.getElementById("previewBtn");
     const transcribeBtn = document.getElementById("transcribeBtn");
-    const transcriptionModeSelect = document.getElementById("transcriptionModeSelect");
     const transcriptionModelSelect = document.getElementById("transcriptionModelSelect");
     const showTranscriptBtn = document.getElementById("showTranscriptBtn");
     const encodeBtn = document.getElementById("encodeBtn");
@@ -455,7 +440,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     let lastEncodedAudioProgressChunkCount = 0;
     let previewAnimationFrameId = null;
     let previewPlan = null;
-    let lastWhisperAudioSourceKey = null;
     let latestTranscriptText = "";
     let copyFeedbackTimeoutId = null;
 
@@ -619,9 +603,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const setWorkflowEnabled = (enabled) => {
         const disabled = !enabled || isEncodeInProgress || isTranscribeInProgress;
         previewBtn.disabled = disabled;
-        if (transcriptionModeSelect) {
-            transcriptionModeSelect.disabled = disabled;
-        }
         if (transcriptionModelSelect) {
             transcriptionModelSelect.disabled = disabled;
         }
@@ -870,9 +851,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function buildBaseRecoveryPatch() {
         const source = currentVideoSourceDescriptor();
-        const patch = {
-            baseUrl: resolveTranscriptionBaseUrl()
-        };
+        const patch = {};
         if (source.key || source.name || source.size !== null || source.lastModified !== null) {
             patch.videoSourceKey = source.key;
             patch.videoSourceName = source.name;
@@ -948,69 +927,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const snapshot = readFramesmithRecoverySnapshot();
         window.__framesmithRecoverySnapshot = snapshot;
-        if (!snapshot || (!hasFramesmithRecoveryTask(snapshot) && !hasFramesmithRecoveryTranscript(snapshot))) {
+        if (!snapshot || !hasFramesmithRecoveryTranscript(snapshot)) {
             return;
         }
 
-        if (snapshot.taskId) {
-            window.__lastWhisperDrupalTaskId = snapshot.taskId;
-        }
         await restoreTranscriptArtifactsFromRecoverySnapshot(snapshot);
-        if (snapshot.statusPayload) {
-            window.__lastWhisperTranscriptionPollState = {
-                taskId: snapshot.taskId,
-                recoveredAt: Date.now(),
-                status: snapshot.taskStatus || "",
-                lastStatusPayload: snapshot.statusPayload,
-                recoveryPolling: false,
-                transportFailureCount: 0
-            };
-        }
-        if (snapshot.transcriptionResult) {
-            window.__lastWhisperTranscriptionResult = snapshot.transcriptionResult;
-        }
-
-        const taskLabel = snapshot.taskId ? `task ${shortTaskId(snapshot.taskId)}` : "saved transcript";
-        if (hasFramesmithRecoveryTranscript(snapshot)) {
-            setVideoSourceStatus(
-                `Recovered ${taskLabel}. Re-select the source video to preview or export.`
-            );
-        } else {
-            setVideoSourceStatus(`Recovered transcription ${taskLabel}; checking status...`);
-        }
-
-        if (!snapshot.taskId) {
-            return;
-        }
-
-        fetchAndApplyWhisperTranscriptFromTask({
-            taskId: snapshot.taskId,
-            transcriptionBaseUrl: snapshot.baseUrl || undefined,
-            waitForJson: true
-        }).then((result) => {
-            saveTranscriptionRecoverySnapshot({
-                taskId: snapshot.taskId,
-                taskStatus: String(result?.statusPayload?.status || "completed"),
-                statusPayload: result?.statusPayload || null,
-                transcriptFetchResult: result,
-                whisperJson: result?.whisperJson || null,
-                overlayItems: window.__runtimeTranscriptOverlayItems || [],
-                transcriptText: latestTranscriptText,
-                transcriptReady: true,
-                lastError: null
-            });
-            setVideoSourceStatus(
-                cachedSelectedVideo?.bytes instanceof Uint8Array
-                    ? "Captions ready"
-                    : `Recovered captions for task ${shortTaskId(snapshot.taskId)}. Re-select the source video to preview or export.`
-            );
-        }).catch((error) => {
-            saveTranscriptionRecoverySnapshot({
-                taskId: snapshot.taskId,
-                lastError: error?.message || String(error)
-            });
-            console.warn("[Recovery] recovered transcription task could not be refreshed", error);
-        });
+        setVideoSourceStatus("Recovered saved transcript. Re-select the source video to preview or export.");
     }
 
     updateTranscriptControlsState();
@@ -1021,312 +943,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
 
-    async function decodeAudioBufferFromSourceBytes(sourceBytes) {
-        const AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext;
-        if (typeof AudioContextCtor !== "function") {
-            throw new Error("AudioContext is not available in this browser.");
-        }
-        const audioContext = new AudioContextCtor();
-        try {
-            const workingCopy = sourceBytes.slice();
-            return await audioContext.decodeAudioData(workingCopy.buffer);
-        } finally {
-            if (typeof audioContext.close === "function") {
-                await audioContext.close();
-            }
-        }
-    }
-
-    async function resampleAudioBufferForWhisper({
-        audioBuffer,
-        targetSampleRate,
-        targetChannels
-    }) {
-        if (!audioBuffer) {
-            throw new Error("resampleAudioBufferForWhisper: audioBuffer is required.");
-        }
-        const frameCount = Math.max(1, Math.ceil(audioBuffer.duration * targetSampleRate));
-        const offlineContext = new OfflineAudioContext(
-            targetChannels,
-            frameCount,
-            targetSampleRate
-        );
-        const source = offlineContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(offlineContext.destination);
-        source.start(0);
-        return await offlineContext.startRendering();
-    }
-
-    async function extractWhisperReadyAudioFromLoadedSource({
-        targetSampleRate = 16_000,
-        targetChannels = 1,
-        showStatus = true
-    } = {}) {
-        if (!cachedSelectedVideo || !(cachedSelectedVideo.bytes instanceof Uint8Array)) {
-            throw new Error("No loaded source bytes are available.");
-        }
-        const currentSourceKey = String(cachedSelectedVideo.fileKey || "");
-        const hasCachedWhisperAudio =
-            lastWhisperAudioSourceKey === currentSourceKey &&
-            window.__lastWhisperAudioBlob instanceof Blob &&
-            window.__lastWhisperAudioBytes instanceof Uint8Array;
-        if (hasCachedWhisperAudio) {
-            if (showStatus) {
-                const cachedBytes = Number(window.__lastWhisperAudioBytes?.length || 0);
-                const cachedMiB = cachedBytes > 0 ? ` (${(cachedBytes / (1024 * 1024)).toFixed(1)} MiB WAV)` : "";
-                setVideoSourceStatus(`Extracted WAV audio ready for upload${cachedMiB}.`);
-            }
-            return {
-                blob: window.__lastWhisperAudioBlob,
-                bytes: window.__lastWhisperAudioBytes,
-                meta: window.__lastWhisperAudioMeta
-            };
-        }
-
-        if (showStatus) {
-            setVideoSourceStatus("Extracting audio from the selected video for transcription...");
-        }
-        const decodedAudioBuffer = await decodeAudioBufferFromSourceBytes(cachedSelectedVideo.bytes);
-        if (showStatus) {
-            setVideoSourceStatus(`Converting extracted audio to ${targetSampleRate} Hz mono WAV for upload...`);
-        }
-        const renderedAudioBuffer = await resampleAudioBufferForWhisper({
-            audioBuffer: decodedAudioBuffer,
-            targetSampleRate,
-            targetChannels
-        });
-        if (showStatus) {
-            setVideoSourceStatus("Encoding transcription audio as WAV before upload...");
-        }
-        const wavBytes = encodePcm16WavFromAudioBuffer(renderedAudioBuffer);
-        const wavBlob = new Blob([wavBytes], {
-            type: "audio/wav"
-        });
-        window.__lastWhisperAudioBlob = wavBlob;
-        window.__lastWhisperAudioBytes = wavBytes;
-        window.__lastWhisperAudioMeta = {
-            sampleRate: renderedAudioBuffer.sampleRate,
-            channels: renderedAudioBuffer.numberOfChannels,
-            durationSeconds: Number(renderedAudioBuffer.duration.toFixed(3)),
-            bytes: wavBytes.length
-        };
-        lastWhisperAudioSourceKey = currentSourceKey;
-        if (showStatus) {
-            setVideoSourceStatus(`Extracted WAV audio ready for upload (${(wavBytes.length / (1024 * 1024)).toFixed(1)} MiB).`);
-        }
-        return {
-            blob: wavBlob,
-            bytes: wavBytes,
-            meta: window.__lastWhisperAudioMeta
-        };
-    }
-
-    function createFallbackUuid() {
-        const randomHex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
-        return (
-            `${randomHex()}${randomHex()}-${randomHex()}-4${randomHex().slice(1)}-` +
-            `${(8 + Math.floor(Math.random() * 4)).toString(16)}${randomHex().slice(1)}-` +
-            `${randomHex()}${randomHex()}${randomHex()}`
-        );
-    }
-
-    function createTranscriptionVideoId() {
-        const configuredVideoId = String(runtimeConfig?.transcription?.videoId || "").trim();
-        if (configuredVideoId.length > 0) {
-            return configuredVideoId;
-        }
-        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
-            return globalThis.crypto.randomUUID();
-        }
-        return createFallbackUuid();
-    }
-
-    function resolveTranscriptionBaseUrl(explicitBaseUrl) {
-        const base = String(explicitBaseUrl || runtimeConfig?.transcription?.baseUrl || "").trim();
-        if (base.length > 0) {
-            return base;
-        }
-        return window.location.origin;
-    }
-
-    function isBrowserOffline() {
-        return typeof navigator !== "undefined" && navigator.onLine === false;
-    }
-
-    function classifyFetchFailure(error) {
-        const remote = error && typeof error === "object" ? error.remote : null;
-        if (remote && typeof remote === "object") {
-            return {
-                kind: String(remote.kind || "unknown"),
-                retryable: remote.retryable !== false,
-                status: typeof remote.status === "number" ? remote.status : null,
-                url: typeof remote.url === "string" ? remote.url : ""
-            };
-        }
-        const message = error && error.message ? error.message : String(error || "");
-        const looksLikeNetworkFailure = /Failed to fetch|Network request failed|Load failed|NetworkError|timeout|abort/i.test(message);
-        return {
-            kind: isBrowserOffline() ? "offline" : (looksLikeNetworkFailure ? "network" : "unknown"),
-            retryable: looksLikeNetworkFailure || isBrowserOffline(),
-            status: null,
-            url: ""
-        };
-    }
-
-    function describeRemoteFailure(error) {
-        const classification = classifyFetchFailure(error);
-        if (classification.kind === "offline") {
-            return "network appears offline";
-        }
-        if (classification.kind === "http" && classification.status !== null) {
-            return `server returned HTTP ${classification.status}`;
-        }
-        if (classification.kind === "invalid_json") {
-            return "server returned an unreadable response";
-        }
-        if (classification.kind === "retry_exhausted") {
-            return describeRemoteFailure(error?.lastError || error?.cause || "network retry attempts were exhausted");
-        }
-        const message = error && error.message ? error.message : String(error || "");
-        return message.length > 0 ? message : "network request failed";
-    }
-
-    function createRetryPolicy({
-        maxAttempts = 3,
-        baseDelayMs = 1_000,
-        maxDelayMs = 30_000,
-        jitterMs = 500
-    } = {}) {
-        return {
-            maxAttempts: Math.max(1, Number(maxAttempts) || 1),
-            baseDelayMs: Math.max(0, Number(baseDelayMs) || 0),
-            maxDelayMs: Math.max(0, Number(maxDelayMs) || 0),
-            jitterMs: Math.max(0, Number(jitterMs) || 0)
-        };
-    }
-
-    function retryDelayMilliseconds(attempt, retryPolicy = {}) {
-        const policy = createRetryPolicy(retryPolicy);
-        const exponentialDelayMs = policy.baseDelayMs * (2 ** Math.max(0, attempt - 1));
-        const jitterMs = policy.jitterMs > 0 ? Math.floor(Math.random() * policy.jitterMs) : 0;
-        return Math.min(policy.maxDelayMs, exponentialDelayMs + jitterMs);
-    }
-
-    function formatRetryStatusMessage({
-        subject = "Request",
-        error,
-        nextAttempt,
-        maxAttempts,
-        delayMs
-    }) {
-        return `${subject} failed (${describeRemoteFailure(error)}). ` +
-            `Retrying ${nextAttempt}/${maxAttempts} in ${Math.round(delayMs / 1000)}s.`;
-    }
-
-    function isRetryableRemoteError(error) {
-        return classifyFetchFailure(error).retryable !== false;
-    }
-
-    function createRemoteOperationExhaustedError({
-        operationName,
-        attempts,
-        lastError
-    }) {
-        const error = new Error(
-            `${operationName} failed after ${attempts} attempt${attempts === 1 ? "" : "s"}: ` +
-            describeRemoteFailure(lastError)
-        );
-        error.name = "RemoteOperationExhaustedError";
-        error.operationName = operationName;
-        error.attempts = attempts;
-        error.lastError = lastError;
-        error.cause = lastError;
-        error.remote = {
-            kind: "retry_exhausted",
-            retryable: true,
-            attempts,
-            lastClassification: classifyFetchFailure(lastError)
-        };
-        return error;
-    }
-
-    async function runRetryingRemoteOperation({
-        operationName = "remote_operation",
-        retryPolicy = {},
-        request,
-        beforeAttempt = null,
-        beforeRetry = null,
-        isRetryableError = isRetryableRemoteError
-    }) {
-        if (typeof request !== "function") {
-            throw new Error("runRetryingRemoteOperation: request callback is required.");
-        }
-        const policy = createRetryPolicy(retryPolicy);
-        let lastError = null;
-
-        for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
-            if (typeof beforeAttempt === "function") {
-                await beforeAttempt({ attempt, maxAttempts: policy.maxAttempts, operationName, retryPolicy: policy });
-            }
-            try {
-                return {
-                    result: await request({ attempt, maxAttempts: policy.maxAttempts, operationName, retryPolicy: policy }),
-                    attempts: attempt
-                };
-            } catch (error) {
-                lastError = error;
-                if (error && typeof error === "object") {
-                    error.attempts = attempt;
-                    error.operationName = operationName;
-                }
-                const retryable = isRetryableError(error, { attempt, maxAttempts: policy.maxAttempts, operationName, retryPolicy: policy });
-                if (!retryable) {
-                    throw error;
-                }
-                if (attempt >= policy.maxAttempts) {
-                    throw createRemoteOperationExhaustedError({
-                        operationName,
-                        attempts: attempt,
-                        lastError
-                    });
-                }
-                const delayMs = retryDelayMilliseconds(attempt, policy);
-                if (typeof beforeRetry === "function") {
-                    await beforeRetry({
-                        attempt,
-                        nextAttempt: attempt + 1,
-                        maxAttempts: policy.maxAttempts,
-                        delayMs,
-                        error,
-                        operationName,
-                        retryPolicy: policy,
-                        classification: classifyFetchFailure(error)
-                    });
-                }
-                await sleep(delayMs);
-            }
-        }
-
-        throw createRemoteOperationExhaustedError({
-            operationName,
-            attempts: policy.maxAttempts,
-            lastError
-        });
-    }
-
-    async function loadWhisperJsonFromStatusPayload({
-        transcriptionBaseUrl,
-        statusPayload,
-        taskId = ""
-    }) {
-        return drupalWhisperTranscriptionClient.loadResultJson({
-            baseUrl: resolveTranscriptionBaseUrl(transcriptionBaseUrl),
-            statusPayload,
-            taskId
-        });
-    }
-
     async function applyWhisperTranscriptToTimeline({
         whisperJson,
         sourceLabel = "runtime-whisper"
@@ -1336,17 +952,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.__runtimeTranscriptOverlayItems = overlayItems;
         window.__runtimeWhisperTranscriptJson = whisperJson;
         setLatestTranscriptFromOverlayItems(overlayItems, whisperJson);
-        const recoveryPatch = {
+        saveTranscriptionRecoverySnapshot({
             whisperJson,
             overlayItems,
             transcriptText: latestTranscriptText,
             transcriptReady: true,
             lastError: null
-        };
-        if (window.__lastWhisperDrupalTaskId) {
-            recoveryPatch.taskId = window.__lastWhisperDrupalTaskId;
-        }
-        saveTranscriptionRecoverySnapshot(recoveryPatch);
+        });
 
         console.log("[Timeline][text-overlay] applied runtime transcript overlay items", {
             sourceLabel,
@@ -1360,746 +972,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         return overlayItems;
-    }
-
-    /**
-     * Builds a fresh multipart body for one upload attempt.
-     *
-     * Mobile browsers can treat request bodies as one-shot streams once a
-     * fetch attempt has started or failed. Rebuilding FormData for every retry
-     * keeps chunk retry behaviour independent of those browser internals.
-     */
-    function createWhisperAudioChunkFormData({
-        chunk,
-        index,
-        taskId,
-        autoLaunch
-    }) {
-        const formData = new FormData();
-        formData.append("file", chunk, `part-${index}.bin`);
-        formData.append("task_id", taskId);
-        formData.append("auto_launch", autoLaunch ? "1" : "0");
-        return formData;
-    }
-
-    async function waitForBrowserOnline({
-        message = "Network appears offline; waiting before retrying request...",
-        timeoutMs = 15_000
-    } = {}) {
-        if (!isBrowserOffline()) {
-            return;
-        }
-        setVideoSourceStatus(message);
-        await new Promise((resolve) => {
-            const timeout = setTimeout(resolve, timeoutMs);
-            window.addEventListener("online", () => {
-                clearTimeout(timeout);
-                resolve();
-            }, { once: true });
-        });
-    }
-
-    const WHISPER_UPLOAD_INITIAL_CHUNK_SIZE_BYTES = 256 * 1024;
-    const WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES = 64 * 1024;
-    const WHISPER_UPLOAD_ATTEMPTS_BEFORE_RANGE_REDUCTION = 4;
-    const WHISPER_UPLOAD_RANGE_REQUEST_TIMEOUT_MS = 30_000;
-
-    function describeUploadFailure(error) {
-        return describeRemoteFailure(error);
-    }
-
-    function uploadProgressPercent(uploadedBytes, totalBytes) {
-        if (!totalBytes) {
-            return 0;
-        }
-        return Math.max(0, Math.min(100, Math.floor((uploadedBytes / totalBytes) * 100)));
-    }
-
-    function createWhisperUploadId() {
-        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
-            return globalThis.crypto.randomUUID();
-        }
-        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    }
-
-    function smallerUploadRangeSize(currentRangeSize) {
-        return Math.max(WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES, Math.floor(currentRangeSize / 2));
-    }
-
-    function canReduceUploadRangeSize(currentRangeSize) {
-        return currentRangeSize > WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES;
-    }
-
-    function estimateRemainingUploadRanges({ uploadedBytes, totalBytes, rangeSize }) {
-        const remainingBytes = Math.max(0, totalBytes - uploadedBytes);
-        return Math.max(1, Math.ceil(remainingBytes / rangeSize));
-    }
-
-    function setAdaptiveUploadStatus({
-        uploadedBytes,
-        totalBytes,
-        rangeSize,
-        message
-    }) {
-        const percent = uploadProgressPercent(uploadedBytes, totalBytes);
-        const rangeSizeKiB = Math.max(1, Math.round(rangeSize / 1024));
-        const remainingRanges = estimateRemainingUploadRanges({
-            uploadedBytes,
-            totalBytes,
-            rangeSize
-        });
-        setVideoSourceStatus(
-            `${message} Uploaded ${percent}% (${uploadedBytes}/${totalBytes} bytes, ` +
-            `${rangeSizeKiB} KiB ranges, about ${remainingRanges} ranges remaining). ` +
-            "Please keep this tab open while the audio upload completes."
-        );
-    }
-
-    function createWhisperUploadRangeFailure({
-        error,
-        offset,
-        size,
-        attempts,
-        uploadedBytes,
-        totalBytes
-    }) {
-        const failure = new Error(describeUploadFailure(error));
-        failure.name = "WhisperUploadRangeFailure";
-        failure.cause = error;
-        failure.offset = offset;
-        failure.size = size;
-        failure.attempts = attempts;
-        failure.uploadedBytes = uploadedBytes;
-        failure.totalBytes = totalBytes;
-        return failure;
-    }
-
-    async function uploadWhisperAudioRangeWithRetry({
-        resolvedBaseUrl,
-        uploadId,
-        blob,
-        offset,
-        rangeSize,
-        taskId,
-        autoLaunch,
-        maxAttempts = WHISPER_UPLOAD_ATTEMPTS_BEFORE_RANGE_REDUCTION
-    }) {
-        const end = Math.min(offset + rangeSize, blob.size);
-        const size = end - offset;
-        const retryPolicy = createRetryPolicy({ maxAttempts });
-
-        try {
-            const operation = await runRetryingRemoteOperation({
-                operationName: "whisper_audio_range_upload",
-                retryPolicy,
-                beforeAttempt: () => waitForBrowserOnline({
-                    message: "Network appears offline; waiting before retrying audio upload..."
-                }),
-                request: async () => {
-                    const chunk = blob.slice(offset, end, blob.type || "audio/wav");
-                    const formData = createWhisperAudioChunkFormData({
-                        chunk,
-                        index: offset,
-                        taskId,
-                        autoLaunch
-                    });
-                    // The upload range transport must be bounded. If the mobile
-                    // browser silently hangs instead of failing, the retry
-                    // policy never regains control and the task stays pinned in
-                    // awaiting_upload with no backend work to resume.
-                    return drupalWhisperTranscriptionClient.uploadAudioRange({
-                        baseUrl: resolvedBaseUrl,
-                        taskId,
-                        uploadId,
-                        offset,
-                        size,
-                        totalSize: blob.size,
-                        body: formData,
-                        timeoutMs: WHISPER_UPLOAD_RANGE_REQUEST_TIMEOUT_MS
-                    });
-                },
-                beforeRetry: ({ error, nextAttempt, maxAttempts: retryMaxAttempts, delayMs }) => {
-                    setAdaptiveUploadStatus({
-                        uploadedBytes: offset,
-                        totalBytes: blob.size,
-                        rangeSize,
-                        message:
-                            `Poor network detected; upload range at byte ${offset} failed ` +
-                            `(${describeUploadFailure(error)}). Retrying ${nextAttempt}/${retryMaxAttempts} ` +
-                            `in ${Math.round(delayMs / 1000)}s.`
-                    });
-                }
-            });
-
-            return {
-                result: operation.result,
-                offset,
-                size,
-                attempts: operation.attempts,
-                uploadedBytesAfterRange: end
-            };
-        } catch (error) {
-            throw createWhisperUploadRangeFailure({
-                error,
-                offset,
-                size,
-                attempts: typeof error?.attempts === "number" ? error.attempts : maxAttempts,
-                uploadedBytes: offset,
-                totalBytes: blob.size
-            });
-        }
-    }
-
-    function createFinalWhisperUploadFailureMessage({ taskId, failure }) {
-        const uploadedBytes = failure.uploadedBytes || 0;
-        const totalBytes = failure.totalBytes || 0;
-        const progressPercent = uploadProgressPercent(uploadedBytes, totalBytes);
-        const offset = typeof failure.offset === "number" ? failure.offset : "unknown";
-        return `Audio upload could not continue after repeated network failures. ` +
-            `Uploaded ${progressPercent}% (${uploadedBytes}/${totalBytes} bytes) before failing at byte ${offset}. ` +
-            `Task ID: ${taskId}. Keep this tab open if you can; retry/resume is needed instead of starting over. ` +
-            `Last error: ${describeUploadFailure(failure)}`;
-    }
-
-    async function reportWhisperUploadFailure({
-        resolvedBaseUrl,
-        taskId,
-        uploadId,
-        failure,
-        message
-    }) {
-        const payload = {
-            task_id: taskId,
-            upload_id: uploadId,
-            message,
-            failed_offset: typeof failure.offset === "number" ? failure.offset : null,
-            range_size: typeof failure.size === "number" ? failure.size : null,
-            attempts: typeof failure.attempts === "number" ? failure.attempts : null
-        };
-        try {
-            const result = await drupalWhisperTranscriptionClient.reportUploadFailure({
-                baseUrl: resolvedBaseUrl,
-                payload
-            });
-            window.__lastWhisperUploadFailureReport = result;
-            return result;
-        } catch (error) {
-            window.__lastWhisperUploadFailureReport = {
-                ok: false,
-                error: describeUploadFailure(error),
-                payload
-            };
-            console.warn("[Whisper][Drupal] upload failure report failed", error);
-            return null;
-        }
-    }
-
-    async function uploadWhisperAudioBlobInChunks({
-        resolvedBaseUrl,
-        taskId,
-        blob,
-        filename,
-        chunkSize = WHISPER_UPLOAD_INITIAL_CHUNK_SIZE_BYTES
-    }) {
-        if (!(blob instanceof Blob)) {
-            throw new Error("uploadWhisperAudioBlobInChunks: blob is required.");
-        }
-        if (!taskId) {
-            throw new Error("uploadWhisperAudioBlobInChunks: taskId is required.");
-        }
-
-        const uploadId = createWhisperUploadId();
-        let uploadedBytes = 0;
-        let currentRangeSize = Math.max(WHISPER_UPLOAD_MIN_CHUNK_SIZE_BYTES, chunkSize);
-        let finalResult = null;
-        let lastFailure = null;
-
-        while (uploadedBytes < blob.size) {
-            const end = Math.min(uploadedBytes + currentRangeSize, blob.size);
-            const size = end - uploadedBytes;
-            const autoLaunch = end >= blob.size;
-            setAdaptiveUploadStatus({
-                uploadedBytes,
-                totalBytes: blob.size,
-                rangeSize: currentRangeSize,
-                message: "Uploading audio to transcription service."
-            });
-
-            try {
-                const rangeUpload = await uploadWhisperAudioRangeWithRetry({
-                    resolvedBaseUrl,
-                    uploadId,
-                    blob,
-                    offset: uploadedBytes,
-                    rangeSize: currentRangeSize,
-                    taskId,
-                    autoLaunch
-                });
-                const rangeResult = rangeUpload.result;
-                uploadedBytes = rangeUpload.uploadedBytesAfterRange;
-                window.__lastWhisperUploadProgress = rangeResult?.upload_progress || null;
-                window.__lastWhisperUploadAdaptiveState = {
-                    uploadId,
-                    taskId,
-                    uploadedBytes,
-                    totalBytes: blob.size,
-                    rangeSize: currentRangeSize,
-                    lastUploadedOffset: rangeUpload.offset,
-                    lastUploadedSize: rangeUpload.size,
-                    lastRangeAttempts: rangeUpload.attempts
-                };
-                saveTranscriptionRecoverySnapshot({
-                    taskId,
-                    taskStatus: autoLaunch ? "uploaded" : "uploading",
-                    uploadProgress: window.__lastWhisperUploadProgress,
-                    uploadAdaptiveState: window.__lastWhisperUploadAdaptiveState
-                });
-                if (autoLaunch) {
-                    finalResult = rangeResult;
-                }
-            } catch (error) {
-                lastFailure = error;
-                if (!canReduceUploadRangeSize(currentRangeSize)) {
-                    break;
-                }
-                currentRangeSize = smallerUploadRangeSize(currentRangeSize);
-                window.__lastWhisperUploadAdaptiveState = {
-                    uploadId,
-                    taskId,
-                    uploadedBytes,
-                    totalBytes: blob.size,
-                    rangeSize: currentRangeSize,
-                    reducedRangeSizeAfterFailure: true,
-                    failedOffset: error.offset,
-                    restartReason: describeUploadFailure(error)
-                };
-                saveTranscriptionRecoverySnapshot({
-                    taskId,
-                    taskStatus: "upload_retrying",
-                    uploadAdaptiveState: window.__lastWhisperUploadAdaptiveState,
-                    lastError: describeUploadFailure(error)
-                });
-                setAdaptiveUploadStatus({
-                    uploadedBytes,
-                    totalBytes: blob.size,
-                    rangeSize: currentRangeSize,
-                    message:
-                        "Poor network detected; reducing upload range size and continuing from the last stored byte."
-                });
-            }
-        }
-
-        if (finalResult) {
-            return finalResult;
-        }
-
-        const finalFailure = lastFailure || new Error("unknown upload failure");
-        const finalMessage = createFinalWhisperUploadFailureMessage({
-            taskId,
-            failure: finalFailure
-        });
-        await reportWhisperUploadFailure({
-            resolvedBaseUrl,
-            taskId,
-            uploadId,
-            failure: finalFailure,
-            message: finalMessage
-        });
-        throw new Error(finalMessage);
-    }
-
-    /**
-     * Extract WAV from loaded source and upload it to Drupal transcription endpoints.
-     */
-    async function sendWhisperAudioToDrupal({
-        transcriptionBaseUrl,
-        videoId,
-        targetSampleRate = 16_000,
-        targetChannels = 1,
-    } = {}) {
-        const resolvedBaseUrl = resolveTranscriptionBaseUrl(transcriptionBaseUrl);
-        const resolvedVideoId = String(videoId || createTranscriptionVideoId());
-
-        setVideoSourceStatus("Preparing audio for transcription...");
-        setTranscriptionStageStatus("prepare_audio");
-        const whisperAudio = await extractWhisperReadyAudioFromLoadedSource({
-            targetSampleRate,
-            targetChannels,
-            showStatus: true
-        });
-
-        setVideoSourceStatus("Creating transcription task...");
-        setTranscriptionStageStatus("create_task");
-        const taskInit = await drupalWhisperTranscriptionClient.startTask({
-            baseUrl: resolvedBaseUrl,
-            videoId: resolvedVideoId
-        });
-        const taskId = String(taskInit.task_id || "");
-        window.__lastWhisperDrupalTaskId = taskId;
-        if (taskId.length === 0) {
-            throw new Error("Transcription task init response did not include task_id.");
-        }
-        saveTranscriptionRecoverySnapshot({
-            baseUrl: resolvedBaseUrl,
-            videoId: resolvedVideoId,
-            taskId,
-            taskStatus: String(taskInit.status || "created"),
-            taskInit,
-            statusPayload: taskInit,
-            audioMeta: whisperAudio.meta,
-            transcriptReady: false,
-            lastError: null
-        });
-
-        setVideoSourceStatus("Uploading audio to transcription service...");
-        setTranscriptionStageStatus("upload_audio");
-        const uploadResult = await uploadWhisperAudioBlobInChunks({
-            resolvedBaseUrl,
-            taskId,
-            blob: whisperAudio.blob,
-            filename: `${taskId}.wav`
-        });
-
-        const provisionResult = uploadResult?.launch || null;
-
-        const result = {
-            baseUrl: resolvedBaseUrl,
-            videoId: resolvedVideoId,
-            taskId,
-            taskInit,
-            uploadResult,
-            provisionResult,
-            audioMeta: whisperAudio.meta
-        };
-        window.__lastWhisperDrupalResult = result;
-        saveTranscriptionRecoverySnapshot({
-            baseUrl: resolvedBaseUrl,
-            videoId: resolvedVideoId,
-            taskId,
-            taskStatus: String(uploadResult?.status || "uploaded"),
-            uploadResult,
-            provisionResult,
-            statusPayload: uploadResult,
-            uploadProgress: uploadResult?.upload_progress || window.__lastWhisperUploadProgress || null,
-            audioMeta: whisperAudio.meta,
-            transcriptReady: false,
-            lastError: null
-        });
-        setVideoSourceStatus("Transcription queued");
-        console.log("[Whisper][Drupal] upload complete", result);
-        return result;
-    }
-
-    function shortTaskId(taskId) {
-        const value = String(taskId || "");
-        return value.length > 8 ? `${value.slice(0, 8)}…` : value;
-    }
-
-    async function fetchTranscriptionStatusWithResilience({
-        resolvedBaseUrl,
-        taskId,
-        retryPolicy,
-        operationName = "whisper_transcription_status_poll"
-    }) {
-        return runRetryingRemoteOperation({
-            operationName,
-            retryPolicy,
-            beforeAttempt: () => waitForBrowserOnline({
-                message: `Network appears offline; waiting before checking transcription status for task ${shortTaskId(taskId)}.`
-            }),
-            request: () => drupalWhisperTranscriptionClient.fetchStatus({
-                baseUrl: resolvedBaseUrl,
-                taskId
-            }),
-            beforeRetry: ({ error, nextAttempt, maxAttempts, delayMs }) => {
-                const failure = {
-                    taskId,
-                    error: describeRemoteFailure(error),
-                    classification: classifyFetchFailure(error),
-                    nextAttempt,
-                    maxAttempts,
-                    delayMs,
-                    at: Date.now()
-                };
-                window.__lastWhisperStatusPollTransportFailure = failure;
-                setTranscriptionStageStatus("polling", "network retry");
-                setVideoSourceStatus(
-                    `Poor network while checking transcription status for task ${shortTaskId(taskId)}. ` +
-                    `${formatRetryStatusMessage({
-                        subject: "Status check",
-                        error,
-                        nextAttempt,
-                        maxAttempts,
-                        delayMs
-                    })} This does not mean transcription failed. Please keep this tab open.`
-                );
-            }
-        });
-    }
-
-    async function pollWhisperTranscriptionStatus({
-        transcriptionBaseUrl,
-        taskId,
-        pollIntervalMs = 3_000,
-        timeoutMs = 10 * 60 * 1_000,
-        softTimeoutMs = timeoutMs,
-        hardTimeoutMs = Math.max(softTimeoutMs, 30 * 60 * 1_000),
-        slowPollIntervalMs = 15_000,
-        statusRetryPolicy = createRetryPolicy({
-            maxAttempts: 4,
-            baseDelayMs: 1_000,
-            maxDelayMs: 15_000,
-            jitterMs: 500
-        })
-    }) {
-        const resolvedBaseUrl = resolveTranscriptionBaseUrl(transcriptionBaseUrl);
-        const startedAt = Date.now();
-        const history = [];
-        let lastStatusPayload = null;
-        let lastTransportFailure = null;
-        let transportFailureCount = 0;
-        let recoveryPolling = false;
-
-        while (Date.now() - startedAt <= hardTimeoutMs) {
-            const elapsedMs = Date.now() - startedAt;
-            if (!recoveryPolling && elapsedMs > softTimeoutMs) {
-                recoveryPolling = true;
-                setTranscriptionStageStatus("polling", "still watching");
-                setVideoSourceStatus(
-                    `Transcription is taking longer than usual for task ${shortTaskId(taskId)}. ` +
-                    "Still checking the same task; please keep this tab open."
-                );
-            }
-            const currentPollIntervalMs = recoveryPolling ? slowPollIntervalMs : pollIntervalMs;
-            let statusPayload = null;
-            try {
-                const operation = await fetchTranscriptionStatusWithResilience({
-                    resolvedBaseUrl,
-                    taskId,
-                    retryPolicy: statusRetryPolicy
-                });
-                statusPayload = operation.result;
-                if (transportFailureCount > 0) {
-                    setVideoSourceStatus(`Status check recovered for task ${shortTaskId(taskId)}.`);
-                }
-            } catch (error) {
-                const classification = classifyFetchFailure(error);
-                const failure = {
-                    ok: false,
-                    taskId,
-                    error: describeRemoteFailure(error),
-                    classification,
-                    attempts: typeof error?.attempts === "number" ? error.attempts : null,
-                    at: Date.now()
-                };
-                lastTransportFailure = failure;
-                transportFailureCount += 1;
-                history.push({ transport_error: failure });
-                window.__lastWhisperStatusPollTransportFailure = failure;
-
-                if (classification.retryable === false) {
-                    setTranscriptionErrorStatus(`status check rejected (${failure.error})`);
-                    return {
-                        ok: false,
-                        taskId,
-                        statusPayload: lastStatusPayload,
-                        history,
-                        transportFailure: failure,
-                        reason: "status_poll_non_retryable_transport_failure"
-                    };
-                }
-
-                setTranscriptionStageStatus("polling", "network retry");
-                setVideoSourceStatus(
-                    `Poor network while checking transcription status for task ${shortTaskId(taskId)}. ` +
-                    `Still waiting; this does not mean transcription failed. Please keep this tab open.`
-                );
-                await sleep(currentPollIntervalMs);
-                continue;
-            }
-
-            history.push(statusPayload);
-            lastStatusPayload = statusPayload;
-
-            const status = String(statusPayload?.status || "").toLowerCase();
-            saveTranscriptionRecoverySnapshot({
-                taskId,
-                taskStatus: status || null,
-                statusPayload,
-                transcriptReady: statusPayload?.transcript_ready === true,
-                lastError: statusPayload?.task?.last_error || null
-            });
-            setTranscriptionStageStatus("polling", status || "working");
-            const transcriptReady = statusPayload?.transcript_ready === true;
-            if (transcriptReady || status === "completed") {
-                setVideoSourceStatus("Transcription complete");
-                return {
-                    ok: true,
-                    taskId,
-                    statusPayload,
-                    history,
-                    transportFailureCount
-                };
-            }
-
-            if (status === "failed" || status === "error") {
-                return {
-                    ok: false,
-                    taskId,
-                    statusPayload,
-                    history,
-                    transportFailureCount
-                };
-            }
-
-            if (recoveryPolling) {
-                setVideoSourceStatus(
-                    `Still waiting for transcription task ${shortTaskId(taskId)}. ` +
-                    `Latest backend status: ${status || "working"}.`
-                );
-            } else {
-                setVideoSourceStatus(`Transcription status: ${status || "working"}...`);
-            }
-            window.__lastWhisperTranscriptionPollState = {
-                taskId,
-                elapsedMs: Date.now() - startedAt,
-                recoveryPolling,
-                status,
-                transportFailureCount,
-                lastStatusPayload
-            };
-            await sleep(currentPollIntervalMs);
-        }
-
-        return {
-            ok: false,
-            taskId,
-            statusPayload: lastStatusPayload,
-            history,
-            timeout: true,
-            softTimeoutMs,
-            hardTimeoutMs,
-            recoveryPolling,
-            transportFailure: lastTransportFailure,
-            transportFailureCount,
-            reason: lastTransportFailure
-                ? "hard_timeout_waiting_for_framesmith_transcription_after_status_transport_failures"
-                : "hard_timeout_waiting_for_framesmith_transcription"
-        };
-    }
-
-    /**
-     * End-to-end transcription helper:
-     * extract WAV -> upload -> queue -> poll until transcript ready.
-     */
-    async function startWhisperTranscriptionAndPoll({
-        transcriptionBaseUrl,
-        videoId,
-        targetSampleRate = 16_000,
-        targetChannels = 1,
-        pollIntervalMs = 3_000,
-        timeoutMs = 10 * 60 * 1_000,
-        hardTimeoutMs = Math.max(timeoutMs, 30 * 60 * 1_000),
-        slowPollIntervalMs = 15_000
-    } = {}) {
-        const uploadAndQueueResult = await sendWhisperAudioToDrupal({
-            transcriptionBaseUrl,
-            videoId,
-            targetSampleRate,
-            targetChannels,
-        });
-
-        const pollResult = await pollWhisperTranscriptionStatus({
-            transcriptionBaseUrl: uploadAndQueueResult.baseUrl,
-            taskId: uploadAndQueueResult.taskId,
-            pollIntervalMs,
-            timeoutMs,
-            softTimeoutMs: timeoutMs,
-            hardTimeoutMs,
-            slowPollIntervalMs
-        });
-
-        const result = {
-            ...uploadAndQueueResult,
-            pollResult
-        };
-
-        if (pollResult.ok && pollResult.statusPayload) {
-            try {
-                setTranscriptionStageStatus("apply_transcript");
-                const whisperJson = await loadWhisperJsonFromStatusPayload({
-                    transcriptionBaseUrl: uploadAndQueueResult.baseUrl,
-                    statusPayload: pollResult.statusPayload,
-                    taskId: uploadAndQueueResult.taskId
-                });
-                if (whisperJson) {
-                    const overlayItems = await applyWhisperTranscriptToTimeline({
-                        whisperJson,
-                        sourceLabel: `task:${uploadAndQueueResult.taskId}`
-                    });
-                    result.whisperJson = whisperJson;
-                    result.overlayItemCount = overlayItems.length;
-                }
-            } catch (error) {
-                result.whisperJsonError = error?.message || String(error);
-                console.warn("[Whisper][Drupal] transcript JSON load/apply failed", {
-                    taskId: uploadAndQueueResult.taskId,
-                    error: result.whisperJsonError
-                });
-            }
-        }
-
-        window.__lastWhisperTranscriptionResult = result;
-        saveTranscriptionRecoverySnapshot({
-            taskId: uploadAndQueueResult.taskId,
-            taskStatus: String(pollResult?.statusPayload?.status || ""),
-            statusPayload: pollResult?.statusPayload || null,
-            transcriptionResult: result,
-            transcriptReady: pollResult.ok === true,
-            lastError: pollResult.ok ? null : pollResult?.statusPayload?.task?.last_error || null
-        });
-        if (pollResult.ok) {
-            setTranscriptionStageStatus("done");
-            console.log("[Whisper][Drupal] transcription complete", result);
-            return result;
-        }
-        if (pollResult.timeout) {
-            setTranscriptionStageStatus("polling", pollResult.transportFailure ? "status unknown" : "timeout");
-            setVideoSourceStatus(
-                `Stopped watching transcription task ${shortTaskId(uploadAndQueueResult.taskId)} after the extended wait window. ` +
-                "Retry/reconnect by task ID instead of starting over."
-            );
-            console.log("[Whisper][Drupal] extended wait expired before transcription completed", result);
-        } else {
-            const failedStatus = String(pollResult?.statusPayload?.status || "failed");
-            const failedTask = pollResult?.statusPayload?.task || null;
-            const failureDetail = String(failedTask?.last_error || failedStatus);
-            setTranscriptionErrorStatus(failureDetail);
-            setVideoSourceStatus(`Transcription failed: ${failureDetail}`);
-            console.warn("[Whisper][Drupal] transcription incomplete", result);
-        }
-        return result;
-    }
-
-    const serverWhisperTranscriptionClient = createTranscriptionClient({
-        kind: TRANSCRIPTION_CLIENT_KIND.SERVER,
-        transcribe: startWhisperTranscriptionAndPoll
-    });
-
-    function readSelectedTranscriptionMode() {
-        const value = typeof transcriptionModeSelect?.value === "string"
-            ? transcriptionModeSelect.value.trim().toLowerCase()
-            : "";
-
-        if (value === TRANSCRIPTION_MODE.LOCAL) {
-            return TRANSCRIPTION_MODE.LOCAL;
-        }
-
-        if (value === TRANSCRIPTION_MODE.SERVER) {
-            return TRANSCRIPTION_MODE.SERVER;
-        }
-
-        return TRANSCRIPTION_MODE.AUTO;
     }
 
     function readSelectedLocalTranscriptionModel() {
@@ -2158,8 +1030,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const runTranscriptionUseCase = createRunTranscriptionUseCase({
         clients: {
-            local: browserWhisperTranscriptionClient,
-            server: serverWhisperTranscriptionClient
+            local: browserWhisperTranscriptionClient
         },
         canUseLocal: canUseLocalBrowserTranscription,
         applyResult: applyTranscriptionUseCaseResult,
@@ -2172,18 +1043,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }
 
                 if (stage === "transcribe") {
-                    const isLocal = payload.clientKind === TRANSCRIPTION_CLIENT_KIND.LOCAL_BROWSER;
-                    setTranscriptionStageStatus("transcribe", isLocal ? "local" : "server");
-                    if (isLocal) {
-                        setVideoSourceStatus(payload.fallback
-                            ? "Retrying transcription locally..."
-                            : "Running local browser transcription...");
-                        return;
-                    }
-
+                    setTranscriptionStageStatus("transcribe", "local");
                     setVideoSourceStatus(payload.fallback
-                        ? "Falling back to server transcription..."
-                        : "Preparing server transcription...");
+                        ? "Retrying transcription locally..."
+                        : "Running local browser transcription...");
                     return;
                 }
 
@@ -2206,11 +1069,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 const detail = error?.message || String(error);
                 if (willFallback) {
                     setTranscriptionStageStatus("transcribe", "fallback");
-                    setVideoSourceStatus(
-                        clientKind === TRANSCRIPTION_CLIENT_KIND.LOCAL_BROWSER
-                            ? `Local transcription failed; falling back to server (${detail}).`
-                            : `Transcription attempt failed; trying fallback (${detail}).`
-                    );
+                    setVideoSourceStatus(`Local transcription failed; retrying (${detail}).`);
                     return;
                 }
 
@@ -2218,77 +1077,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
         }
     });
-
-    async function fetchAndApplyWhisperTranscriptFromTask({
-        taskId,
-        transcriptionBaseUrl,
-        pollIntervalMs = 3_000,
-        timeoutMs = 5 * 60 * 1_000,
-        waitForJson = true
-    }) {
-        if (!taskId || typeof taskId !== "string") {
-            throw new Error("fetchAndApplyWhisperTranscriptFromTask: taskId is required.");
-        }
-        const resolvedBaseUrl = resolveTranscriptionBaseUrl(transcriptionBaseUrl);
-        const startedAt = Date.now();
-        let statusPayload = null;
-        let whisperJson = null;
-
-        while (Date.now() - startedAt <= timeoutMs) {
-            statusPayload = await drupalWhisperTranscriptionClient.fetchStatus({
-                baseUrl: resolvedBaseUrl,
-                taskId
-            });
-
-            whisperJson = await loadWhisperJsonFromStatusPayload({
-                transcriptionBaseUrl: resolvedBaseUrl,
-                statusPayload,
-                taskId
-            });
-            if (whisperJson) {
-                break;
-            }
-
-            if (!waitForJson) {
-                break;
-            }
-
-            const status = String(statusPayload?.status || "");
-            setVideoSourceStatus(`Waiting for transcript JSON (${status || "queued"})...`);
-            await sleep(pollIntervalMs);
-        }
-
-        if (!whisperJson) {
-            const status = String(statusPayload?.status || "unknown");
-            throw new Error(
-                `No json_url available yet for task ${taskId} (status=${status}). ` +
-                `Framesmith result was not available from the new API yet.`
-            );
-        }
-        const overlayItems = await applyWhisperTranscriptToTimeline({
-            whisperJson,
-            sourceLabel: `task:${taskId}`
-        });
-        const result = {
-            taskId,
-            statusPayload,
-            whisperJson,
-            overlayItemCount: overlayItems.length
-        };
-        window.__lastWhisperTranscriptFetchResult = result;
-        saveTranscriptionRecoverySnapshot({
-            taskId,
-            taskStatus: String(statusPayload?.status || "completed"),
-            statusPayload,
-            transcriptFetchResult: result,
-            whisperJson,
-            overlayItems,
-            transcriptText: latestTranscriptText,
-            transcriptReady: true,
-            lastError: null
-        });
-        return result;
-    }
 
     /**
      * Stop preview overlay rendering loop.
@@ -2518,13 +1306,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         clearRuntimeTranscriptOverlayItems();
         window.__runtimeTranscriptOverlayItems = null;
         window.__runtimeWhisperTranscriptJson = null;
-        window.__lastWhisperTranscriptFetchResult = null;
-        window.__lastWhisperTranscriptionResult = null;
-        window.__lastWhisperDrupalResult = null;
-        window.__lastWhisperAudioBlob = null;
-        window.__lastWhisperAudioBytes = null;
-        window.__lastWhisperAudioMeta = null;
-        lastWhisperAudioSourceKey = null;
         if (shouldRestoreRecoveredTranscript) {
             await restoreTranscriptArtifactsFromRecoverySnapshot(existingRecoverySnapshot);
         } else {
@@ -2554,13 +1335,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         await initializeTimelineFromBytes(cachedSelectedVideo.bytes);
 
-        // Warm up audio extraction in the background so "Transcribe" starts faster.
-        void extractWhisperReadyAudioFromLoadedSource({ showStatus: false }).catch((error) => {
-            console.warn("[Whisper][Drupal] audio warmup skipped", {
-                errorName: error?.name || "Error",
-                errorMessage: error?.message || String(error)
-            });
-        });
     }
 
     /**
@@ -4580,24 +3354,15 @@ async function normalizeUnsupportedSourceToWorkingSet({
             setWorkflowEnabled(!!timeline);
 
             try {
-                const mode = readSelectedTranscriptionMode();
                 const result = await runTranscriptionUseCase.run({
-                    mode,
-                    mediaSourceUrl: mode === TRANSCRIPTION_MODE.SERVER
-                        ? ""
-                        : createLocalTranscriptionMediaSourceUrl(),
+                    mode: TRANSCRIPTION_MODE.AUTO,
+                    mediaSourceUrl: createLocalTranscriptionMediaSourceUrl(),
                     localModel: readSelectedLocalTranscriptionModel(),
                     timestampMode: "word",
                     localDevice: "auto"
                 });
                 if (result?.selectedClientKind === TRANSCRIPTION_CLIENT_KIND.LOCAL_BROWSER) {
                     setVideoSourceStatus("Captions ready from local transcription");
-                } else if (result?.pollResult?.ok && result?.fallbackUsed) {
-                    setVideoSourceStatus("Captions ready from server fallback");
-                } else if (result?.pollResult?.ok) {
-                    setVideoSourceStatus("Captions ready");
-                } else if (result?.taskId) {
-                    setVideoSourceStatus(`Transcription queued (task ${result.taskId.slice(0, 8)}…)`);
                 }
             } catch (error) {
                 setVideoSourceStatus(
@@ -4605,7 +3370,7 @@ async function normalizeUnsupportedSourceToWorkingSet({
                     true
                 );
                 setTranscriptionErrorStatus(error?.message || String(error));
-                console.error("[Whisper][Drupal] transcription failed", error);
+                console.error("[Whisper][Local] transcription failed", error);
             } finally {
                 revokeLocalTranscriptionMediaObjectUrl();
                 isTranscribeInProgress = false;
@@ -4785,14 +3550,8 @@ async function normalizeUnsupportedSourceToWorkingSet({
     });
     setHasLoadedSourceUiState(false);
     setPreviewModeUiState(false);
-    window.__extractWhisperAudio = extractWhisperReadyAudioFromLoadedSource;
-    window.__sendWhisperAudioToDrupal = sendWhisperAudioToDrupal;
-    window.__pollWhisperTranscriptionStatus = pollWhisperTranscriptionStatus;
-    window.__startWhisperTranscriptionAndPoll = startWhisperTranscriptionAndPoll;
-    window.__serverWhisperTranscriptionClient = serverWhisperTranscriptionClient;
     window.__browserWhisperTranscriptionClient = browserWhisperTranscriptionClient;
     window.__runTranscriptionUseCase = runTranscriptionUseCase;
-    window.__fetchAndApplyWhisperTranscriptFromTask = fetchAndApplyWhisperTranscriptFromTask;
     window.__framesmithRecoveryStore = recoveryStore;
     window.__framesmithRestoreRecoveryState = restoreFramesmithRecoveryStateOnLoad;
 
@@ -4932,7 +3691,7 @@ async function createTimeline({ mp4Bytes, runtimeConfig }) {
     });
 }
 
-import * as TimelineCompiler from "./src/timeline/compileTimeline.js";
+import * as TimelineCompiler from "./vendor/media-timeline-compiler/compileTimeline.js";
 
 export const __test__ = {
     Timeline,

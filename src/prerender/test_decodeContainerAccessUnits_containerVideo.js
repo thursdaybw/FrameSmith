@@ -41,7 +41,7 @@ import { decodeContainerAccessUnitsFromPreRenderPlanBatch } from "./decodeContai
 import {
     PreRenderPlanFragmentKinds,
     PreRenderPlanContributorKinds
-} from "../timeline/planFragments.js";
+} from "../../vendor/media-timeline-compiler/planFragments.js";
 
 /**
  * NOTE:

@@ -12,10 +12,10 @@ import {
 import { PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DETERMINISM_TESTS } from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_determinism.js";
 import { PRERENDER_TIME_RESOLUTION_TESTS } from "./src/prerender/test_resolveProceduralFragmentsAtTimeFromPlan.js";
 import { EXPORT_EXECUTION_STRATEGY_TESTS } from "./src/prerender/strategies/test_ExportExecutionStrategy.js";
-import { PROCEDURAL_EXECUTION_TESTS } from "./src/timeline/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
-import { TEXT_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_textOverlayRenderer.js";
-import { IMAGE_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_imageOverlayRenderer.js";
-import { CONTAINER_DECODE_TESTS } from "./src/timeline/container/execution/test_executeAccessUnitFragmentDecode.js";
+import { PROCEDURAL_EXECUTION_TESTS } from "./vendor/media-timeline-compiler/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
+import { TEXT_OVERLAY_RENDERER_TESTS } from "./vendor/media-timeline-compiler/procedural/resolvers/test_textOverlayRenderer.js";
+import { IMAGE_OVERLAY_RENDERER_TESTS } from "./vendor/media-timeline-compiler/procedural/resolvers/test_imageOverlayRenderer.js";
+import { CONTAINER_DECODE_TESTS } from "./vendor/media-timeline-compiler/container/execution/test_executeAccessUnitFragmentDecode.js";
 import { COMPOSITION_TESTS } from "./src/composition/test_composeAtTime.js";
 import { ENCODE_TESTS } from "./src/encode/test_encodeAtTime.js";
 import { AUDIO_ENCODE_PCM16_WAV_TESTS } from "./src/audio/test_encodePcm16Wav.js";
@@ -25,7 +25,6 @@ import { FRAMESMITH_RECOVERY_TESTS } from "./src/app/recovery/test_FramesmithRec
 import { ENCODE_CAPACITY_PROFILE_TESTS } from "./src/app/encode/test_EncodeCapacityProfile.js";
 import { TRANSCRIPTION_MAPPING_TESTS } from "./src/transcription/test_transcriptionMapping.js";
 import { TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/test_TranscriptionClient.js";
-import { DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/server/test_DrupalWhisperTranscriptionClient.js";
 import { BROWSER_WHISPER_BACKEND_PROBE_TESTS } from "./src/transcription/local/test_BrowserWhisperBackendProbe.js";
 import { TRANSFORMERS_BROWSER_WHISPER_RUNTIME_TESTS } from "./src/transcription/local/test_TransformersBrowserWhisperRuntime.js";
 import { BROWSER_WHISPER_TRANSCRIPTION_CLIENT_TESTS } from "./src/transcription/local/test_BrowserWhisperTranscriptionClient.js";
@@ -45,8 +44,8 @@ function log(color, label, name) {
 }
 
 const SKIPPED_BROWSER_ONLY_MODULES = [
-    "./src/mux/native/demux/trackview/test_createContainerTrackViewFromMp4.js",
-    "./src/mux/native/demux/trackview/test_proceduralClips_prerenderPlanning.js"
+    "./test-harness/timeline/test_containerTrackViewPrerenderPlanning.js",
+    "./test-harness/timeline/test_proceduralClipsPrerenderPlanning.js"
 ];
 
 async function loadNodeSafeScriptLocalTests() {
@@ -90,7 +89,6 @@ const CORE_NODE_TESTS = [
     ...ENCODE_CAPACITY_PROFILE_TESTS,
     ...TRANSCRIPTION_MAPPING_TESTS,
     ...TRANSCRIPTION_CLIENT_TESTS,
-    ...DRUPAL_WHISPER_TRANSCRIPTION_CLIENT_TESTS,
     ...BROWSER_WHISPER_BACKEND_PROBE_TESTS,
     ...TRANSFORMERS_BROWSER_WHISPER_RUNTIME_TESTS,
     ...BROWSER_WHISPER_TRANSCRIPTION_CLIENT_TESTS,

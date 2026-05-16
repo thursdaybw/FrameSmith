@@ -1,4 +1,4 @@
-import { routeProceduralFragmentAtTimeToResolver } from "../timeline/procedural/routeProceduralFragmentAtTimeToResolver.js";
+import { routeProceduralFragmentAtTimeToResolver } from "../../vendor/media-timeline-compiler/procedural/routeProceduralFragmentAtTimeToResolver.js";
 
 export function resolveProceduralFragmentsAtTimeFromPlan({ plan, timeSeconds, timecodeFragmentIntentResolvers }) {
 
