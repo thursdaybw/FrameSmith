@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <h1>tests</h1>
+<button id="run-inspection">Run Inspection Tests</button>
+<button id="run-unit">Run Unit Tests</button>
+<button id="run-boundary">Run Boundary Tests</button>
+<button id="run-integration">Run Integration Tests</button>
+<button id="run-all">Run All Tests</button>
+<script type="module">
+/*
+if (location.hostname === "localhost") {
+    const es = new EventSource("/__reload");
+    es.onmessage = () => location.reload();
+}
+*/
+
+import {
+    testHdlr_Structure,
+    testHdlr_LockedLayoutEquivalence_ffmpeg,
+    testHdlr_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_hdlr.js";
+import {
+    testStsz_Structure,
+    testStsz_Structure_Fixed,
+    testStsz_LockedLayoutEquivalence_ffmpeg,
+    testStsz_LockedLayoutEquivalence_ffmpeg_opus
+} from "./test_stsz.js";
+import { testStsc_Structure, testStsc_Conformance } from "./test_stsc.js";
+import { testStts_Structure, testStts_Conformance } from "./test_stts.js";
+import { 
+    testTkhd_Structure, 
+    testTkhd_LockedLayoutEquivalence_ffmpeg,
+    testTkhd_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_tkhd.js";
+import {
+    testMdhd_Structure,
+    testMdhd_Conformance,
+    testMdhd_Conformance_Audio,
+} from "./test_mdhd.js";
+import { 
+    testMvhd_Structure, 
+    testMvhd_LockedLayoutEquivalence_ffmpeg,
+    testMvhd_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_mvhd.js";
+import { testFtyp_Structure, testFtyp_LockedLayoutEquivalence_ffmpeg } from "./test_ftyp.js";
+import { testVmhd_Structure, testVmhd_LockedLayoutEquivalence_ffmpeg } from "./test_vmhd.js";
+import { testDref_Structure, testDref_LockedLayoutEquivalence_ffmpeg } from "./test_dref.js";
+import { testAvcC_Structure, testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg } from "./test_avcC.js";
+import { testAvc1_Structure, testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg } from "./test_avc1.js";
+import { testBtrt_Structure, testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg } from "./test_btrt.js";
+import { testPasp_Structure, testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg } from "./test_pasp.js";
+import {
+    testStss_Structure,
+    testStss_LockedLayoutEquivalence_ffmpeg,
+    testStss_LockedLayoutEquivalence_ffmpeg_audio,
+} from "./test_stss.js";
+import { 
+    testCtts_Structure, 
+    testCtts_LockedLayoutEquivalence_ffmpeg,
+} from "./test_ctts.js";
+import { testStco_Structure, testStco_LockedLayoutEquivalence_ffmpeg } from "./test_stco.js";
+import { testCo64_Structure, testCo64_LockedLayoutEquivalence_ffmpeg } from "./test_co64.js";
+import {
+    testStbl_Structure, 
+    testStbl_LockedLayoutEquivalence_ffmpeg,
+    testStbl_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_stbl.js";
+import { testDinf_Structure, testDinf_LockedLayoutEquivalence_ffmpeg } from "./test_dinf.js";
+import {
+    testMinf_BuilderInput_Video,
+    testMinf_BuilderInput_Audio,
+    testMinf_LockedLayoutEquivalence_ffmpeg_Video,
+    testMinf_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_minf.js";
+import { testMdia_Structure, testMdia_LockedLayoutEquivalence_ffmpeg } from "./test_mdia.js";
+import { 
+    testElst_Structure, 
+    testElst_LockedLayoutEquivalence_ffmpeg ,
+    testElst_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_elst.js";
+
+import { 
+    testEdts_Structure, 
+    testEdts_LockedLayoutEquivalence_ffmpeg,
+    testEdts_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_edts.js";
+import { 
+    testTrak_Structure, 
+    testTrak_LockedLayoutEquivalence_ffmpeg,
+    testTrak_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_trak.js";
+import { testData_Structure, testData_LockedLayoutEquivalence_ffmpeg } from "./test_data.js";
+import { testIlstItem_Structure, testIlstItem_LockedLayoutEquivalence_ffmpeg } from "./test_ilst_item.js";
+import { testIlst_Structure, testIlst_LockedLayoutEquivalence_ffmpeg } from "./test_ilst.js";
+import { testMetaHdlr_Structure, testMetaHdlr_LockedLayoutEquivalence_ffmpeg } from "./test_meta_hdlr.js";
+import { testMeta_Structure, testMeta_LockedLayoutEquivalence_ffmpeg } from "./test_meta.js";
+import { testUdta_Structure, testUdta_LockedLayoutEquivalence_ffmpeg } from "./test_udta.js";
+import { 
+    testMoov_Structure, 
+    testMoov_LockedLayoutEquivalence_ffmpeg, 
+    testMoov_LockedLayoutEquivalence_ffmpeg_Audio,
+} from "./test_moov.js";
+import { testFree_Structure, testFree_LockedLayoutEquivalence_ffmpeg } from "./test_free.js";
+
+import { testSbgp_Structure, testSbgp_LockedLayoutEquivalence_ffmpeg } from "./test_sbgp.js";
+import { testSgpd_Structure_Fixed, testSgpd_Structure_Variable, testSgpd_LockedLayoutEquivalence_ffmpeg } from "./test_sgpd.js";
+
+import { 
+    testDeriveChunkModel_OneSamplePerChunk,
+    testDeriveChunkModel_Packetized_UsesPacketIndex,
+} from "./test_NativeMuxer_chunkModel.js";
+import { testNativeMuxer_DeriveStscEntries_SingleChunkPattern } from "./test_NativeMuxer_stscDerivation.js";
+import { testNativeMuxer_DeriveStcoOffsets_Simple } from "./test_NativeMuxer_stcoDerivation.js";
+import { testNativeMuxer_DeriveSttsEntries_RunLengthEncoding } from "./test_NativeMuxer_sttsDerivation.js"
+
+import { 
+    testNativeMuxer_DeriveSyncSampleNumbers_Simple,
+    testNativeMuxer_DeriveSyncSampleNumbers_NoKeyInfo
+} from "./test_NativeMuxer_SyncSampleNumbersDerivation.js"
+
+import { testNativeMuxer_AdaptSttsFromSamples_CFR, testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups } from "./test_NativeMuxer_sttsAdapter.js";
+
+import { testNativeMuxer_DeriveStszSizesFromPayloads } from "./test_NativeMuxer_deriveStszSizesFromPayloads.js";
+import { testNativeMuxer_DeriveStsz_Conformance_ffmpeg } from "./test_NativeMuxer_stszDerivation_Conformance.js";
+
+import { testNativeMuxer_DeriveCttsEntries_RunLengthEncoding } from "./test_NativeMuxer_cttsDerivation.js";
+import { testNativeMuxer_trackDurationDerivation_basicSum } from "./test_NativeMuxer_trackDurationDerivation.js";
+import {
+    testMdat_Structure,
+    testMdat_LockedLayoutEquivalence_ffmpeg,
+} from "./test_mdat.js";
+
+import {
+    testUdta_Inspection_ffmpeg,
+    testMeta_Inspection_ffmpeg,
+    testMetaHdlr_Inspection_ffmpeg,
+    testMetaIlst_Inspection_ffmpeg,
+} from "./test_udta_inspection.js";
+
+import { testSerializer } from "./test_serializer.js"
+
+import { 
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_OPUS,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC_AudioSpecificConfigOnly,
+} from "./test_NativeMuxer_EndToEnd_FromMp4BuildInput.js";
+
+import { 
+    test_SourceClient_WebCodecs_ProducesMp4BuildInput
+} from "./test_SourceClient_WebCodecs_ProducesMp4BuildInput.js";
+
+
+import { test_applyAvcCContainerPolicy } from "./policies/test_applyAvcCContainerPolicy.js"
+import { test_avcC_policy_locked_layout_container_complete, test_avcC_policy_locked_layout_semantic_high_profile } from "./test_avcC_policy_locked_layout.js"
+
+
+import { test_SourceClient_WebCodecs_AV_ProducesMp4BuildInputInput }  from "./test_SourceClient_WebCodecs_AV_ProducesMp4BuildInput.js";
+
+import { test_SourceClient_GoldenMp4_ProducesMp4BuildInput }  from "./test_SourceClient_GoldenMp4_ProducesMp4BuildInput.js";
+
+
+
+import { test_DeriveDecodeTimestamps_Invariants }  from "./test_DeriveDecodeTimestamps_Invariants.js";
+
+import { 
+    test_UdtaPolicy_OpaquePassthrough,
+    test_UdtaPolicy_ExplicitOmission,
+    test_UdtaPolicy_SemanticIdentity_StructureOnly
+} from "./policies/test_UdtaPolicy.js";
+
+import {
+    test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic
+} from "./test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic.js";
+
+import { inspectBoxTreeDiff_AV_vs_Visual } 
+    from "./inspection/inspect_AV_vs_Visual_BoxDiff.js";
+
+import { test_Inspection_Stsd_Semantics } 
+    from "./inspection/test_Inspection_Stsd_Semantics.js";
+
+import { 
+    testEsds_Structure,
+    testEsds_LockedLayoutEquivalence_ffmpeg
+} 
+from "./test_esds.js";
+
+
+import { 
+  testSmhd_Structure,
+  testSmhd_LockedLayoutEquivalence_ffmpeg
+} 
+from "./test_smhd.js";
+
+import { 
+    testFromMp4_RootMoov_Resolves,
+    testFromBox_RootMp4_ResolvesMoov,
+	testDispatcher_RequiresIndexedTrak,
+	testDispatcher_NormalizesIndexedPaths,
+	testDispatcher_RegistryIsCanonical,
+	testDispatcher_TrakIndexIsAuthoritative,
+	testDispatcher_SampleEntryTraversal,
+	testDispatcher_MinfDivergence,
+	testDispatcher_DoesNotSearchOtherTracks,
+	testDispatcher_InvalidChildFails,
+	testDispatcher_RejectsLegacySelectors,
+    testDispatcher_StsdImplicitSchemaResolution,
+	testDispatcher_HappyPathSanity,
+    testDispatcher_StsdSampleIndexRewritesToConcreteCodec,
+    testDispatcher_SampleEntryChildTraversal,
+    testStsd_ReturnsEmitterParamsOnly,
+    testResolveSampleEntryFromTrak_HappyPath,
+    testResolveSampleEntryFromTrak_RejectsInvalidGrammar,
+    testDispatcher_ResolutionIsTrackScoped,
+    testResolveSampleEntryFromTrak_OutOfRange,
+    testResolveByPath_SampleEntryTraversal,
+    testResolveByPath_NoCrossTrackFallback,
+    testResolveByPath_RejectsBareSampleSelector,
+    testResolveByPath_RejectsUnresolvedSampleChild,
+    testResolveByPath_AllowsTerminalSampleSelector,
+    testResolveSampleEntryFromTrak_AllowsTerminalSampleSelector,
+    testResolveSampleEntryFromTrak_AllowsChildTraversal,
+    testResolveSampleEntryFromTrak_RejectsLegacySelectors,
+    testResolveSampleEntryFromTrak_StripsSampleFromRegistryPath,
+    testResolveByPath_NeverLeaksSampleSelectorInRegistryPath,
+    //testTODO_LegacyExtractSampleEntry_DeprecationMarker,
+    testStsd_PluralSampleEntries_AreStructurallyDetectable,
+    testResolveByPath_RejectsBareSampleGrammar,
+    testDispatcher_BareStsd_UsesStsdExtractor,
+
+    testFromBox_ParityWithFromMp4_ForStsd,
+    testFromBox_RejectsEscapingRelativePath,
+    testFromBox_ParityWithFromMp4_ForStbl,
+
+    testFromLeafBox_RejectsNonUint8Array,
+    testFromLeafBox_RejectsTooSmallBox,
+    testDispatcher_FromMp4_RootMoov_Terminates,
+    testDispatcher_IsoBoxResolver_OutOfRangeTrakIndex_ReturnsNotFound,
+    testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminatesWithNotFound,
+    testDispatcher_FromMp4_DoesNotCallExtractorOnReturn,
+    testDispatcher_FromMp4_ReturnedObject_IsLazy,
+    testDispatcher_FromMp4_RootMoov_DoesNotRequireIndex,
+    test_FromRawBytes_AllowsAbsoluteTraversal,
+    testDispatcher_FromBox_ExactContext_DoesNotReResolveAncestors,
+    testDispatcher_FromBox_ExactContext_ResolvesSampleEntry_dOps,
+    testFromMp4_MoovMvhd_Resolves,
+    testResolveSingleIsoBoxFromContainer_ZeroBoxes_Throws,
+    testResolveSingleIsoBoxFromContainer_MultipleBoxes_Throws,
+    testLookupExtractorByRegistryPath_ValidPath_ReturnsExtractor,
+    testResolveSampleEntryBoundary_SetsRegistryPath,
+    testResolveSampleEntryBoundary_UsesBoxAsTrakBytesFallback,
+    testValidateIsoBoxTraversalContext_RejectsNonUint8Array,
+    testValidateIsoBoxTraversalContext_InjectsImplicitTrakBytes,
+    testValidateIsoBoxTraversalContext_RejectsEmptyPath,
+    testValidateIsoBoxTraversalContext_RejectsTraversalIntoTerminalBox,
+    testDispatcher_SampleIndexOutOfRange_ThrowsWithIntentionalMessage,
+    testLookupExtractorByRegistryKey_InvalidKey_Throws,
+    testDispatcher_IsoBoxResolver_RejectsUnsupportedCo64,
+    testDispatcher_OptionalCtts_MissingIsNotAnError,
+}
+from "./test_goldenTruthDispatcher.js";
+
+import { 
+    testResolveTrakFromPath_SequentialIndexTerminates,
+    testDispatcher_MoovTrak_RepeatedCallsStable,
+    testDispatcher_Moov_NotMutated_ByChildResolution,
+    testDispatcher_TrakResolution_TrackIdentitiesAreDistinct,
+    testDispatcher_TrakLoop_UsesStableMoovBoxBytes,
+}
+from "./test_goldenTruthDispatcher_PathResolver.js";
+
+
+import { 
+        testFindBoxes_Moov_Root,
+        testFindBoxes_Trak_VideoOnly,
+        testFindBoxes_Trak_AudioVideo,
+        testFindBoxes_Mdia_FanOut,
+        testFindBoxes_Stbl_DeepFanOut,
+        testFindBoxes_Sgpd_AudioOnly,
+        testFindBoxesFromMp4_RejectsNonBoxTraversal,
+        testFindBoxesFromMp4_AllowsTerminalStsd,
+        testFindBoxesFromMp4_RejectsDeepTraversalPastStsd,
+        testFindBoxesFromMp4_EmptyBeforeStsdIsStillValid,
+} 
+from "./reference/test_findBoxesByPathFromMp4.js";
+
+import { 
+        testStsd_Structure_SingleAvc1,
+        testStsd_Structure_SingleMp4a,
+        testStsd_LockedLayoutEquivalence_ffmpeg,
+        testStsd_LockedLayoutEquivalence_ffmpeg_mp4a,
+        testStsd_Opus_Dops_WebCodecs_Normalized_Equals_FFmpegOracle,
+} from "./test_stsd.js";
+
+import { 
+  runAudioEncoderProbe  
+} from "./inspection/audioEncoderProbe.js";
+
+import { 
+   runAudioEncoderCapabilityProbe
+} from "./inspection/audioEncoderCapabilityProbe.js";
+
+
+import { 
+   test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput
+} from "./test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput.js";
+import {
+    test_codecRegistry_ResolvesProfilesByCodecAndSampleEntry,
+    test_codecRegistry_ConfigShapeValidation_RejectsForeignKeys,
+    test_codecRegistry_ConfigShapeValidation_RequiresOwnedKey
+} from "./test_codecRegistry.js";
+
+import { 
+   test_DeriveSamplesFromStbl_Definition,
+   test_DeriveSamplesFromStbl_SyncParityWithStss,
+   test_DeriveSamplesFromStbl_AppliesCttsOffsets
+} from "./test_deriveSamplesFromStbl.js";
+import {
+    test_nativeDemux_vs_mp4box_phoneFixture
+} from "./test_nativeDemux_vs_mp4box_phoneFixture.js";
+import {
+    test_ContainerTrackView_iterateSamplesByPtsRange_reorderedPts_noEarlyBreak,
+    test_ContainerTrackView_iterateSamplesByDtsRange_filtersByDts,
+    test_ContainerTrackView_getTrackIdentity_reportsStableShape
+} from "./test_ContainerTrackView_iterators.js";
+import {
+    test_openContainerFromMp4_exposesTrackListingAndTrackViews,
+    test_openContainerFromMp4_rejectsInvalidInput,
+    test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType,
+    test_openContainerFromMp4Source_seam_parityWithLegacyEntryPoint,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromBytes,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromByteSource,
+    test_openContainer_sniffsMp4FromBytes,
+    test_openContainer_sniffsMp4FromByteSource,
+    test_openContainer_rejectsUnsupportedContainerType,
+    test_openContainer_rejectsWebmUntilImplemented,
+    test_openContainer_rejectsWebmByByteSourceUntilImplemented,
+    test_openContainerFromWebmSource_rejectsInvalidSource
+} from "./test_openContainerFromMp4.js";
+import {
+    WEBM_READ_VINT_TESTS
+} from "./test_webm_readVint.js";
+import {
+    WEBM_SELECTOR_REGISTRY_TESTS
+} from "./test_webm_selectorRegistry.js";
+import {
+    WEBM_EBML_PRIMITIVE_TESTS
+} from "./test_webm_ebmlPrimitives.js";
+import {
+    WEBM_ORACLE_REFERENCE_FIXTURE_TESTS
+} from "./test_webm_oracle_referenceFixture.js";
+import {
+    WEBM_EXTRACTOR_TESTS
+} from "./test_webm_extractors.js";
+import {
+    WEBM_READER_ORACLE_AGREEMENT_TESTS
+} from "./test_webm_reader_oracleAgreement.js";
+
+import { 
+   test_DeriveSamplesOnePerPacketFromStbl_Definition
+} from "./test_DeriveSamplesOnePerPacketFromStbl.js";
+
+import { test_ExtractorEmitter_StructuralAgreement_stsz }
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stsz.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_stbl_mp4a,
+    test_ExtractorEmitter_StructuralAgreement_stbl_opus
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stbl.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_stts
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stts.js";
+
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_stsc
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stsc.js";
+
+import {
+ test_ExtractorEmitter_StructuralAgreement_stco   
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stco.js";
+import {
+ test_ExtractorEmitter_StructuralAgreement_co64
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_co64.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_avcC
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_avcC.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_esds
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_esds.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_stss
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stss.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_ctts,
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_ctts.js";
+
+import {
+   inspectCttsResolver
+}
+    from "./inspection/inspect_Ctts_Resolver.js";
+
+import {
+   inspectCttsAcrossTracks
+}
+    from "./inspection/inspectCttsAcrossTracks.js";
+
+import {
+   inspectEdtsAcrossTracks
+}
+    from "./inspection/inspectEdtsAcrossTracks.js";
+
+import {
+    inspectUdtaAcrossTracks
+}
+    from "./inspection/inspectUdtaAcrossTracks.js";
+
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_avc1
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_avc1.js";
+
+import {
+   test_PathResolver_rejects_internal_pipe_grammar_in_input,
+}
+    from "./test_GoldenTruthPathResolver_SampleEntryGrammar.js";
+
+import {
+    test_PathResolver_rejects_relative_paths,
+    test_PathResolver_accepts_mdat_root,
+    test_PathResolver_rejects_invalid_root,
+    test_PathResolver_rejects_unindexed_trak,
+}
+    from "./test_GoldenTruthPathResolver_RootGrammar.js";
+
+import {
+       test_ExtractorEmitter_StructuralAgreement_btrt,
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_btrt.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_pasp
+}
+    from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_pasp.js";
+
+import {
+   testMp4a_Structure,
+   testMp4a_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+}
+from "./test_mp4a.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_mp4a
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mp4a.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_stsd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_stsd.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_sbgp
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_sbgp.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_sgpd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_sgpd.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_ilstItem
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_ilstItem.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_ilst
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_ilst.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_meta_hdlr,
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_meta_hdlr.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_meta
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_meta.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_udta
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_udta.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_dref
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_dref.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_dinf
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_dinf.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_vmhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_vmhd.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_smhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_smhd.js";
+
+import {
+  test_EmitterRegistry_ValidationMatrix
+}
+from "./test_EmitterRegistry_Validation.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_minf
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_minf.js";
+
+import {
+   test_ExtractorEmitter_StructuralAgreement_hdlr
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_hdlr.js"
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_mdhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mdhd.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_mdia
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mdia.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_tkhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_tkhd.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_elst
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_elst.js"
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_edts
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_edts.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_trak
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_trak.js"
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_mvhd
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mvhd.js"
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_moov
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_moov.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_ftyp
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_ftyp.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_free
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_free.js";
+
+import {
+    test_ExtractorEmitter_StructuralAgreement_mdat
+}
+from "./goldenTruthExtractors/test_ExtractorEmitter_StructuralAgreement_mdat.js";
+
+import {
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Video,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Audio,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_InvalidTrackIndexThrows,
+}
+from "./test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex.js"
+import {
+    test_extractTrackCodecConfiguration_hvc1_referenceFixture
+}
+from "./test_extractTrackCodecConfiguration_hvc1_referenceFixture.js";
+
+import {
+    test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Video
+}
+from "./reference/test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Video.js";
+
+import {
+    test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Audio
+}
+from "./reference/test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Audio.js";
+
+import {
+    test_extractOpaqueUserDataFromMp4UsingRootContainer
+}
+from "./reference/test_extractOpaqueUserDataFromMp4UsingRootContainer.js";
+
+import {
+    test_validateMp4BuildInput_AcceptsGoldenMp4SourceClientOutput
+}
+from "./test_validateMp4BuildInput_AcceptsGoldenMp4SourceClientOutput.js";
+
+import {
+    test_adaptAudioCodecConfigurationToStsdParams_mp4a
+}
+from "./test_adaptAudioCodecConfigurationToStsdParams_mp4a.js";
+
+import {
+   testDOps_Structure,
+   testDOps_LockedLayoutEquivalence_ffmpeg,
+}
+from "./test_dOps.js";
+
+import {
+    testOpusSampleEntry_Structure,
+    testOpusSampleEntry_LockedLayoutEquivalence_ffmpeg,
+}
+from "./test_OpusSampleEntry.js";
+
+import {
+   test_SchemaOracleAgreement_OpusSampleEntry
+}
+from "./schema/test_SchemaOracleAgreement_Opus.js";
+
+import {
+   testNativeMuxer_DeriveSemanticTrackFamily
+}
+from "./testNativeMuxer_DeriveSemanticTrackFamily.js";
+
+import {
+   testNativeMuxer_TrackDuration_Relationships_AllFixtures
+}
+from "./testNativeMuxer_TrackDuration_RelationshipToOracleStts.js";
+
+import {
+   testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs
+}
+from "./testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs.js";
+
+import {
+    generateWebCodecsAvOpusFixtures
+}
+from "./fixtures/generateWebCodecsAvOpusFixtures.js";
+
+import {
+   testNativeMuxer_Opus_STBL_WebCodecsShapeCompatibility
+}
+from "./testNativeMuxer_Opus_STBL_WebCodecsShapeCompatibility.js";
+
+import {
+   testNativeMuxer_AdaptSttsFromSamples_WebCodecs_Opus,
+}
+from "./testNativeMuxer_AdaptSttsFromSamples_WebCodecs_Opus.js";
+
+import {
+    testNativeMuxer_AdaptSttsFromSamples_DoesNotReconcileTail,
+    testNativeMuxer_AdaptSttsWithTailFix_ReconcilesFinalSample
+}
+   from "./testNativeMuxer_AdaptSttsFromSamplesTailHandling.js";
+
+import {
+   testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerTopology_MustReproduceStscByteForByte_Opus,
+   testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerSuppliedHints_MustReproduceStscByteForByte_Mp4a,
+   testNativeMuxer_WhenGivenWebCodecsInputs_MustProduceLegalStsc,
+}
+from "./testNativeMuxer_DeriveStructuralState_Opus_WebCodecsShape.js";
+
+import {
+   testNativeMuxer_STSD_CompilerPath_Opus_Equals_FFmpegOracle,
+   testNativeMuxer_STSD_CompilerPath_Opus_WebCodecs_Equals_FFmpegOracle,
+   testNativeMuxer_STSD_CompilerPath_Mp4a_Equals_FFmpegOracle,
+   testNativeMuxer_STSD_CompilerPath_Avc1_Equals_FFmpegOracle,
+}
+from "./testNativeMuxer_AdaptAudioCodecToStsdParams_Opus_Equals_FFmpegOracle.js";
+
+import {
+   testNativeMuxer_SyncRepresentation_CompilerPath_Video_Equals_FFmpegOracle,
+   testNativeMuxer_SyncRepresentation_CompilerPath_Mp4a_Equals_FFmpegOracle,
+   testNativeMuxer_SyncRepresentation_CompilerPath_Opus_Equals_FFmpegOracle,
+   testNativeMuxer_SyncRepresentation_WebCodecs_NoHints_EmitsNothing,
+}
+from "./testNativeMuxer_SyncRepresentation_Equals_FFmpegOracle.js";
+
+import {
+   testNativeMuxer_Ctts_CompilerPath_Video_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_Ctts_CompilerPath_Video_Equals_FFmpegOracle.js";
+
+
+import {
+   testNativeMuxer_MVHD_Builder_Equals_FFmpegOpusOracle,
+   testNativeMuxer_MVHD_Builder_Equals_FFmpegMp4aOracle,
+}
+   from "./testNativeMuxer_MVHD_Builder_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MDAT_Box_Equals_FFmpegOracle,
+    testNativeMuxer_MDAT_Length_Equals_Sum_Of_STSZ,
+    testNativeMuxer_OPUS_STSC_MDAT_CompilerPath_with_FFmpegOpus_ChunkGroupPolicy_Equals_FFmpegOracle,
+    testNativeMuxer_AVC1_STSC_MDAT_CompilerPath_Equals_FFmpegOracle,
+    testNativeMuxer_MP4A_STSC_MDAT_CompilerPath_Equals_FFmpegOracle,
+    test_getSamplesChunkedInFfmpegOpusFormat_basic,
+}
+   from "./testNativeMuxer_MDAT_CompilerPath_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_STBL_Children_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_STBL_Children_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MINF_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MINF_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MDIA_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MDIA_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_TRAK_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_TRAK_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_UDTA_BuildIntent_FromGoldenClient_EqualsOracle
+}
+   from "./testNativeMuxer_UDTA_BuildIntent_FromGoldenClient_EqualsOracle.js";
+
+import {
+    testNativeMuxer_MOOV_Except_STCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MOOV_Except_STCO_Equals_FFmpegOracle.js";
+
+import {
+    test_BuildUdtaIntent_DefaultEncoderIdentity,
+}
+   from "./test_BuildUdtaIntentFromBuildHints.js";
+
+import {
+    testNativeMuxer_FTYP_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_FTYP_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_FREE_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_FREE_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MaterializePassOneTopLevelBoxes_EqualsOracle,
+}
+   from "./testNativeMuxer_MaterializePassOneTopLevelBoxes_EqualsOracle.js";
+
+import {
+    testResolveStcoOffsetsPerTrack_BasicLayoutResolution
+}
+   from "./testResolveStcoOffsetsPerTrack_BasicLayoutResolution.js";
+
+import {
+    testNativeMuxer_STCO_Adapter_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_STCO_Adapter_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_STBL_WithResolvedSTCO_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_STBL_WithResolvedSTCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_ELST_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_ELST_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MOOV_WithResolvedSTCO_Equals_FFmpegOracle,
+}
+   from "./testNativeMuxer_MOOV_WithResolvedSTCO_Equals_FFmpegOracle.js";
+
+import {
+    testNativeMuxer_MP4_FromResolvedParts_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MP4_FromResolvedParts_Equals_FFmpegOracle.js";
+
+
+
+import {
+    testNativeMuxer_TrakIntent_Debug
+}
+   from "./testNativeMuxer_TrakIntent_Debug.js";
+
+import {
+    testNativeMuxer_ElstIntent_Debug
+}
+   from "./testNativeMuxer_ElstIntent_Debug.js";
+
+import {
+    testNativeMuxer_TkhdIntent_Debug
+}
+   from "./testNativeMuxer_TkhdIntent_Debug.js";
+
+
+import {
+    testNativeMuxer_MP4_Equals_FFmpegOracle
+}
+   from "./testNativeMuxer_MP4_Equals_FFmpegOracle.js";
+
+async function runUnitTests() {
+
+const testsAll = [
+
+    testSerializer,
+
+    //start done
+    test_EmitterRegistry_ValidationMatrix,
+    testFindBoxes_Moov_Root,
+    testFindBoxes_Trak_VideoOnly,
+    testFindBoxes_Trak_AudioVideo,
+    testFindBoxes_Mdia_FanOut,
+    testFindBoxes_Stbl_DeepFanOut,
+    testFindBoxes_Sgpd_AudioOnly,
+    testFindBoxesFromMp4_RejectsNonBoxTraversal,
+    testFindBoxesFromMp4_AllowsTerminalStsd,
+    testFindBoxesFromMp4_RejectsDeepTraversalPastStsd,
+    testFindBoxesFromMp4_EmptyBeforeStsdIsStillValid,
+    test_FromRawBytes_AllowsAbsoluteTraversal,
+    testDispatcher_FromBox_ExactContext_DoesNotReResolveAncestors,
+    testDispatcher_FromBox_ExactContext_ResolvesSampleEntry_dOps,
+    testDispatcher_RequiresIndexedTrak,
+    testDispatcher_RegistryIsCanonical,
+    testDispatcher_TrakIndexIsAuthoritative,
+    testDispatcher_SampleEntryTraversal,
+    testDispatcher_MinfDivergence,
+    testDispatcher_DoesNotSearchOtherTracks,
+    testDispatcher_InvalidChildFails,
+    testDispatcher_RejectsLegacySelectors,
+    testDispatcher_StsdImplicitSchemaResolution,
+    testDispatcher_HappyPathSanity,
+    testDispatcher_StsdSampleIndexRewritesToConcreteCodec,
+    testDispatcher_SampleEntryChildTraversal,
+    testStsd_ReturnsEmitterParamsOnly,
+    testResolveSampleEntryFromTrak_HappyPath,
+    testResolveSampleEntryFromTrak_RejectsInvalidGrammar,
+    testDispatcher_ResolutionIsTrackScoped,
+    testResolveSampleEntryFromTrak_OutOfRange,
+    testResolveByPath_SampleEntryTraversal,
+    testResolveByPath_NoCrossTrackFallback,
+    testResolveByPath_RejectsBareSampleSelector,
+    testResolveByPath_RejectsUnresolvedSampleChild,
+    testResolveByPath_AllowsTerminalSampleSelector,
+    testResolveSampleEntryFromTrak_AllowsTerminalSampleSelector,
+    testResolveSampleEntryFromTrak_AllowsChildTraversal,
+    testResolveSampleEntryFromTrak_RejectsLegacySelectors,
+    testResolveSampleEntryFromTrak_StripsSampleFromRegistryPath,
+    testResolveByPath_NeverLeaksSampleSelectorInRegistryPath,
+    //testTODO_LegacyExtractSampleEntry_DeprecationMarker,
+    testStsd_PluralSampleEntries_AreStructurallyDetectable,
+    testResolveByPath_RejectsBareSampleGrammar,
+    testDispatcher_BareStsd_UsesStsdExtractor,
+    testFromBox_ParityWithFromMp4_ForStsd,
+    testFromBox_RejectsEscapingRelativePath,
+    testFromBox_ParityWithFromMp4_ForStbl,
+    testFromLeafBox_RejectsNonUint8Array,
+    testFromLeafBox_RejectsTooSmallBox,
+    testDispatcher_IsoBoxResolver_OutOfRangeTrakIndex_ReturnsNotFound,
+    testDispatcher_IsoBoxResolver_SequentialTrakIndexTerminatesWithNotFound,
+    testDispatcher_FromMp4_RootMoov_DoesNotRequireIndex,
+    testDispatcher_FromMp4_ReturnedObject_IsLazy,
+    testDispatcher_FromMp4_DoesNotCallExtractorOnReturn,
+    testDispatcher_FromMp4_RootMoov_Terminates,
+    testFromMp4_MoovMvhd_Resolves,
+    testResolveSingleIsoBoxFromContainer_ZeroBoxes_Throws,
+    testResolveSingleIsoBoxFromContainer_MultipleBoxes_Throws,
+    testLookupExtractorByRegistryPath_ValidPath_ReturnsExtractor,
+    testResolveSampleEntryBoundary_SetsRegistryPath,
+    testResolveSampleEntryBoundary_UsesBoxAsTrakBytesFallback,
+    testValidateIsoBoxTraversalContext_RejectsNonUint8Array,
+    testValidateIsoBoxTraversalContext_InjectsImplicitTrakBytes,
+    testValidateIsoBoxTraversalContext_RejectsEmptyPath,
+    testValidateIsoBoxTraversalContext_RejectsTraversalIntoTerminalBox,
+
+    // Path resolvers
+    testResolveTrakFromPath_SequentialIndexTerminates,
+    test_PathResolver_rejects_relative_paths,
+    test_PathResolver_accepts_mdat_root,
+    test_PathResolver_rejects_invalid_root,
+    test_PathResolver_rejects_unindexed_trak,
+
+    test_PathResolver_rejects_internal_pipe_grammar_in_input,
+    testDispatcher_MoovTrak_RepeatedCallsStable,
+    testDispatcher_Moov_NotMutated_ByChildResolution,
+    testDispatcher_TrakResolution_TrackIdentitiesAreDistinct,
+    testDispatcher_TrakLoop_UsesStableMoovBoxBytes,
+
+    testDOps_Structure,
+    testDOps_LockedLayoutEquivalence_ffmpeg,
+
+    testOpusSampleEntry_Structure,
+    testOpusSampleEntry_LockedLayoutEquivalence_ffmpeg,
+    test_SchemaOracleAgreement_OpusSampleEntry,
+
+    test_ExtractorEmitter_StructuralAgreement_mp4a,
+    testMp4a_Structure,
+    testMp4a_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+    testMp4a_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_esds,
+    testEsds_Structure,
+    testEsds_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_pasp,
+    testPasp_Structure,
+    testPasp_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_btrt,
+    testBtrt_Structure,
+    testBtrt_OpaquePayload_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_avcC,
+    testAvcC_Structure,
+    testAvcC_OpaquePayload_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_avc1,
+    testAvc1_Structure,
+    testAvc1_DeclaredMetadata_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_stsd,
+    testStsd_Structure_SingleAvc1,
+    testStsd_Structure_SingleMp4a,
+    testStsd_LockedLayoutEquivalence_ffmpeg,
+    testStsd_LockedLayoutEquivalence_ffmpeg_mp4a,
+    testStsd_Opus_Dops_WebCodecs_Normalized_Equals_FFmpegOracle,
+
+    test_ExtractorEmitter_StructuralAgreement_sbgp,
+    testSbgp_Structure,
+    testSbgp_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_sgpd,
+    testSgpd_Structure_Fixed,
+    testSgpd_Structure_Variable,
+    testSgpd_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_ctts,
+    testCtts_Structure,
+    testCtts_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_stss,
+    testStss_Structure,
+    testStss_LockedLayoutEquivalence_ffmpeg,
+    testStss_LockedLayoutEquivalence_ffmpeg_audio,
+
+    test_ExtractorEmitter_StructuralAgreement_stco,
+    testStco_Structure,
+    testStco_LockedLayoutEquivalence_ffmpeg,
+    test_ExtractorEmitter_StructuralAgreement_co64,
+    testCo64_Structure,
+    testCo64_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_stsc,
+    testStsc_Structure,
+    testStsc_Conformance,
+
+    test_ExtractorEmitter_StructuralAgreement_stts,
+    testStts_Structure,
+    testStts_Conformance,
+
+    test_ExtractorEmitter_StructuralAgreement_stsz,
+    testStsz_Structure,
+    testStsz_Structure_Fixed,
+    testStsz_LockedLayoutEquivalence_ffmpeg,
+    testStsz_LockedLayoutEquivalence_ffmpeg_opus,
+
+    test_ExtractorEmitter_StructuralAgreement_stbl_mp4a,
+    test_ExtractorEmitter_StructuralAgreement_stbl_opus,
+    testStbl_Structure,
+    testStbl_LockedLayoutEquivalence_ffmpeg,
+    testStbl_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_ilstItem,
+    testIlstItem_Structure,
+    testIlstItem_LockedLayoutEquivalence_ffmpeg,
+
+    testData_Structure,
+    testData_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_ilst,
+    testIlst_Structure,
+    testIlst_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_meta_hdlr,
+    testMetaHdlr_Structure, 
+    testMetaHdlr_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_meta,
+    testMeta_Structure,
+    testMeta_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_udta,
+    testUdta_Structure,
+    testUdta_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_dref,
+    testDref_Structure,
+    testDref_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_dinf,
+    testDinf_Structure,
+    testDinf_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_vmhd,
+    testVmhd_Structure,
+    testVmhd_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_smhd,
+    testSmhd_Structure,
+    testSmhd_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_minf,
+    testMinf_BuilderInput_Video,
+    testMinf_BuilderInput_Audio,
+    testMinf_LockedLayoutEquivalence_ffmpeg_Video,
+    testMinf_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_hdlr,
+    testHdlr_Structure, 
+    testHdlr_LockedLayoutEquivalence_ffmpeg,
+    testHdlr_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_mdhd,
+    testMdhd_Structure,
+    testMdhd_Conformance,
+    testMdhd_Conformance_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_mdia,
+    testMdia_Structure,
+    testMdia_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_tkhd,
+    testTkhd_Structure,
+    testTkhd_LockedLayoutEquivalence_ffmpeg,
+    testTkhd_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_edts,
+    testEdts_Structure,
+    testEdts_LockedLayoutEquivalence_ffmpeg,
+    testEdts_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_elst,
+    testElst_Structure,
+    testElst_LockedLayoutEquivalence_ffmpeg,
+    testElst_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_trak,
+    testTrak_Structure,
+    testTrak_LockedLayoutEquivalence_ffmpeg,
+    testTrak_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_mvhd,
+    testMvhd_Structure,
+    testMvhd_LockedLayoutEquivalence_ffmpeg,
+    testMvhd_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_ftyp,
+    testFtyp_Structure,
+    testFtyp_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_moov,
+    testMoov_Structure,
+    testMoov_LockedLayoutEquivalence_ffmpeg,
+    testMoov_LockedLayoutEquivalence_ffmpeg_Audio,
+
+    test_ExtractorEmitter_StructuralAgreement_free,
+    testFree_Structure,
+    testFree_LockedLayoutEquivalence_ffmpeg,
+
+    test_ExtractorEmitter_StructuralAgreement_mdat,
+    testMdat_Structure,
+    testMdat_LockedLayoutEquivalence_ffmpeg,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Video,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_Audio,
+    test_extractTrackCodecConfigurationFromMp4UsingZeroBasedTrackIndex_InvalidTrackIndexThrows,
+    test_extractTrackCodecConfiguration_hvc1_referenceFixture,
+    test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Video,
+    test_extractTrackBuildParametersFromMp4UsingZeroBasedTrackIndex_Audio,
+    test_extractOpaqueUserDataFromMp4UsingRootContainer,
+    test_validateMp4BuildInput_AcceptsGoldenMp4SourceClientOutput,
+    test_adaptAudioCodecConfigurationToStsdParams_mp4a,
+
+    test_DeriveSamplesFromStbl_Definition,
+    test_DeriveSamplesFromStbl_SyncParityWithStss,
+    test_DeriveSamplesFromStbl_AppliesCttsOffsets,
+    test_nativeDemux_vs_mp4box_phoneFixture,
+    test_ContainerTrackView_iterateSamplesByPtsRange_reorderedPts_noEarlyBreak,
+    test_ContainerTrackView_iterateSamplesByDtsRange_filtersByDts,
+    test_ContainerTrackView_getTrackIdentity_reportsStableShape,
+    test_openContainerFromMp4_exposesTrackListingAndTrackViews,
+    test_openContainerFromMp4_createTrackViews_returnsAllAndFiltersByMediaType,
+    test_openContainerFromMp4_rejectsInvalidInput,
+    test_openContainerFromMp4Source_seam_parityWithLegacyEntryPoint,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromBytes,
+    test_openContainer_routesMp4ByExplicitContainerTypeFromByteSource,
+    test_openContainer_sniffsMp4FromBytes,
+    test_openContainer_sniffsMp4FromByteSource,
+    test_openContainer_rejectsUnsupportedContainerType,
+    test_openContainer_rejectsWebmUntilImplemented,
+    test_openContainer_rejectsWebmByByteSourceUntilImplemented,
+    test_openContainerFromWebmSource_rejectsInvalidSource,
+    ...WEBM_READ_VINT_TESTS,
+    ...WEBM_SELECTOR_REGISTRY_TESTS,
+    ...WEBM_EBML_PRIMITIVE_TESTS,
+    ...WEBM_ORACLE_REFERENCE_FIXTURE_TESTS,
+    ...WEBM_EXTRACTOR_TESTS,
+    ...WEBM_READER_ORACLE_AGREEMENT_TESTS,
+    testNativeMuxer_DeriveSemanticTrackFamily,
+    testNativeMuxer_TrackDuration_Relationships_AllFixtures,
+    testNativeMuxer_NormalizeAccessUnitsInPlace_WebCodecs,
+    testNativeMuxer_Opus_STBL_WebCodecsShapeCompatibility,
+    testNativeMuxer_AdaptSttsFromSamples_WebCodecs_Opus,
+    testNativeMuxer_AdaptSttsFromSamples_DoesNotReconcileTail,
+    testNativeMuxer_AdaptSttsWithTailFix_ReconcilesFinalSample,
+    testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerTopology_MustReproduceStscByteForByte_Opus,
+    testNativeMuxer_WhenGivenSemanticInputsPlusOracleContainerSuppliedHints_MustReproduceStscByteForByte_Mp4a,
+    testNativeMuxer_WhenGivenWebCodecsInputs_MustProduceLegalStsc,
+    testNativeMuxer_STSD_CompilerPath_Opus_Equals_FFmpegOracle,
+    testNativeMuxer_STSD_CompilerPath_Opus_WebCodecs_Equals_FFmpegOracle,
+    testNativeMuxer_STSD_CompilerPath_Mp4a_Equals_FFmpegOracle,
+    testNativeMuxer_STSD_CompilerPath_Avc1_Equals_FFmpegOracle,
+    testNativeMuxer_SyncRepresentation_CompilerPath_Video_Equals_FFmpegOracle,
+    testNativeMuxer_SyncRepresentation_CompilerPath_Mp4a_Equals_FFmpegOracle,
+    testNativeMuxer_SyncRepresentation_CompilerPath_Opus_Equals_FFmpegOracle,
+    testNativeMuxer_SyncRepresentation_WebCodecs_NoHints_EmitsNothing,
+    testNativeMuxer_Ctts_CompilerPath_Video_Equals_FFmpegOracle,
+    testNativeMuxer_MVHD_Builder_Equals_FFmpegMp4aOracle,
+    testNativeMuxer_MVHD_Builder_Equals_FFmpegOpusOracle,
+    testNativeMuxer_MDAT_Box_Equals_FFmpegOracle,
+    testNativeMuxer_MDAT_Length_Equals_Sum_Of_STSZ,
+    testNativeMuxer_OPUS_STSC_MDAT_CompilerPath_with_FFmpegOpus_ChunkGroupPolicy_Equals_FFmpegOracle,
+    testNativeMuxer_MP4A_STSC_MDAT_CompilerPath_Equals_FFmpegOracle,
+    testNativeMuxer_AVC1_STSC_MDAT_CompilerPath_Equals_FFmpegOracle,
+    test_getSamplesChunkedInFfmpegOpusFormat_basic,
+    testDeriveChunkModel_OneSamplePerChunk,
+    testDeriveChunkModel_Packetized_UsesPacketIndex,
+    testNativeMuxer_DeriveStscEntries_SingleChunkPattern,
+    testNativeMuxer_DeriveStcoOffsets_Simple,
+    testNativeMuxer_DeriveSttsEntries_RunLengthEncoding,
+    testNativeMuxer_DeriveStszSizesFromPayloads,
+    testNativeMuxer_DeriveStsz_Conformance_ffmpeg,
+    testNativeMuxer_DeriveCttsEntries_RunLengthEncoding,
+    testNativeMuxer_DeriveSyncSampleNumbers_Simple,
+    testNativeMuxer_DeriveSyncSampleNumbers_NoKeyInfo,
+    testNativeMuxer_STBL_Children_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_MINF_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_MDIA_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_TRAK_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_UDTA_BuildIntent_FromGoldenClient_EqualsOracle,
+    test_BuildUdtaIntent_DefaultEncoderIdentity,
+    testNativeMuxer_MOOV_Except_STCO_Equals_FFmpegOracle,
+    testNativeMuxer_FTYP_Equals_FFmpegOracle,
+    testNativeMuxer_FREE_Equals_FFmpegOracle,
+    testNativeMuxer_MaterializePassOneTopLevelBoxes_EqualsOracle,
+    testResolveStcoOffsetsPerTrack_BasicLayoutResolution,
+    testNativeMuxer_STCO_Adapter_Equals_FFmpegOracle,
+    testNativeMuxer_STBL_WithResolvedSTCO_Equals_FFmpegOracle,
+    testNativeMuxer_ELST_Equals_FFmpegOracle,
+    testNativeMuxer_MOOV_WithResolvedSTCO_Equals_FFmpegOracle,
+    testDispatcher_NormalizesIndexedPaths,
+    testFromMp4_RootMoov_Resolves,
+    testFromBox_RootMp4_ResolvesMoov,
+    testDispatcher_SampleIndexOutOfRange_ThrowsWithIntentionalMessage,
+    testLookupExtractorByRegistryKey_InvalidKey_Throws,
+    testDispatcher_IsoBoxResolver_RejectsUnsupportedCo64,
+    testDispatcher_OptionalCtts_MissingIsNotAnError,
+    test_DeriveDecodeTimestamps_Invariants,
+    test_applyAvcCContainerPolicy,
+    test_avcC_policy_locked_layout_container_complete,
+    test_avcC_policy_locked_layout_semantic_high_profile,
+    test_UdtaPolicy_OpaquePassthrough,
+    test_UdtaPolicy_ExplicitOmission,
+    test_UdtaPolicy_SemanticIdentity_StructureOnly,
+    testNativeMuxer_AdaptSttsFromSamples_CFR,
+    testNativeMuxer_AdaptSttsFromSamples_VariableDurationGroups,
+    testNativeMuxer_trackDurationDerivation_basicSum,
+
+    //testNativeMuxer_EndToEnd_Conformance_ffmpeg,
+/*
+    test_SourceClient_GoldenMp4_AV_ProducesMp4BuildInput,
+    test_codecRegistry_ResolvesProfilesByCodecAndSampleEntry,
+    test_codecRegistry_ConfigShapeValidation_RejectsForeignKeys,
+    test_codecRegistry_ConfigShapeValidation_RequiresOwnedKey,
+    test_SourceClient_WebCodecs_AV_ProducesMp4BuildInputInput,
+    test_SourceClient_GoldenMp4_ProducesMp4BuildInput,
+    //test_SourceClient_GoldenMp4_ProducesMp4BuildInput,
+
+
+    test_SourceClient_WebCodecs_ProducesMp4BuildInput,
+    test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic,
+
+    */
+    //generateWebCodecsAvOpusFixtures,
+    //testNativeMuxer_MP4_FromResolvedParts_Equals_FFmpegOracle,
+    //test_SourceClient_WebCodecs_ProducesMp4BuildInput,
+
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_OPUS,
+    test_NativeMuxer_EndToEnd_FromMp4BuildInput_Canonical_AAC_AudioSpecificConfigOnly,
+
+    test_NativeMuxer_EndToEnd_FromWebCodecs_Semantic,
+    ];
+
+
+    const tests = testsAll;
+    const testsofff = [
+        testCtts_LockedLayoutEquivalence_ffmpeg
+    ];
+
+
+    let failures = 0;
+    let skips = 0;
+
+    for (const test of tests) {
+        try {
+
+            console.log(
+                `%cRunning: ${test.name}`,
+                "color: blue"
+            );
+
+            await test();
+
+            console.log(
+                `%cPASS: ${test.name}`,
+                "color: green"
+            );
+
+
+        } catch (err) {
+            if (err && err.name === "SkipTestError") {
+                skips++;
+                console.warn(
+                    `%cSKIP: ${test.name}`,
+                    "color: #b58900"
+                );
+                console.warn(err.message);
+            } else {
+                failures++;
+                console.error(
+                    `%cFAIL: ${test.name}`,
+                    "color: red"
+                );
+                console.error(err);
+            }
+        }
+    }
+
+    if (skips > 0) {
+        console.warn(
+            `%cUnit tests skipped: ${skips}`,
+            "color: #b58900"
+        );
+    }
+
+    if (failures > 0) {
+        throw new Error(
+            `${failures} unit test(s) failed`
+        );
+    }
+}
+
+
+/**
+ * INSPECTION TESTS
+ *
+ * These tests validate our understanding of real-world MP4s.
+ * They are NOT NativeMuxer correctness tests.
+ *
+ * Failures here indicate:
+ *   - incorrect assumptions
+ *   - incomplete mental models
+ *   - gaps in spec interpretation
+ *
+ * They must never gate NativeMuxer progress.
+ */
+async function runInspectionTests() {
+
+   const tests = [
+     //runAudioEncoderProbe,
+     //runAudioEncoderCapabilityProbe,
+     inspectCttsAcrossTracks,
+     inspectEdtsAcrossTracks,
+     inspectUdtaAcrossTracks,
+     inspectCttsResolver,
+     inspectBoxTreeDiff_AV_vs_Visual,
+     testNativeMuxer_TrakIntent_Debug,
+     testNativeMuxer_ElstIntent_Debug,
+     testNativeMuxer_TkhdIntent_Debug,
+   ];
+
+  /*
+   await inspectBoxTreeDiff_AV_vs_Visual();
+   await test_Inspection_Stsd_Semantics();
+   await testUdta_Inspection_ffmpeg();
+   await testMeta_Inspection_ffmpeg();
+   await testMetaHdlr_Inspection_ffmpeg();
+   await testMetaIlst_Inspection_ffmpeg();
+   */
+
+
+    let failures = 0;
+
+    for (const test of tests) {
+        try {
+
+            console.log(
+                `%cRunning: ${test.name}`,
+                "color: blue"
+            );
+
+            await test();
+
+            console.log(
+                `%cPASS: ${test.name}`,
+                "color: green"
+            );
+
+
+        } catch (err) {
+            failures++;
+            console.error(
+                `%cFAIL: ${test.name}`,
+                "color: red"
+            );
+            console.error(err);
+        }
+    }
+
+    if (failures > 0) {
+        throw new Error(
+            `${failures} inspections(s) failed`
+        );
+    }
+
+}
+
+async function runBoundaryTests() {
+}
+
+async function runIntegrationTests() {
+}
+
+document.getElementById("run-inspection").onclick = async () => {
+    try {
+        await runInspectionTests();
+        console.log("%cInspection tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+document.getElementById("run-unit").onclick = async () => {
+    try {
+        await runUnitTests();
+        console.log("%cUnit tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+document.getElementById("run-boundary").onclick = async () => {
+    try {
+        await runBoundaryTests();
+        console.log("%cBoundary tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+
+document.getElementById("run-integration").onclick = async () => {
+    try {
+        await runIntegrationTests();
+        console.log("%cIntegration tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+document.getElementById("run-all").onclick = async () => {
+    try {
+        await runUnitTests();
+        await runBoundaryTests();
+        await runIntegrationTests();
+        console.log("%cAll tests passed!", "color: green");
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+</script>
+</body>
+</html>

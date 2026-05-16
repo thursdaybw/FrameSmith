@@ -2,7 +2,7 @@ import { ExportExecutionStrategy } from "./ExportExecutionStrategy.js";
 import {
     PreRenderPlanFragmentKinds,
     PreRenderPlanContributorKinds
-} from "../../timeline/planFragments.js";
+} from "../../../vendor/media-timeline-compiler/planFragments.js";
 
 function assert(condition, message) {
     if (!condition) {

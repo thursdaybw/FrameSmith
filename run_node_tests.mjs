@@ -12,10 +12,10 @@ import {
 import { PRERENDER_DECODE_CONTAINER_ACCESS_UNITS_DETERMINISM_TESTS } from "./src/prerender/test_decodeContainerAccessUnitsFromPreRenderPlan_determinism.js";
 import { PRERENDER_TIME_RESOLUTION_TESTS } from "./src/prerender/test_resolveProceduralFragmentsAtTimeFromPlan.js";
 import { EXPORT_EXECUTION_STRATEGY_TESTS } from "./src/prerender/strategies/test_ExportExecutionStrategy.js";
-import { PROCEDURAL_EXECUTION_TESTS } from "./src/timeline/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
-import { TEXT_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_textOverlayRenderer.js";
-import { IMAGE_OVERLAY_RENDERER_TESTS } from "./src/timeline/procedural/resolvers/test_imageOverlayRenderer.js";
-import { CONTAINER_DECODE_TESTS } from "./src/timeline/container/execution/test_executeAccessUnitFragmentDecode.js";
+import { PROCEDURAL_EXECUTION_TESTS } from "./vendor/media-timeline-compiler/procedural/resolvers/test_executeProceduralFragmentAtTime.js";
+import { TEXT_OVERLAY_RENDERER_TESTS } from "./vendor/media-timeline-compiler/procedural/resolvers/test_textOverlayRenderer.js";
+import { IMAGE_OVERLAY_RENDERER_TESTS } from "./vendor/media-timeline-compiler/procedural/resolvers/test_imageOverlayRenderer.js";
+import { CONTAINER_DECODE_TESTS } from "./vendor/media-timeline-compiler/container/execution/test_executeAccessUnitFragmentDecode.js";
 import { COMPOSITION_TESTS } from "./src/composition/test_composeAtTime.js";
 import { ENCODE_TESTS } from "./src/encode/test_encodeAtTime.js";
 import { AUDIO_ENCODE_PCM16_WAV_TESTS } from "./src/audio/test_encodePcm16Wav.js";
@@ -44,8 +44,8 @@ function log(color, label, name) {
 }
 
 const SKIPPED_BROWSER_ONLY_MODULES = [
-    "./src/mux/native/demux/trackview/test_createContainerTrackViewFromMp4.js",
-    "./src/mux/native/demux/trackview/test_proceduralClips_prerenderPlanning.js"
+    "./test-harness/timeline/test_containerTrackViewPrerenderPlanning.js",
+    "./test-harness/timeline/test_proceduralClipsPrerenderPlanning.js"
 ];
 
 async function loadNodeSafeScriptLocalTests() {

@@ -1,0 +1,40 @@
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'ftyp' parent:'root' sz: 32 8 5111
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'free' parent:'root' sz: 8 40 5111
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'mdat' parent:'root' sz: 3946 48 5111
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'moov' parent:'root' sz: 1125 3994 5111
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'mvhd' parent:'moov' sz: 108 8 1117
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'trak' parent:'moov' sz: 912 116 1117
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'tkhd' parent:'trak' sz: 92 8 904
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'edts' parent:'trak' sz: 36 100 904
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'elst' parent:'edts' sz: 28 8 28
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'mdia' parent:'trak' sz: 776 136 904
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'mdhd' parent:'mdia' sz: 32 8 768
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'hdlr' parent:'mdia' sz: 45 40 768
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'minf' parent:'mdia' sz: 691 85 768
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'vmhd' parent:'minf' sz: 20 8 683
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'dinf' parent:'minf' sz: 36 28 683
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'dref' parent:'dinf' sz: 28 8 28
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stbl' parent:'minf' sz: 627 64 683
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stsd' parent:'stbl' sz: 191 8 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'avcC' parent:'stsd' sz: 53 8 89
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'pasp' parent:'stsd' sz: 16 61 89
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'btrt' parent:'stsd' sz: 20 77 89
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stts' parent:'stbl' sz: 24 199 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stss' parent:'stbl' sz: 20 223 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'ctts' parent:'stbl' sz: 216 243 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stsc' parent:'stbl' sz: 28 459 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stsz' parent:'stbl' sz: 120 487 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'stco' parent:'stbl' sz: 20 607 619
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'udta' parent:'moov' sz: 97 1028 1117
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'meta' parent:'udta' sz: 89 8 89
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'hdlr' parent:'meta' sz: 33 8 77
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'ilst' parent:'meta' sz: 44 41 77
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x64d567fdb080] type:'[169]too' parent:'ilst' sz: 36 8 36
+[h264 @ 0x64d567fdbec0] nal_unit_type: 7(SPS), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] nal_unit_type: 8(PPS), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] nal_unit_type: 7(SPS), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] nal_unit_type: 8(PPS), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] nal_unit_type: 6(SEI), nal_ref_idc: 0
+[h264 @ 0x64d567fdbec0] nal_unit_type: 5(IDR), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] nal_unit_type: 7(SPS), nal_ref_idc: 3
+[h264 @ 0x64d567fdbec0] nal_unit_type: 8(PPS), nal_ref_idc: 3

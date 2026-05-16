@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Native MP4 Muxer WebCodecs Smoke Test</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; line-height: 1.4; }
+    button { font-size: 1rem; padding: 0.5rem 1rem; }
+    pre { background: #111; color: #eee; padding: 1rem; min-height: 18rem; overflow: auto; white-space: pre-wrap; }
+    #status { font-weight: bold; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Native MP4 Muxer WebCodecs Smoke Test</h1>
+  <p>
+    Runs a browser-only WebCodecs encode, feeds the encoded audio/video into the native muxer,
+    validates the generated MP4 structure, and optionally downloads the generated MP4.
+  </p>
+  <p>
+    This must run in a browser context with WebCodecs support.
+  </p>
+  <label>
+    <input id="download" type="checkbox" checked>
+    Download generated MP4 when the smoke test passes
+  </label>
+  <p>
+    <button id="run" type="button">Run smoke test</button>
+  </p>
+  <div id="status">Idle</div>
+  <pre id="log" aria-live="polite"></pre>
+  <script type="module" src="./smoke.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import { Mp4BoxDemuxer } from "../src/demux/Mp4BoxDemuxer.js";
-import { listTracksFromMp4 } from "../src/mux/native/demux/container/listTracksFromMp4.js";
-import { extractTrackDataForNativeDemux } from "../src/mux/native/demux/track/extractTrackDataForNativeDemux.js";
+import { listTracksFromMp4 } from "../vendor/native-mp4-muxer/demux/container/listTracksFromMp4.js";
+import { extractTrackDataForNativeDemux } from "../vendor/native-mp4-muxer/demux/track/extractTrackDataForNativeDemux.js";
 
 function toHexByte(value) {
     return value.toString(16).padStart(2, "0").toUpperCase();
