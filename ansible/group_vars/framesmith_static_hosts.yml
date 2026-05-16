@@ -1,0 +1,8 @@
+framesmith_domain: framesmith.bevansbench.com
+framesmith_repo_dir: /home/bevan/workspace/framesmith
+framesmith_web_root: "{{ framesmith_repo_dir }}"
+framesmith_site_config_path: "/etc/nginx/sites-enabled/{{ framesmith_domain }}.conf"
+framesmith_letsencrypt_live_dir: "/etc/letsencrypt/live/{{ framesmith_domain }}"
+framesmith_manage_tls: true
+framesmith_certbot_email: "bevan.wishart@gmail.com"
+framesmith_certbot_staging: false

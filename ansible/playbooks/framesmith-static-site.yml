@@ -1,0 +1,89 @@
+---
+- name: Provision FrameSmith static site
+  hosts: framesmith_static_hosts
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Ensure nginx and certbot are installed
+      ansible.builtin.apt:
+        name:
+          - nginx
+          - certbot
+        state: present
+        update_cache: true
+      when: ansible_facts.os_family == "Debian"
+
+    - name: Ensure FrameSmith checkout directory exists
+      ansible.builtin.file:
+        path: "{{ framesmith_repo_dir }}"
+        state: directory
+        owner: bevan
+        group: bevan
+        mode: "0755"
+
+    - name: Check whether FrameSmith TLS certificate already exists
+      ansible.builtin.stat:
+        path: "{{ framesmith_letsencrypt_live_dir }}/fullchain.pem"
+      register: framesmith_tls_certificate_before
+
+    - name: Install HTTP nginx site for initial certificate challenge
+      ansible.builtin.template:
+        src: ../templates/framesmith-nginx.conf.j2
+        dest: "{{ framesmith_site_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      vars:
+        framesmith_tls_certificate_exists: "{{ framesmith_tls_certificate_before.stat.exists }}"
+      notify: Reload nginx safely
+
+    - name: Flush nginx handlers before certificate request
+      ansible.builtin.meta: flush_handlers
+
+    - name: Request FrameSmith TLS certificate with webroot challenge
+      ansible.builtin.command:
+        argv: "{{ framesmith_certbot_command }}"
+      vars:
+        framesmith_certbot_email_arguments: >-
+          {{ ['--email', framesmith_certbot_email] if framesmith_certbot_email | length > 0 else ['--register-unsafely-without-email'] }}
+        framesmith_certbot_staging_arguments: >-
+          {{ ['--staging'] if framesmith_certbot_staging else [] }}
+        framesmith_certbot_command: >-
+          {{
+            ['certbot', 'certonly', '--webroot', '-w', framesmith_web_root,
+             '-d', framesmith_domain, '--agree-tos', '--non-interactive']
+            + framesmith_certbot_email_arguments
+            + framesmith_certbot_staging_arguments
+          }}
+      when:
+        - framesmith_manage_tls | bool
+        - not framesmith_tls_certificate_before.stat.exists
+
+    - name: Check whether FrameSmith TLS certificate exists after request
+      ansible.builtin.stat:
+        path: "{{ framesmith_letsencrypt_live_dir }}/fullchain.pem"
+      register: framesmith_tls_certificate_after
+
+    - name: Install final nginx site
+      ansible.builtin.template:
+        src: ../templates/framesmith-nginx.conf.j2
+        dest: "{{ framesmith_site_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      vars:
+        framesmith_tls_certificate_exists: "{{ framesmith_tls_certificate_after.stat.exists }}"
+      notify: Reload nginx safely
+
+  handlers:
+    - name: Test nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+      listen: Reload nginx safely
+
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      listen: Reload nginx safely

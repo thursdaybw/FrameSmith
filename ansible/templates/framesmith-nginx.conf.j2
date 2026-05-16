@@ -1,0 +1,83 @@
+# Managed by FrameSmith Ansible provisioning.
+# Static client app only. No PHP, no upstream app server.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ framesmith_domain }};
+
+    root {{ framesmith_web_root }};
+    index index.html;
+
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        try_files $uri =404;
+    }
+
+{% if framesmith_tls_certificate_exists %}
+    location / {
+        return 301 https://$host$request_uri;
+    }
+{% else %}
+    include /etc/nginx/mime.types;
+
+    types {
+        application/wasm wasm;
+        text/javascript mjs;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache" always;
+        try_files $uri =404;
+    }
+
+    location ~* \.(?:js|mjs|wasm|css|ttf|woff2|png|jpg|jpeg|webp|svg|json)$ {
+        add_header Cache-Control "public, max-age=3600" always;
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+{% endif %}
+}
+
+{% if framesmith_tls_certificate_exists %}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name {{ framesmith_domain }};
+
+    root {{ framesmith_web_root }};
+    index index.html;
+
+    ssl_certificate {{ framesmith_letsencrypt_live_dir }}/fullchain.pem;
+    ssl_certificate_key {{ framesmith_letsencrypt_live_dir }}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    include /etc/nginx/mime.types;
+
+    types {
+        application/wasm wasm;
+        text/javascript mjs;
+    }
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location = /index.html {
+        add_header Cache-Control "no-cache" always;
+        try_files $uri =404;
+    }
+
+    location ~* \.(?:js|mjs|wasm|css|ttf|woff2|png|jpg|jpeg|webp|svg|json)$ {
+        add_header Cache-Control "public, max-age=3600" always;
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+{% endif %}
